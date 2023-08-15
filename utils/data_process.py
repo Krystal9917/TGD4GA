@@ -29,8 +29,8 @@ class DataProcess:
         print("train_x.head:", self.train_x.head())
         print("train_x.shape:", self.train_x.shape)
         print("train_y.shape:", self.train_y.shape)
-        print("tset_x.shape:", self.test_x.shape)
-        print("tset_y.shape:", self.test_y.shape)
+        print("test_x.shape:", self.test_x.shape)
+        print("test_y.shape:", self.test_y.shape)
 
     def pad_zero_or_truncat(self, seq):
         if len(seq) > self.args_dict["max_len"]:
