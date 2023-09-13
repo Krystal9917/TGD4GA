@@ -29,7 +29,7 @@ class Args:
         parser.add_argument('--device', type=str, default="gpu")
         parser.add_argument('--infer_device', type=str, default="cpu")
         parser.add_argument('--seed', type=int, default=20)
-        parser.add_argument('--best_auc', type=float, default=0.91)
+        parser.add_argument('--best_auc', type=float, default=0.95)
         args = parser.parse_args()
         args_dict = vars(args)
         self.args_dict = args_dict

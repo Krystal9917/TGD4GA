@@ -50,7 +50,9 @@ class Train:
 
     def train(self):
         self.setup_seed()
+        print(('-' * 20 + 'model parameter size' + '-' * 40)[:60])
         print_model_size(self.model)
+        print(('-' * 20 + 'training' + '-' * 40)[:60])
         for epoch in range(self.train_dict["n_epochs"]):
             self.model.train()
             train_loss = []
