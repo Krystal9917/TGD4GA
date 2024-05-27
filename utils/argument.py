@@ -33,3 +33,36 @@ class Args:
         args = parser.parse_args()
         args_dict = vars(args)
         self.args_dict = args_dict
+
+
+class ArgsSeqGraph:
+    def __init__(self):
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--ds', type=str, default="")
+        parser.add_argument('--uin_seqs_path', type=str, default=os.path.abspath(
+            os.path.join(os.path.dirname(__file__), os.path.pardir, "data",
+                         "uin_seqs_v2" + ".txt")))
+        parser.add_argument('--action_vocab_path', type=str, default=os.path.abspath(
+            os.path.join(os.path.dirname(__file__), os.path.pardir, "data", "vocabulary",
+                         "uin2uin_action_vocab" + ".txt"))),
+        parser.add_argument('--uin_seqs_enum_yaml_path', type=str, default=os.path.abspath(
+            os.path.join(os.path.dirname(__file__), os.path.pardir, "data", "yml",
+                         "uin_seqs_enum" + ".yaml"))),
+        parser.add_argument('--model_states_path', type=str, default=os.path.abspath(
+            os.path.join(os.path.dirname(__file__), os.path.pardir, "data",
+                         "model_states", "optimal_uin_sequence_model" + ".bin")))
+        parser.add_argument('--max_len', type=int, default=128)
+        parser.add_argument('--output_size', type=int, default=10)
+        parser.add_argument('--n_layers', type=int, default=2)
+        parser.add_argument('--emb_dim', type=int, default=128)
+        parser.add_argument('--n_heads', type=int, default=2)
+        parser.add_argument('--batch_size', type=int, default=4096)
+        parser.add_argument('--lr', type=float, default=0.001)
+        parser.add_argument('--n_epochs', type=int, default=1000)
+        parser.add_argument('--drop_rate', type=float, default=0.5)
+        parser.add_argument('--device', type=str, default="gpu")
+        parser.add_argument('--infer_device', type=str, default="cpu")
+        parser.add_argument('--seed', type=int, default=20)
+        args = parser.parse_args()
+        args_dict = vars(args)
+        self.args_dict = args_dict
