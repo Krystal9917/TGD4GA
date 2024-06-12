@@ -124,9 +124,9 @@ class Encoder(nn.Module):
         return xz  # [n, step, emb_dim]
 
 
-class SeqGraphUin2Uin(nn.Module):
+class SeqGraphUin2UinV2(nn.Module):
     # 多头多层容易过拟合
-    def __init__(self, input_feat, target_feat, vocab_size, max_len, n_layers=2, emb_dim=512, n_heads=2, output_size=11,
+    def __init__(self, target_feat, vocab_size, max_len, n_layers=2, emb_dim=512, n_heads=2, output_size=11,
                  drop_rate=0.1,
                  padding_idx=0):
         super().__init__()
@@ -139,10 +139,10 @@ class SeqGraphUin2Uin(nn.Module):
         self.target_wd = WideDeepNet(target_feat, emb_dim // 2)
         self.encoder = Encoder(n_heads, emb_dim, drop_rate, n_layers)
         # self.flatten = nn.Flatten(start_dim=1)
-        self.input_wd = nn.Linear(input_feat, emb_dim)
+        # self.input_wd = nn.Linear(input_feat, emb_dim)
         self.o = nn.Linear(emb_dim, output_size)
 
-    def forward(self, seqs_x, input_x, target_x, training=None):
+    def forward(self, seqs_x, target_x, training=None):
         # print(" x.size()", x.size())
         # print("target_x", target_x.size())
         x_embed = self.embeddings(seqs_x)
@@ -157,8 +157,8 @@ class SeqGraphUin2Uin(nn.Module):
         pad_mask = self._pad_mask(seqs_x)
         encoded_z = self.encoder(x_embed, training, pad_mask)  # [n, step, emb_dim]
         # fl_out = self.flatten(encoded_z)  # [n,step * emb_dim]
-        input_wd = self.input_wd(input_x)  # [n, emb_dim]
-        mlp_out = self.o(encoded_z[:, -1, :] + input_wd)  # [n, output_size] 取序列最后一个step的embedding
+        # input_wd = self.input_wd(input_x)  # [n, emb_dim]
+        mlp_out = self.o(encoded_z[:, -1, :])  # [n, output_size] 取序列最后一个step的embedding
         return torch.sigmoid(mlp_out)
 
     def _pad_bool(self, seqs):

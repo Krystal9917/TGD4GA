@@ -111,7 +111,8 @@ class DataProcessSeqGraph:
             self.uin_seqs_enum = yaml.safe_load(file)
         # 获取分类标签
         self.label_dict = self.uin_seqs_enum['fraud_class_enum']
-        logger.info("self.label_dict:\n %s", self.label_dict)
+        self.num_classes = len(self.label_dict)
+        logger.info("self.label_dict size = %s :\n %s", len(self.label_dict), self.label_dict)
 
         # 获取行为词表
         tokenizer = SeqTokenizer(args_dict["action_vocab_path"])
@@ -135,7 +136,8 @@ class DataProcessSeqGraph:
         logger.info("self.target_feat_size: %s", self.target_feat_size)
 
         # 序列补0或截断
-        data = user_seqs_df['action_seqs'].apply(self.pad_zero_or_truncate).join(user_seqs_df['label'])
+        data = user_seqs_df['action_seqs'].apply(self.pad_zero_or_truncate).join(
+            user_seqs_df['uin_feat_scalar_list']).join(user_seqs_df['label'])
         label = data.label.to_frame().astype(int)
         feat = data.iloc[:, :-1]
 
@@ -153,8 +155,12 @@ class DataProcessSeqGraph:
         logger.info("test_y shape: %s", self.test_y.shape)
 
         # 切分序列特征和数值特征
-        train_seq, self.train_target_feat = self.separate_seq_feat(train_x)
-        test_seq, self.test_target_feat = self.separate_seq_feat(test_x)
+        train_seq, self.train_input_feat, self.train_target_feat = self.separate_seq_feat(train_x)
+        test_seq, self.test_input_feat, self.test_target_feat = self.separate_seq_feat(test_x)
+        self.input_feat_size = self.train_input_feat.shape[1]
+        logger.info("self.input_feat_size: %s", self.input_feat_size)
+        logger.info("self.train_input_feat shape: %s", self.train_input_feat.shape)
+        logger.info("self.train_input_feat sample:\n %s", self.train_input_feat[:5])
         logger.info("self.train_target_feat shape: %s", self.train_target_feat.shape)
         logger.info("self.train_target_feat sample:\n %s", self.train_target_feat[:5])
         logger.info("self.test_target_feat shape: %s", self.test_target_feat.shape)
@@ -182,12 +188,14 @@ class DataProcessSeqGraph:
 
     @staticmethod
     def separate_seq_feat(feat_df):
+        # input特征
+        input_feat = feat_df.iloc[:, -1].str.split(',', expand=True).values.astype(float)
         # 初始化两个空的DataFrame，用于存储最终结果
         seq_df = pd.DataFrame()
         target_feat_df = pd.DataFrame()
 
         # 遍历分割
-        for col in feat_df.columns:
+        for col in feat_df.iloc[:, :-1].columns:
             # 按照':'分割
             split_col = feat_df[col].str.split(':', expand=True)
             # 第0列是seq，第1列是target_feat
@@ -196,14 +204,14 @@ class DataProcessSeqGraph:
         # 对 target_feat_df 再次按','分割
         target_feat_df = target_feat_df.apply(lambda x: x.str.split(','))
         target_feat = np.array(target_feat_df.values.tolist(), dtype=float)
-        return seq_df, target_feat
+        return seq_df, input_feat, target_feat
 
     @staticmethod
     def get_multi_label_weights(label_df):
         label_cnt_dict = label_df.iloc[:, 0].value_counts().to_dict()
-        min_label_cnt = label_df.iloc[:, 0].value_counts().min()
-        label_weight = label_df.iloc[:, 0].value_counts(normalize=True).apply(lambda x: 1 - x)
-        # label_weight = label_df.iloc[:, 0].value_counts().apply(lambda x: min_label_cnt * 1.0 / x)
+        max_label_cnt = label_df.iloc[:, 0].value_counts().max()
+        # label_weight = label_df.iloc[:, 0].value_counts(normalize=True).apply(lambda x: 1 - x)
+        label_weight = label_df.iloc[:, 0].value_counts().apply(lambda x: max_label_cnt * 1.0 / x)
         weight_list = [0] * len(label_weight)
         for index, value in label_weight.items():
             weight_list[index] = value

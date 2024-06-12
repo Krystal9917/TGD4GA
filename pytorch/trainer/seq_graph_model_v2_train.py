@@ -1,11 +1,7 @@
-import os.path
+from accelerate import Accelerator
 import random
 import logging
-from datetime import datetime
-
 import numpy as np
-
-np.set_printoptions(suppress=True, precision=4)
 from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from torch import nn
 from torch.utils.data import DataLoader, WeightedRandomSampler
@@ -15,99 +11,10 @@ import torch.nn.functional as F
 
 from mmgog_long_term_sequence_model.pytorch.models.LossFunction import WeightedFocalBCELoss, FocalLoss, \
     WeightedFocalLoss
-from mmgog_long_term_sequence_model.pytorch.models.basic_sequence_model import SeqBaseTransformer
-from mmgog_long_term_sequence_model.utils.utils import print_model_size, \
-    get_multi_cls_base_threshold_by_youden_index, get_indicator_of_mutil_cls_base_sigmoid, draw_and_save
-from mmgog_long_term_sequence_model.pytorch.models.action_sequence_graph_model import SeqGraphUin2Uin
-from accelerate import Accelerator
+
+from mmgog_long_term_sequence_model.pytorch.models.seq_graph_model_v2 import SeqGraphUin2UinV2
 
 logger = logging.getLogger("my_logger")
-
-
-class Train:
-    def __init__(self, data, train_dict):
-        self.train_dict = train_dict
-        self.model = SeqBaseTransformer(vocab_size=self.train_dict["vocab_size"],
-                                        max_len=self.train_dict["max_len"],
-                                        n_layers=self.train_dict["n_layers"],
-                                        emb_dim=self.train_dict["emb_dim"],
-                                        n_heads=self.train_dict["n_heads"],
-                                        output_size=self.train_dict["output_size"],
-                                        drop_rate=self.train_dict["drop_rate"],
-                                        padding_idx=self.train_dict["padding_idx"])
-        if torch.cuda.is_available() and self.train_dict["device"] == "gpu":
-            print("GPU train available")
-            device = torch.device("cuda")
-            self.model.cuda()
-        else:
-            print("GPU train not available")
-            device = torch.device("cpu")
-            self.model.cpu()
-
-        train_x = torch.from_numpy(data.train_x.values.astype(int)).type(torch.LongTensor).to(
-            device)
-        test_x = torch.from_numpy(data.test_x.values.astype(int)).type(torch.LongTensor).to(
-            device)
-        train_y = torch.from_numpy(data.train_y.astype(float)).type(torch.LongTensor).to(
-            device)
-        test_y = torch.from_numpy(data.test_y.astype(float)).type(torch.LongTensor).to(
-            device)
-        train_data = Data.TensorDataset(train_x, train_y)
-        test_data = Data.TensorDataset(test_x, test_y)
-        self.train_loader = Data.DataLoader(dataset=train_data,
-                                            batch_size=self.train_dict["batch_size"],
-                                            shuffle=True)
-        self.test_loader = Data.DataLoader(dataset=test_data,
-                                           batch_size=self.train_dict["batch_size"],
-                                           shuffle=True)
-        self.criterion = torch.nn.BCELoss()
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.train_dict["lr"])
-
-    def train(self):
-        self.setup_seed()
-        print(('-' * 20 + 'model parameter size' + '-' * 40)[:60])
-        print_model_size(self.model)
-        print(('-' * 20 + 'training' + '-' * 40)[:60])
-        for epoch in range(self.train_dict["n_epochs"]):
-            self.model.train()
-            train_loss = []
-            for batch_idx, (x, y) in enumerate(self.train_loader):
-                pred = self.model(x)
-                # print("pred.shape", pred.shape)
-                # print("y.shape", y.shape)
-                loss = self.criterion(pred, y.float().detach())
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-                train_loss.append(loss.item())
-
-            self.model.eval()
-            test_loss = []
-            prediction = []
-            y_true = []
-            with torch.no_grad():
-                for batch_idx, (x, y) in enumerate(self.test_loader):
-                    pred = self.model(x)
-                    loss = self.criterion(pred, y.float().detach())
-                    test_loss.append(loss.item())
-                    prediction.extend(pred.detach().cpu().numpy().tolist())
-                    y_true.extend(y.detach().cpu().numpy().tolist())
-            test_auc = roc_auc_score(y_true=y_true, y_score=prediction)
-            print("EPOCH %s train loss : %.5f   validation loss : %.5f   validation auc is %.5f" % (
-                epoch, np.mean(train_loss), np.mean(test_loss), test_auc))
-            if test_auc > self.train_dict["best_auc"]:
-                torch.save(self.model.state_dict(), self.train_dict["model_states_path"])
-                print(('-' * 20 + 'model saved' + '-' * 40)[:60])
-                return train_loss, test_loss, test_auc
-        return train_loss, test_loss, test_auc
-
-    def setup_seed(self):
-        torch.manual_seed(self.train_dict["seed"])
-        torch.cuda.manual_seed(self.train_dict["seed"])
-        torch.cuda.manual_seed_all(self.train_dict["seed"])
-        np.random.seed(self.train_dict["seed"])
-        random.seed(self.train_dict["seed"])
-        torch.backends.cudnn.deterministic = True
 
 
 class TrainSeqGraph:
@@ -115,16 +22,15 @@ class TrainSeqGraph:
         self.train_dict = train_dict
         self.data = data
         self.accelerator = Accelerator()
-        model = SeqGraphUin2Uin(input_feat=data.input_feat_size,
-                                target_feat=data.target_feat_size,
-                                vocab_size=data.action_vocab_size,
-                                max_len=self.train_dict["max_len"],
-                                n_layers=self.train_dict["n_layers"],
-                                emb_dim=self.train_dict["emb_dim"],
-                                n_heads=self.train_dict["n_heads"],
-                                output_size=self.train_dict["output_size"],
-                                drop_rate=self.train_dict["drop_rate"],
-                                padding_idx=data.special_tokens["[PAD]"])
+        model = SeqGraphUin2UinV2(target_feat=data.target_feat_size,
+                                  vocab_size=data.action_vocab_size,
+                                  max_len=self.train_dict["max_len"],
+                                  n_layers=self.train_dict["n_layers"],
+                                  emb_dim=self.train_dict["emb_dim"],
+                                  n_heads=self.train_dict["n_heads"],
+                                  output_size=self.train_dict["output_size"],
+                                  drop_rate=self.train_dict["drop_rate"],
+                                  padding_idx=data.special_tokens["[PAD]"])
 
         if torch.cuda.is_available() and self.train_dict["device"] == "gpu":
             logger.info("GPU train available")
@@ -182,8 +88,6 @@ class TrainSeqGraph:
         self.setup_seed()
         logger.info("model parameter size: %s ", print_model_size(self.model))
         print(('-' * 20 + 'training' + '-' * 40)[:60])
-        x_dict = {"epoch": []}
-        y_dict = {"train_loss": [], "test_loss": []}
 
         for epoch in range(self.train_dict["n_epochs"]):
             self.model.train()
@@ -220,13 +124,10 @@ class TrainSeqGraph:
                     y_true.extend(np.argmax(y.detach().cpu().numpy(), axis=1))
                     y_pred_original.extend(pred.detach().cpu().numpy().tolist())
 
-                roc_auc_scores, pr_auc_scores, precision_scores, recall_scores, f1_scores, confusion_mats = get_indicator_of_mutil_cls_base_sigmoid(
+                auc_scores, precision_scores, recall_scores, f1_scores, confusion_mats = get_indicator_of_mutil_cls_base_sigmoid(
                     np.array(y_onehot), np.array(y_pred_original))
 
                 if epoch % 10 == 0:
-                    x_dict["epoch"].append(epoch)
-                    y_dict["train_loss"].append(np.mean(train_loss))
-                    y_dict["test_loss"].append(np.mean(test_loss))
                     # 随机打印5个预测结果
                     logger.info("y_pred_original sample:\n %s", np.array(random.choices(y_pred_original, k=5)))
                     # # 混淆矩阵
@@ -243,8 +144,7 @@ class TrainSeqGraph:
                     for i in range(self.data.num_classes):
                         label_class = self.data.label_dict[i]
                         class_info = f"Class {i} = {label_class}:" \
-                                     f" roc_auc = {roc_auc_scores[i]:.4f}," \
-                                     f" pr_auc = {pr_auc_scores[i]:.4f}," \
+                                     f" auc = {auc_scores[i]:.4f}," \
                                      f" precision = {precision_scores[i]:.4f}," \
                                      f" recall = {recall_scores[i]:.4f}," \
                                      f" f1 = {f1_scores[i]:.4f}, " \
@@ -255,7 +155,6 @@ class TrainSeqGraph:
 
                 # 保存模型
                 if np.mean(test_loss) < self.train_dict["best_loss"]:
-                    self.accelerator.wait_for_everyone()
                     if self.accelerator.is_main_process:
                         # 将模型从分布式状态中提取出来
                         unwrapped_model = self.accelerator.unwrap_model(self.model).to(self.train_dict["infer_device"])
@@ -272,9 +171,6 @@ class TrainSeqGraph:
 
                     return train_loss, test_loss
 
-        loss_pic_path = os.path.join(self.train_dict["pic_path"],
-                                     "loss_curve_" + datetime.now().strftime("%Y%m%d%H%M%S") + ".png")
-        draw_and_save(x_dict=x_dict, y_dict=y_dict, save_path=loss_pic_path, title="loss curve")
         return train_loss, test_loss
 
     def save_model_as_onnx(self, model):

@@ -1,3 +1,7 @@
-/data/
 /.DS_Store
 /utils/test.py
+/data/uin_seqs.txt
+/data/uin_seqs_v2.txt
+/data/uin_seqs_v3.txt
+/data/log/
+/data/saved_model/
