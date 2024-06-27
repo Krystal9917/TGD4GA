@@ -1,0 +1,51 @@
+{
+  "L_0": {
+    "node_id": "",
+    "feat": [],
+    "L01": [
+      {
+        "L1": {
+          "action_id": "",
+          "node_id": "",
+          "feat": [],
+          "L12": [
+            {
+              "L2": {
+                "action_id": "",
+                "node_id": "",
+                "feat": []
+              },
+              "L2": {
+                "action_id": "",
+                "node_id": "",
+                "feat": []
+              }
+            }
+          ]
+        }
+      },
+      {
+        "L1": {
+          "action_id": "",
+          "node_id": "",
+          "feat": [],
+          "L12": [
+            {
+              "L2": {
+                "action_id": "",
+                "node_id": "",
+                "feat": []
+              },
+              "L2": {
+                "action_id": "",
+                "node_id": "",
+                "feat": []
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "label": 0
+}

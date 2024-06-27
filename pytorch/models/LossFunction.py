@@ -70,3 +70,106 @@ class WeightedFocalBCELoss(nn.Module):
             return torch.sum(F_loss)
         else:
             return F_loss
+
+
+class WeightedFocalBalanceBCELoss(nn.Module):
+    def __init__(self, weight=None, alpha=0.25, gamma=2.0, reduction='mean', max_zero_ratio=1.0, mask=-1):
+        super(WeightedFocalBalanceBCELoss, self).__init__()
+        self.weight = weight
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+        self.mask = mask
+        self.max_zero_ratio = max_zero_ratio
+
+    def forward(self, inputs, targets):
+        # Assume inputs are the logits
+        inputs = inputs.type(torch.float32)
+        targets = targets.type(torch.float32)
+        bce_loss = self.weighted_balance_cross_entropy_loss(inputs, targets)
+        pt = torch.exp(-bce_loss)  # Prevents nans when probability 0
+        F_loss = self.alpha * (1 - pt) ** self.gamma * bce_loss
+
+        if self.reduction == 'mean':
+            return torch.mean(F_loss)
+        elif self.reduction == 'sum':
+            return torch.sum(F_loss)
+        else:
+            return F_loss
+
+    def weighted_balance_cross_entropy_loss(self, y_pred, y_true):
+        # 对y_true进行随机mask
+        y_true = self.mask_target_to_balance_sample(y_true)
+
+        # 确保 y_pred 的值在 (0, 1) 之间，避免 log(0) 的情况
+        epsilon = 1e-15
+        y_pred = torch.clamp(y_pred, epsilon, 1 - epsilon)
+
+        # 计算交叉熵损失
+        loss_matrix = - (y_true * torch.log(y_pred) + (1 - y_true) * torch.log(1 - y_pred))
+
+        # 忽略y_true中为-1的部分
+        mask = (y_true != self.mask).float()
+        loss_matrix = loss_matrix * mask
+
+        # 应用权重
+        weighted_loss_matrix = loss_matrix * self.weight
+
+        # 计算每行样本的损失
+        sample_loss_row = torch.sum(weighted_loss_matrix, dim=1)
+        # 计算每行样本的权重
+        sample_loss_row_weight = torch.sum(mask * self.weight, dim=1)
+        # 防止除数为0的情况
+        sample_loss_row_weight[sample_loss_row_weight == 0] = epsilon
+
+        # 计算每个样本的平均损失
+        sample_loss = sample_loss_row / sample_loss_row_weight
+
+        # 计算所有样本的平均损失
+        mean_loss = torch.mean(sample_loss)
+
+        return mean_loss
+
+    def mask_target_to_balance_sample(self, target):
+        n, m = target.shape
+        masked_target = target.clone()
+
+        for col in range(m):
+            col_data = masked_target[:, col]
+            num_zeros = (col_data == 0).sum().item()
+            num_ones = (col_data == 1).sum().item()
+
+            if num_zeros > self.max_zero_ratio * num_ones:
+                # 需要掩码的0的数量
+                num_to_mask = int(num_zeros - self.max_zero_ratio * num_ones)
+
+                # 获取所有0的索引
+                zero_indices = (col_data == 0).nonzero(as_tuple=True)[0]
+
+                # 随机选择需要掩码的0的索引
+                mask_indices = torch.randperm(num_zeros)[:num_to_mask]
+                selected_indices = zero_indices[mask_indices]
+
+                # 将选中的0替换为-1
+                masked_target[selected_indices, col] = self.mask
+
+        return masked_target
+
+
+if __name__ == '__main__':
+    y_true = torch.tensor([
+        [1, 0],
+        [0, 1],
+        [0, 0],
+        [0, 0],
+    ], dtype=torch.float32)
+    y_pred = torch.tensor([
+        [0.1, 0.8],
+        [0.2, 0.8],
+        [0.3, 0.7],
+        [0.4, 0.6]
+    ], dtype=torch.float32)
+    sample_weights = torch.tensor([1, 200], dtype=torch.float32)
+    loss = WeightedFocalBalanceBCELoss(weight=sample_weights, alpha=0.25, gamma=2.0, reduction='mean',
+                                       max_zero_ratio=1.0, mask=-1)
+    print(loss(y_pred, y_true))

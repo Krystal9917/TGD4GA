@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 
 from mmgog_long_term_sequence_model.pytorch.models.LossFunction import WeightedFocalBCELoss, FocalLoss, \
-    WeightedFocalLoss
+    WeightedFocalLoss, WeightedFocalBalanceBCELoss
 from mmgog_long_term_sequence_model.pytorch.models.basic_sequence_model import SeqBaseTransformer
 from mmgog_long_term_sequence_model.utils.utils import print_model_size, \
     get_multi_cls_base_threshold_by_youden_index, get_indicator_of_mutil_cls_base_sigmoid, draw_and_save
@@ -169,10 +169,16 @@ class TrainSeqGraph:
         #                                    alpha=0.25,
         #                                    gamma=2.0,
         #                                    reduction='mean')
-        self.criterion = WeightedFocalBCELoss(weight=torch.tensor(data.label_weights).to(self.device),
-                                              alpha=0.25,
-                                              gamma=2.0,
-                                              reduction='mean')
+        # self.criterion = WeightedFocalBCELoss(weight=torch.tensor(data.label_weights).to(self.device),
+        #                                       alpha=0.25,
+        #                                       gamma=2.0,
+        #                                       reduction='mean')
+        self.criterion = WeightedFocalBalanceBCELoss(weight=torch.tensor(data.label_weights).to(self.device),
+                                                     alpha=0.25,
+                                                     gamma=2.0,
+                                                     reduction='mean',
+                                                     max_zero_ratio=5,
+                                                     mask=-1)
         self.model, self.optimizer, self.train_loader, self.test_loader = self.accelerator.prepare(model,
                                                                                                    optimizer,
                                                                                                    train_loader,
@@ -220,6 +226,7 @@ class TrainSeqGraph:
                     y_true.extend(np.argmax(y.detach().cpu().numpy(), axis=1))
                     y_pred_original.extend(pred.detach().cpu().numpy().tolist())
 
+                # thresholds = [0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9]
                 roc_auc_scores, pr_auc_scores, precision_scores, recall_scores, f1_scores, confusion_mats = get_indicator_of_mutil_cls_base_sigmoid(
                     np.array(y_onehot), np.array(y_pred_original))
 

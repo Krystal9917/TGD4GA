@@ -95,8 +95,8 @@ def get_indicator_of_mutil_cls_base_sigmoid(y_true: numpy.array, y_pred: numpy.a
     f1_scores = {}
     confusion_mats = {}
     for i in range(num_classes):
-        roc_auc_scores[i] = roc_auc_score(y_true[:, i], y_pred_cls[:, i])
-        precision, recall, _ = precision_recall_curve(y_true[:, i], y_pred_cls[:, i])
+        roc_auc_scores[i] = roc_auc_score(y_true[:, i], y_pred[:, i])
+        precision, recall, _ = precision_recall_curve(y_true[:, i], y_pred[:, i])
         pr_auc_scores[i] = auc(recall, precision)
         precision_scores[i] = precision_score(y_true[:, i], y_pred_cls[:, i], zero_division=0.0)
         recall_scores[i] = recall_score(y_true[:, i], y_pred_cls[:, i], zero_division=0.0)

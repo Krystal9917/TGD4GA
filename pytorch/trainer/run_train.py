@@ -48,4 +48,3 @@ if __name__ == '__main__':
     # 初始化日志设置
     run_seqs_graph()
     # infer_seq_graph()
-
