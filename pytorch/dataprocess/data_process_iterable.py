@@ -13,7 +13,6 @@ class DataProcessIterable(IterableDataset):
         self.args_dict = args_dict
         self.data_size = self.get_data_size()
         self.seqGraphDataProcess = SeqGraphDataProcess(self.args_dict)
-        pass
 
     def get_data_size(self):
         with open(self.args_dict['file_path'], 'r', encoding="utf-8") as f:
@@ -60,7 +59,7 @@ class SeqGraphDataProcess:
 
     def __init__(self, args_dict):
         self.args_dict = args_dict
-        pass
+
 
     def process_data(self, json_str):
         # 先将json字符串解析
