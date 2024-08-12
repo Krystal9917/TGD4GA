@@ -156,6 +156,41 @@ class WeightedFocalBalanceBCELoss(nn.Module):
         return masked_target
 
 
+class InfoNCELoss(nn.Module):
+    def __init__(self, device, temperature=0.5, ignore_labels=None):
+        super(InfoNCELoss, self).__init__()
+        self.device = device
+        self.temperature = temperature
+        self.cosine_similarity = nn.CosineSimilarity(dim=-1)
+        self.ignore_labels = set(ignore_labels) if ignore_labels else set()
+
+    def forward(self, features, labels):
+        # 计算余弦相似度
+        similarities = self.cosine_similarity(features.unsqueeze(1), features.unsqueeze(0)) / self.temperature
+
+        # Mask自身比较
+        batch_size = features.shape[0]
+        mask = torch.eye(batch_size).bool().to(self.device)
+        similarities.masked_fill_(mask, float('-inf'))
+
+        # 创建标签矩阵
+        labels_matrix = labels.unsqueeze(0) == labels.unsqueeze(1)
+        labels_matrix = labels_matrix.float().to(self.device)
+
+        # 忽略特定标签的相同距离计算
+        for label in self.ignore_labels:
+            label_mask = (labels == label).unsqueeze(1)
+            labels_matrix.masked_fill_(label_mask & label_mask.transpose(0, 1), 0)
+
+        # 应用softmax
+        exp_similarities = torch.exp(similarities).to(self.device)
+        sum_exp_similarities = torch.sum(exp_similarities * labels_matrix, dim=1)
+
+        # 计算损失
+        loss = -torch.log(sum_exp_similarities / torch.sum(exp_similarities, dim=1))
+        return loss.mean()
+
+
 if __name__ == '__main__':
     y_true = torch.tensor([
         [1, 0],

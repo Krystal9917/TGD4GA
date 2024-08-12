@@ -1,68 +1,96 @@
 import json
+import os
+
+import math
 import torch
 from torch.utils.data import IterableDataset
+import dgl
 
 
-class DataProcessIterable(IterableDataset):
+class DataIterable(IterableDataset):
     """
-    批数据预处理类
+    数据迭代加载类
     """
 
-    def __init__(self, args_dict):
-        super(DataProcessIterable, self).__init__()
+    def __init__(self, args_dict, folder_path):
+        super(DataIterable, self).__init__()
         self.args_dict = args_dict
-        self.data_size = self.get_data_size()
-        self.seqGraphDataProcess = SeqGraphDataProcess(self.args_dict)
-
-    def get_data_size(self):
-        with open(self.args_dict['file_path'], 'r', encoding="utf-8") as f:
-            total_lines = sum(1 for _ in f)
-        return total_lines
-
-    def process_line(self, line):
-        json_str = json.loads(line)
-        seq_graph_data = self.seqGraphDataProcess.process_data(json_str)
-        return seq_graph_data
+        self.folder_path = folder_path
+        self.file_paths = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith('.json')]
 
     def __iter__(self):
-        # 先计算数据量分配到每个进程中
         worker_info = torch.utils.data.get_worker_info()
         if worker_info is None:  # single-process data loading, return the full iterator
-            iter_start = 0
-            iter_end = None
+            file_paths = self.file_paths
         else:  # in a worker process
-            # 计算每个进程的分片
-            total_lines = self.data_size
-            per_worker = int(total_lines / worker_info.num_workers)
+            # split workload
+            per_worker = int(math.ceil(len(self.file_paths) / float(worker_info.num_workers)))
             worker_id = worker_info.id
-            iter_start = worker_id * per_worker
-            iter_end = iter_start + per_worker
-            if worker_id == worker_info.num_workers - 1:  # 最后一个工作进程
-                iter_end = total_lines
+            file_paths = self.file_paths[worker_id * per_worker:(worker_id + 1) * per_worker]
 
-        with open(self.args_dict['file_path'], 'r', encoding="utf-8") as f:
-            for i, line in enumerate(f):
-                if i >= iter_start and (iter_end is None or i < iter_end):
-                    yield self.process_line(line.strip())
-                elif i >= iter_end:
-                    break
-
-    def process_line(self, line):
-        sample = self.seqGraphDataProcess.process_data(line)
-        return sample
+        for file_path in file_paths:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+                # print("data", data)
+                yield data
 
 
-class SeqGraphDataProcess:
+class DataProcess:
     """
-    单条数据预处理类
+    数据预处理类
     """
 
     def __init__(self, args_dict):
         self.args_dict = args_dict
 
+    def uin_gangs_collate_fn(self, batch):
+        print("batch", len(batch))
+        batch_data = {}
+        batch_sample = []
+        batch_label = []
+        batch_graph = []
+        # batch_data["batch_sample"] = []
+        # batch_data["batch_label"] = []
+        # batch_data["batch_graph"] = []
+        for data in batch:
+            # 提取 label
+            sample = {}
+            sample["label"] = data["label"]
+            # 提取 subgraph_data
+            graph_schema = data["graph_schema"]
 
-    def process_data(self, json_str):
-        # 先将json字符串解析
-        data = json.loads(json_str)
+            # 提取节点信息
+            uin_src_node = []
+            uin_dst_node = []
+            for edge in graph_schema["edge_sets"]["uin-spread-uin"]["edges"]:
+                uin_src_node.append(int(edge["src_nodeid"]))
+                uin_dst_node.append(int(edge["dst_nodeid"]))
+            uin_src_node = torch.tensor(uin_src_node, dtype=torch.long)
+            uin_dst_node = torch.tensor(uin_dst_node, dtype=torch.long)
+            # 创建异构图
+            graph_data = {
+                ('uin', 'uin-spread-uin', 'uin'): (uin_src_node, uin_dst_node),
+            }
+            g = dgl.heterograph(graph_data)
+            # 提取节点特征
+            g.nodes['uin'].data['uin_number_feat'] = torch.tensor(
+                graph_schema["node_sets"]["uin"]["data"]["uin_number_feat"]["float_list"], dtype=torch.float32)
 
-        return data
+            sample["uin_number_feat_size"] = g.nodes['uin'].data['uin_number_feat'].size(1)
+            # print("sample[uin_number_feat_size]", sample["uin_number_feat_size"])
+
+            sample["uin_node_num"] = g.num_nodes("uin")
+            # print("sample[uin_node_num]", sample["uin_node_num"])
+
+            sample["subgraph_data"] = g
+            batch_sample.append(sample)
+            batch_label.append(int(data["label"]))
+            batch_graph.append(g)
+
+            batch_data["batch_label"] = torch.tensor(batch_label, dtype=torch.long)
+            batch_data["batch_graph"] = dgl.batch(batch_graph)
+
+        # print(batch_data["batch_label"])
+        print("dgl.batch(batch_graph)", dgl.batch(batch_graph))
+
+        return batch_data
