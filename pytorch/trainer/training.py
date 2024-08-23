@@ -179,6 +179,7 @@ class TrainSeqGraph:
                                                      reduction='mean',
                                                      max_zero_ratio=5,
                                                      mask=-1)
+        print(torch.tensor(data.label_weights).shape)
         self.model, self.optimizer, self.train_loader, self.test_loader = self.accelerator.prepare(model,
                                                                                                    optimizer,
                                                                                                    train_loader,

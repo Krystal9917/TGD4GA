@@ -30,11 +30,13 @@ class WeightedFocalLoss(nn.Module):
         super(WeightedFocalLoss, self).__init__()
         assert weight is not None, "weight parameter is required for WeightedFocalLoss"
         self.alpha = alpha
-        self.weight = weight
+        self.weight = weight.type(torch.float32)
         self.gamma = gamma
         self.reduction = reduction
 
     def forward(self, inputs, targets):
+        inputs = inputs.type(torch.float32)
+        targets = targets.type(torch.long)
         ce_loss = cross_entropy(inputs, targets, weight=self.weight, reduction='none')
         pt = torch.exp(-ce_loss)
         focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
@@ -58,7 +60,7 @@ class WeightedFocalBCELoss(nn.Module):
     def forward(self, inputs, targets):
         # Assume inputs are the logits
         inputs = inputs.type(torch.float32)
-        targets = targets.type(torch.float32)
+        targets = targets.type(torch.long)
         # bce_loss = binary_cross_entropy_with_logits(inputs, targets, pos_weight=self.weight, reduction='none')
         bce_loss = binary_cross_entropy(inputs, targets, weight=self.weight, reduction='none')
         pt = torch.exp(-bce_loss)  # Prevents nans when probability 0
@@ -100,20 +102,27 @@ class WeightedFocalBalanceBCELoss(nn.Module):
     def weighted_balance_cross_entropy_loss(self, y_pred, y_true):
         # 对y_true进行随机mask
         y_true = self.mask_target_to_balance_sample(y_true)
+        # print("y_true\n", y_true)
 
         # 确保 y_pred 的值在 (0, 1) 之间，避免 log(0) 的情况
-        epsilon = 1e-15
+        epsilon = 1e-7
         y_pred = torch.clamp(y_pred, epsilon, 1 - epsilon)
+        # print("y_pred\n", y_pred)
 
         # 计算交叉熵损失
         loss_matrix = - (y_true * torch.log(y_pred) + (1 - y_true) * torch.log(1 - y_pred))
+        # print("loss_matrix\n", loss_matrix)
 
         # 忽略y_true中为-1的部分
         mask = (y_true != self.mask).float()
+        # print("mask\n", mask)
         loss_matrix = loss_matrix * mask
+        # print("loss_matrix\n", loss_matrix)
 
         # 应用权重
         weighted_loss_matrix = loss_matrix * self.weight
+        # print("self.weight\n", self.weight)
+        # print("weighted_loss_matrix\n", weighted_loss_matrix)
 
         # 计算每行样本的损失
         sample_loss_row = torch.sum(weighted_loss_matrix, dim=1)
@@ -157,25 +166,34 @@ class WeightedFocalBalanceBCELoss(nn.Module):
 
 
 class InfoNCELoss(nn.Module):
-    def __init__(self, device, temperature=0.5, ignore_labels=None):
+    def __init__(self, temperature=0.5, ignore_labels=None):
         super(InfoNCELoss, self).__init__()
-        self.device = device
         self.temperature = temperature
         self.cosine_similarity = nn.CosineSimilarity(dim=-1)
         self.ignore_labels = set(ignore_labels) if ignore_labels else set()
 
     def forward(self, features, labels):
+        device = features.device
+        if features.shape[0] != labels.shape[0]:
+            raise ValueError(
+                f"The number of features and labels must be equal."
+                f" features.shape = {features.shape}, labels.shape = {labels.shape}")
+        # print("features", features.shape)
+        # print("labels", labels.shape)
         # 计算余弦相似度
         similarities = self.cosine_similarity(features.unsqueeze(1), features.unsqueeze(0)) / self.temperature
+        # print("similarities", similarities.shape)
 
         # Mask自身比较
         batch_size = features.shape[0]
-        mask = torch.eye(batch_size).bool().to(self.device)
+        mask = torch.eye(batch_size).bool().to(device)
         similarities.masked_fill_(mask, float('-inf'))
+        # print("similarities2", similarities.shape)
 
         # 创建标签矩阵
         labels_matrix = labels.unsqueeze(0) == labels.unsqueeze(1)
-        labels_matrix = labels_matrix.float().to(self.device)
+        labels_matrix = labels_matrix.float().to(device)
+        # print("labels_matrix", labels_matrix.shape)
 
         # 忽略特定标签的相同距离计算
         for label in self.ignore_labels:
@@ -183,28 +201,117 @@ class InfoNCELoss(nn.Module):
             labels_matrix.masked_fill_(label_mask & label_mask.transpose(0, 1), 0)
 
         # 应用softmax
-        exp_similarities = torch.exp(similarities).to(self.device)
-        sum_exp_similarities = torch.sum(exp_similarities * labels_matrix, dim=1)
+        epsilon = 1e-15
+        exp_similarities = torch.exp(similarities).to(device) + epsilon
+        # print("exp_similarities", exp_similarities)
+        sum_exp_similarities = torch.sum(exp_similarities * labels_matrix, dim=1) + epsilon
+        # print("sum_exp_similarities", sum_exp_similarities)
 
         # 计算损失
-        loss = -torch.log(sum_exp_similarities / torch.sum(exp_similarities, dim=1))
+        loss = -torch.log(sum_exp_similarities / (torch.sum(exp_similarities, dim=1)))
         return loss.mean()
 
 
+class InfoNCELossV2(nn.Module):
+    def __init__(self, temperature=0.5, ignore_labels=None):
+        super(InfoNCELossV2, self).__init__()
+        self.temperature = temperature
+        self.cosine_similarity = nn.CosineSimilarity(dim=-1)
+        self.ignore_labels = set(ignore_labels) if ignore_labels else set()
+
+    def forward(self, features, labels):
+        device = features.device
+        if features.shape[0] != labels.shape[0]:
+            raise ValueError(
+                f"The number of features and labels must be equal."
+                f" features.shape = {features.shape}, labels.shape = {labels.shape}")
+        # print("features", features.shape)
+        # print("labels", labels.shape)
+        # 计算余弦相似度
+        similarities = (self.cosine_similarity(features.unsqueeze(1), features.unsqueeze(0)) + 1.0) / 2.0
+        epsilon = 1e-7
+        similarities = torch.clamp(similarities, epsilon, 1 - epsilon).to(device)
+        # print("similarities\n", similarities)
+        # 创建标签矩阵
+        labels_matrix = labels.unsqueeze(0) == labels.unsqueeze(1)
+        labels_matrix = labels_matrix.int().to(device)
+
+        # 计算交叉熵损失
+        cross_loss_matrix = - (
+                labels_matrix * torch.log(similarities) + (1 - labels_matrix) * torch.log(1 - similarities))
+
+        # print("cross_loss_matrix\n", cross_loss_matrix)
+
+        # 创建掩码矩阵，忽略对角线自身的比较
+        mask = torch.ones_like(labels_matrix, dtype=torch.float)
+        torch.Tensor.fill_diagonal_(mask, 0)
+
+        # 更新掩码以忽略特定标签
+        for label in self.ignore_labels:
+            label_positions = (labels == label)
+            # 创建一个外积掩码，忽略特定标签的交叉点
+            label_mask = label_positions[:, None] & label_positions[None, :]
+            mask[label_mask] = 0
+
+        # print("mask\n", mask)
+
+        # 应用掩码
+        masked_loss = cross_loss_matrix * mask
+
+        # 计算损失
+        loss = torch.sum(masked_loss) / (torch.sum(mask) + epsilon)
+        return loss
+
+
+class InfoNCELossV3(nn.Module):
+    def __init__(self, temperature=1):
+        super(InfoNCELossV3, self).__init__()
+        self.temperature = temperature
+        self.cosine_similarity = nn.CosineSimilarity(dim=-1)
+
+    def forward(self, features, labels):
+        device = features.device
+        if features.shape[0] != labels.shape[0]:
+            raise ValueError(
+                f"The number of features and labels must be equal."
+                f" features.shape = {features.shape}, labels.shape = {labels.shape}")
+
+        # 计算余弦相似度
+        similarity_matrix = self.cosine_similarity(features.unsqueeze(1), features.unsqueeze(0)) / self.temperature
+        # print("similarity_matrix\n", similarity_matrix)
+
+        # 获取标签相同的掩码
+        labels = labels.contiguous().view(-1, 1)
+        mask = torch.eq(labels, labels.T).float().to(device)
+
+        # 对角线元素设置为0，忽略自身比较
+        mask.fill_diagonal_(0)
+        # print("mask\n", mask)
+
+        # 对相似度矩阵的每一行应用softmax，然后乘以标签掩码
+        exp_similarities = torch.exp(similarity_matrix) * mask
+        # print("exp_similarities\n", exp_similarities)
+        sum_exp_similarities = torch.sum(exp_similarities, dim=1, keepdim=True)
+        # print("sum_exp_similarities\n", sum_exp_similarities)
+
+        # 计算Log-Softmax
+        log_prob = similarity_matrix - torch.log(sum_exp_similarities + 1e-15)
+        # print("log_prob\n", log_prob)
+
+        # 仅考虑正样本（相同标签）的对数概率
+        positive_log_prob = (mask * log_prob).sum(1)
+        # print("positive_log_prob\n", positive_log_prob)
+
+        # 计算损失
+        loss = -positive_log_prob.mean()
+
+        return loss
+
+
 if __name__ == '__main__':
-    y_true = torch.tensor([
-        [1, 0],
-        [0, 1],
-        [0, 0],
-        [0, 0],
-    ], dtype=torch.float32)
-    y_pred = torch.tensor([
-        [0.1, 0.8],
-        [0.2, 0.8],
-        [0.3, 0.7],
-        [0.4, 0.6]
-    ], dtype=torch.float32)
-    sample_weights = torch.tensor([1, 200], dtype=torch.float32)
-    loss = WeightedFocalBalanceBCELoss(weight=sample_weights, alpha=0.25, gamma=2.0, reduction='mean',
-                                       max_zero_ratio=1.0, mask=-1)
-    print(loss(y_pred, y_true))
+    random_tensor_normal = torch.randn(6, 4)
+    labels = torch.tensor([0, 1, 2, 3, 0, 1])
+    y = nn.functional.one_hot(labels, 4)
+    weights = torch.tensor([0.1, 10, 15, 20])
+    loss = WeightedFocalBalanceBCELoss(weight=weights)(random_tensor_normal, y)
+    print(loss)

@@ -123,7 +123,7 @@ class DataProcessSeqGraph:
         logger.info("special_tokens: %s", self.special_tokens)
 
         # 读行为序列数据
-        user_seqs_df = pd.read_csv(args_dict['uin_seqs_path'], sep="<@@>", header="infer", encoding="utf-8")
+        user_seqs_df = pd.read_csv(args_dict['uin_seqs_path'], sep="<@@>", header="infer", encoding="utf-8").iloc[:2000,:]
         logger.info("dataset original size : %s", len(user_seqs_df))
         user_seqs_df = user_seqs_df.dropna()
         logger.info("dataset size : %s", len(user_seqs_df))

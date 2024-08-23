@@ -5,8 +5,11 @@ from logging.handlers import TimedRotatingFileHandler
 
 import numpy
 import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.datasets import make_blobs
+from sklearn.decomposition import PCA
 from sklearn.metrics import roc_curve, roc_auc_score, precision_score, recall_score, f1_score, confusion_matrix, \
-    precision_recall_curve, auc
+    precision_recall_curve, auc, silhouette_score
 from torch.utils.data import Dataset as tDataset
 from datetime import datetime
 import os
@@ -105,8 +108,7 @@ def get_indicator_of_mutil_cls_base_sigmoid(y_true: numpy.array, y_pred: numpy.a
     return roc_auc_scores, pr_auc_scores, precision_scores, recall_scores, f1_scores, confusion_mats
 
 
-def get_indicator_of_mutil_cls_base_softmax(y_true: np.array, y_pred: np.array, num_classes: int) -> Tuple[
-    Dict[int, float], Dict[int, Any], Dict[int, Any], Dict[int, Any], Any]:
+def get_indicator_of_mutil_cls_base_softmax(y_true, y_pred, num_classes):
     # y_true:(batch_size, 1) y_pred:(batch_size, n_classes_prob)
     y_pred_cls = np.argmax(y_pred, axis=1)
     # 计算 auc, precision, recall, f1, confusion_matrix
@@ -118,11 +120,11 @@ def get_indicator_of_mutil_cls_base_softmax(y_true: np.array, y_pred: np.array, 
     confusion_mats = confusion_matrix(y_true, y_pred_cls)
 
     for i in range(num_classes):
-        auc_scores[i] = roc_auc_score(np.eye(num_classes)[y_true.to_list()][:, i], y_pred[:, i])
+        auc_scores[i] = roc_auc_score(np.eye(num_classes)[y_true.tolist()][:, i], y_pred[:, i])
 
-    precision_per_class = precision_score(y_true, y_pred, average=None, zero_division=0.0)
-    recall_per_class = recall_score(y_true, y_pred, average=None, zero_division=0.0)
-    f1_score_per_class = f1_score(y_true, y_pred, average=None, zero_division=0.0)
+    precision_per_class = precision_score(y_true, y_pred_cls, average=None, zero_division=0.0)
+    recall_per_class = recall_score(y_true, y_pred_cls, average=None, zero_division=0.0)
+    f1_score_per_class = f1_score(y_true, y_pred_cls, average=None, zero_division=0.0)
     for i, (precision, recall, f1) in enumerate(zip(precision_per_class, recall_per_class, f1_score_per_class)):
         precision_scores[i] = precision
         recall_scores[i] = recall
@@ -146,9 +148,11 @@ def start_log():
     # file_handler = TimedRotatingFileHandler(os.path.abspath(
     #     os.path.join(os.path.dirname(__file__), os.path.pardir, "data", "log",
     #                  datetime.now().strftime("%Y%m%d%H%M%S") + ".log")), when='D', interval=1, backupCount=7)
-    file_handler = logging.FileHandler(os.path.abspath(
+    log_path = os.path.abspath(
         os.path.join(os.path.dirname(__file__), os.path.pardir, "data", "log",
-                     datetime.now().strftime("%Y%m%d%H%M%S") + ".log")))
+                     datetime.now().strftime("%Y%m%d")))
+    os.makedirs(log_path, exist_ok=True)
+    file_handler = logging.FileHandler((os.path.join(log_path, datetime.now().strftime("%Y%m%d%H%M%S") + ".log")))
     file_handler.setLevel(logging.INFO)
     file_formatter = logging.Formatter('[<%(asctime)s> <%(filename)s:%(lineno)d> %(levelname)s]\n %(message)s',
                                        datefmt='%Y-%m-%d %H:%M:%S')
@@ -195,9 +199,40 @@ def draw_and_save(x_dict, y_dict, save_path, title="标题"):
     plt.savefig(save_path)
 
 
+def draw_and_save_pca_pic(x, y, save_path=None, title="标题"):
+    """
+    绘制并保存PCA图
+    """
+    pca = PCA(n_components=2)
+    X_pca = pca.fit_transform(x)
+    # 可视化结果，使用标签来区分不同的点
+    plt.figure(figsize=(8, 6))
+    scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], c=y, cmap='viridis', edgecolor='k', s=150)
+    plt.title('uin_gangs_embedding')
+    plt.xlabel('uin_embedding')
+    plt.ylabel('exposed_label')
+    plt.colorbar(scatter)
+    plt.show()
+    plt.savefig(save_path)
+
+
+def eval_emb_with_knn(X, k=10):
+    kmeans = KMeans(n_clusters=k, n_init=10, random_state=42)
+    kmeans.fit(X)
+    # 计算轮廓系数
+    score = silhouette_score(X, kmeans.labels_)
+    return score
+
+
 if __name__ == '__main__':
-    x_dict = {"epoch": [1, 2, 3]}
-    y_dict = {"loss": [1, 2, 3],
-              "acc": [0.1, 0.2, 0.3]}
-    draw_and_save(x_dict, y_dict,
-                  "/mnt/chongqinggeminiceph1fs/geminicephfs/security-others-common/messizeng/nlp/mmgog_long_term_sequence_model/data/pic/test.png")
+    # 生成模拟数据
+    x = np.random.rand(4, 4)  # 生成一个4x16的随机矩阵
+    y = np.array([1, 2, 3, 0])
+    auc_scores, precision_scores, recall_scores, f1_scores, confusion_mats = get_indicator_of_mutil_cls_base_softmax(y,
+                                                                                                                     x,
+                                                                                                                     4)
+    print(auc_scores)
+    print(precision_scores)
+    print(recall_scores)
+    print(f1_scores)
+    print(confusion_mats)
