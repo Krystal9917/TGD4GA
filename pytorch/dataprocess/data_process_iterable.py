@@ -121,8 +121,8 @@ class UinGangsDataIterable(IterableDataset):
         # print("node_feat_shape", np.array(
         #     graph_schema["node_sets"]["uin"]["data"]["uin_number_feat"]["float_list"], dtype=np.float32).shape)
         # 提取节点特征
-        g.nodes['uin'].data['uin_number_feat'] = torch.from_numpy(np.array(
-            graph_schema["node_sets"]["uin"]["data"]["uin_number_feat"]["float_list"], dtype=np.float32)).float()
+        g.nodes['uin'].data['uin_number_feat'] = torch.from_numpy(1 - np.exp(-np.array(
+            graph_schema["node_sets"]["uin"]["data"]["uin_number_feat"]["float_list"], dtype=np.float32))).float()
 
         sample["uin_number_feat_size"] = g.nodes['uin'].data['uin_number_feat'].size(1)
         # print("sample[uin_number_feat_size]", sample["uin_number_feat_size"])

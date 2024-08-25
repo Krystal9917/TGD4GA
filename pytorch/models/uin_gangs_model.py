@@ -26,11 +26,12 @@ class WideDeepNet(nn.Module):
         super(WideDeepNet, self).__init__()
         self.wide = nn.Linear(n_feat, output_size)
         self.deep = nn.Sequential(
-            nn.Linear(n_feat, n_feat * 2),
-            nn.LeakyReLU(),
-            nn.Linear(n_feat * 2, output_size * 2),
-            nn.LeakyReLU(),
-            nn.Linear(output_size * 2, output_size)
+            nn.Linear(n_feat, output_size),
+            # nn.Linear(n_feat, n_feat * 2),
+            # nn.LeakyReLU(),
+            # nn.Linear(n_feat * 2, output_size * 2),
+            # nn.LeakyReLU(),
+            # nn.Linear(output_size * 2, output_size)
         )
 
     def forward(self, x):
@@ -38,6 +39,23 @@ class WideDeepNet(nn.Module):
         deep_out = self.deep(x)
         out = wide_out + deep_out
         return torch.sigmoid(out)
+
+
+class DNN(nn.Module):
+    def __init__(self, uin_in_size, uin_out_size, out_size):
+        super(DNN, self).__init__()
+        self.fc1 = nn.Linear(uin_in_size, uin_out_size)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(uin_out_size, uin_out_size)
+        self.fc3 = nn.Linear(uin_out_size, out_size)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        x = self.relu(x)
+        x = self.fc3(x)
+        return x
 
 
 class GNNLayer(nn.Module):
@@ -67,15 +85,17 @@ class UinGangsModel(nn.Module):
         self.uin_number_feat_model = WideDeepNet(uin_in_size, uin_out_size)
         self.gnn_layer1 = GNNLayer(uin_in_size, uin_out_size, drop_rate)
         # self.gnn_layer2 = GNNLayer(uin_hidden_size, uin_out_size)
-        self.mlp = nn.Linear(uin_out_size + uin_out_size, uin_out_size)
+        self.mlp = nn.Linear(uin_out_size, uin_out_size)
         self.classify_mlp = nn.Linear(uin_out_size, out_size)
 
     def forward(self, g):
-        node_feat_dict = {ntype: self.feat_scaler(g.nodes[ntype].data["uin_number_feat"]) for ntype in g.ntypes}
+        # node_feat_dict = {ntype: self.feat_scaler(g.nodes[ntype].data["uin_number_feat"]) for ntype in g.ntypes}
+        node_feat_dict = {ntype: g.nodes[ntype].data["uin_number_feat"] for ntype in g.ntypes}
         uin_out = self.uin_number_feat_model(node_feat_dict["uin"])
-        h_dict1 = self.gnn_layer1(g, node_feat_dict)
+        # h_dict1 = self.gnn_layer1(g, node_feat_dict)
         # h_dict2 = self.gnn_layer2(g, h_dict1)
-        out_emb = self.mlp(torch.cat([uin_out, h_dict1["uin"]], dim=1))
+        # out_emb = self.mlp(torch.cat([uin_out, h_dict1["uin"]], dim=1))
+        out_emb = uin_out
         classify_out = self.classify_mlp(out_emb)
         # classify_out = torch.sigmoid(classify_out)
         g.nodes["uin"].data["out_emb"] = out_emb

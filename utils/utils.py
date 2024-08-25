@@ -212,7 +212,7 @@ def draw_and_save_pca_pic(x, y, save_path=None, title="标题"):
     plt.xlabel('uin_embedding')
     plt.ylabel('exposed_label')
     plt.colorbar(scatter)
-    plt.show()
+    # plt.show()
     plt.savefig(save_path)
 
 

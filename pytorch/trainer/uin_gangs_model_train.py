@@ -69,11 +69,12 @@ class UinGangsModelTrain:
         #     reduction='mean',
         #     max_zero_ratio=1,
         #     mask=-1)
-        self.classify_criterion = WeightedFocalLoss(
-            weight=torch.tensor([1, 1, 1, 1, 1], dtype=torch.float32).to(self.device),
-            alpha=0.25,
-            gamma=2.0,
-            reduction='mean')
+        # self.classify_criterion = WeightedFocalLoss(
+        #     weight=torch.tensor([1, 1, 1, 1, 1], dtype=torch.float32).to(self.device),
+        #     alpha=0.25,
+        #     gamma=2.0,
+        #     reduction='mean')
+        self.classify_criterion = nn.CrossEntropyLoss()
         # criterion = InfoNCELossV3(temperature=self.train_dict["temperature"])
         # (self.model, self.optimizer, self.criterion, self.train_loader, self.test_loader) = (
         #     model, optimizer, criterion, train_loader, test_loader)
@@ -235,11 +236,12 @@ class UinGangsModelTrain:
             logger.info(detail_validation_info)
             logger.info("root_emb_list sample: \n %s", np.array(random.choices(test_root_emb_list, k=1)))
             logger.info("y_pred sample: \n %s", np.array(random.choices(y_pred, k=5)))
+            logger.info("test_label_list sample: \n %s", np.array(random.choices(test_label_list, k=5)))
 
     def setup_seed(self):
         torch.manual_seed(self.train_dict["seed"])
         torch.cuda.manual_seed(self.train_dict["seed"])
         torch.cuda.manual_seed_all(self.train_dict["seed"])
         np.random.seed(self.train_dict["seed"])
-        # random.seed(self.train_dict["seed"])
+        random.seed(self.train_dict["seed"])
         torch.backends.cudnn.deterministic = True
