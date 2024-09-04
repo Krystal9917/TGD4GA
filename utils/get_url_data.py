@@ -22,7 +22,7 @@ def download_url_content(url):
         return None
 
 
-def process_urls_from_file(input_file_path, output_file_path, max_workers=20):
+def process_urls_from_file(input_file_path, output_file_path, max_workers=64):
     with open(input_file_path, 'r') as file:
         urls = [line.strip() for line in file if line.strip()]
 
@@ -39,9 +39,9 @@ def process_urls_from_file(input_file_path, output_file_path, max_workers=20):
 if __name__ == '__main__':
     # args_dict = ArgsUinGangs().args_dict
     # 指定包含URL的文件路径和输出文件路径
-    train_input_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/train/240819_1/uin_gangs_train_dataset_train_240819_1.txt'
-    train_output_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/train/240819_1/uin_gangs_train_dataset_train_240819_1_20240820.txt'
+    train_input_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/train/240904_1/uin_gangs_train_dataset_train_240904_1.txt'
+    train_output_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/train/240904_1/uin_gangs_train_dataset_train_240904_1_20240904.txt'
     process_urls_from_file(train_input_file_path, train_output_file_path)
-    eval_input_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/eval/240819_1/uin_gangs_train_dataset_eval_240819_1.txt'
-    eval_output_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/eval/240819_1/uin_gangs_train_dataset_eval_240819_1_20240820.txt'
+    eval_input_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/eval/240904_1/uin_gangs_train_dataset_eval_240904_1.txt'
+    eval_output_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/eval/240904_1/uin_gangs_train_dataset_eval_240904_1_20240904.txt'
     process_urls_from_file(eval_input_file_path, eval_output_file_path)

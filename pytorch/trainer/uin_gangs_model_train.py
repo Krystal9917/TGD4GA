@@ -13,10 +13,10 @@ from torch import nn
 
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable import UinGangsDataIterable
 from mmgog_long_term_sequence_model.pytorch.models.LossFunction import InfoNCELoss, InfoNCELossV2, InfoNCELossV3, \
-    WeightedFocalBalanceBCELoss, WeightedFocalLoss
+    WeightedFocalBalanceBCELoss, WeightedFocalLoss, CosineEmbeddingLossModule
 from mmgog_long_term_sequence_model.pytorch.models.uin_gangs_model import UinGangsModel
 from mmgog_long_term_sequence_model.utils.utils import print_model_size, eval_emb_with_knn, draw_and_save_pca_pic, \
-    get_indicator_of_mutil_cls_base_sigmoid, get_indicator_of_mutil_cls_base_softmax
+    get_indicator_of_mutil_cls_base_sigmoid, get_indicator_of_mutil_cls_base_softmax, draw_and_save_loss_pic
 
 logger = logging.getLogger("my_logger")
 os.environ['DGLBACKEND'] = 'pytorch'
@@ -37,6 +37,7 @@ class UinGangsModelTrain:
             # self.device = self.accelerator.device
 
         self.model = UinGangsModel(  # device=self.device,
+            uin_acs_numberical_feat_dim=self.train_dict["uin_acs_numberical_feat_dim"],
             uin_in_size=self.train_dict["uin_in_size"],
             uin_out_size=self.train_dict["uin_out_size"],
             drop_rate=self.train_dict["drop_rate"],
@@ -62,15 +63,16 @@ class UinGangsModelTrain:
         # criterion = InfoNCELoss(temperature=self.train_dict["temperature"],
         #                         ignore_labels=[0])
         # self.criterion = InfoNCELossV2(temperature=self.train_dict["temperature"])
+        self.criterion = CosineEmbeddingLossModule(negative_positive_ratio=self.train_dict["negative_positive_ratio"])
         # self.classify_criterion = WeightedFocalBalanceBCELoss(
-        #     weight=torch.tensor([1, 1, 2, 10, 2], dtype=torch.float32).to(self.device),
+        #     weight=torch.tensor([1, 1, 1, 2, 3, 10], dtype=torch.float32).to(self.device),
         #     alpha=0.25,
         #     gamma=2.0,
         #     reduction='mean',
-        #     max_zero_ratio=1,
+        #     max_zero_ratio=5,
         #     mask=-1)
         # self.classify_criterion = WeightedFocalLoss(
-        #     weight=torch.tensor([1, 1, 1, 1, 1], dtype=torch.float32).to(self.device),
+        #     weight=torch.tensor([0.5, 0.5, 0.5, 1, 1, 1], dtype=torch.float32).to(self.device),
         #     alpha=0.25,
         #     gamma=2.0,
         #     reduction='mean')
@@ -85,6 +87,10 @@ class UinGangsModelTrain:
         self.setup_seed()
         logger.info("model parameter size: %s ", print_model_size(self.model))
         print(('-' * 20 + 'training' + '-' * 40)[:60])
+        x_dict = {"epoch": []}
+        y_dict = {"train_similarity_loss": [], "train_classify_loss": [],
+                  "train_silhouette_score": [], "test_similarity_loss": [],
+                  "test_classify_loss": [], "test_silhouette_score": []}
 
         for epoch in range(self.train_dict["n_epochs"]):
             self.model.train()
@@ -93,12 +99,14 @@ class UinGangsModelTrain:
             train_classify_loss = []
             train_root_emb_list = []
             train_label_list = []
+            x_dict["epoch"].append(epoch)
             for step, batch_data in enumerate(self.train_loader):
                 # print("batch_data", len(batch_data))
                 start_time = time.time()
                 batch_graph = batch_data["batch_graph"].to(self.device)
                 batch_label = batch_data["batch_label"].to(self.device)
-                batch_label_one_hot = nn.functional.one_hot(batch_label, 5).to(self.device)
+                # print("batch_label", batch_label)
+                batch_label_one_hot = nn.functional.one_hot(batch_label, self.train_dict["cls_num"]).to(self.device)
                 pre_batch_graph = self.model(batch_graph)
                 # 解pre_batch_graph，取每个graph的根节点的embedding
                 root_node_emb_list = [g.nodes["uin"].data["out_emb"][0] for g in dgl.unbatch(pre_batch_graph)]
@@ -108,9 +116,10 @@ class UinGangsModelTrain:
                 # print("root_node_emb", root_node_emb_list)
                 batch_root_emb = torch.stack(root_node_emb_list).to(self.device)
                 batch_root_classify_emb = torch.stack(root_node_classify_out_list).to(self.device)
-                # similarity_loss = self.criterion(batch_root_emb, batch_label)
+                similarity_loss = self.criterion(batch_root_emb, batch_label)
                 classify_loss = self.classify_criterion(batch_root_classify_emb, batch_label)
-                loss = classify_loss
+                loss = 5 * classify_loss + similarity_loss
+                # loss = classify_loss
                 # print("loss", loss)
 
                 self.optimizer.zero_grad()
@@ -120,7 +129,7 @@ class UinGangsModelTrain:
                 end_time = time.time()
                 # logger.info(f"The batch training took {end_time - start_time} seconds to complete.")
                 train_loss.append(loss.item())
-                # train_similarity_loss.append(similarity_loss.item())
+                train_similarity_loss.append(similarity_loss.item())
                 train_classify_loss.append(classify_loss.item())
                 train_root_emb_list.extend(batch_root_emb.detach().cpu().numpy().tolist())
                 train_label_list.extend(batch_label.detach().cpu().numpy().tolist())
@@ -140,7 +149,7 @@ class UinGangsModelTrain:
             train_label_counts = dict(zip(train_label_unique.tolist(), train_label_counts.tolist()))
 
             # 计算训练集轮廓系数
-            train_silhouette_score = eval_emb_with_knn(np.array(train_root_emb_list), k=5)
+            train_silhouette_score = eval_emb_with_knn(np.array(train_root_emb_list), k=self.train_dict["cls_num"])
 
             self.model.eval()
             test_loss = []
@@ -154,7 +163,7 @@ class UinGangsModelTrain:
                 for step, batch_data in enumerate(self.test_loader):
                     batch_graph = batch_data["batch_graph"].to(self.device)
                     batch_label = batch_data["batch_label"].to(self.device)
-                    batch_label_one_hot = nn.functional.one_hot(batch_label, 5).to(self.device)
+                    batch_label_one_hot = nn.functional.one_hot(batch_label, self.train_dict["cls_num"]).to(self.device)
                     y_onehot.extend(batch_label_one_hot.detach().cpu().numpy().tolist())
                     pre_batch_graph = self.model(batch_graph)
                     # 解pre_batch_graph，取每个graph的根节点的embedding
@@ -164,11 +173,12 @@ class UinGangsModelTrain:
                     batch_root_emb = torch.stack(root_node_emb_list).to(self.device)
                     batch_root_classify_emb = torch.stack(root_node_classify_out_list).to(self.device)
                     y_pred.extend(batch_root_classify_emb.detach().cpu().numpy().tolist())
-                    # similarity_loss = self.criterion(batch_root_emb, batch_label)
+                    similarity_loss = self.criterion(batch_root_emb, batch_label)
                     classify_loss = self.classify_criterion(batch_root_classify_emb, batch_label)
-                    loss = classify_loss
+                    loss = 5 * classify_loss + similarity_loss
+                    # loss = classify_loss
                     test_loss.append(loss.item())
-                    # test_similarity_loss.append(similarity_loss.item())
+                    test_similarity_loss.append(similarity_loss.item())
                     test_classify_loss.append(classify_loss.item())
                     test_root_emb_list.extend(batch_root_emb.detach().cpu().numpy().tolist())
                     test_label_list.extend(batch_label.detach().cpu().numpy().tolist())
@@ -179,12 +189,21 @@ class UinGangsModelTrain:
             test_label_counts = dict(zip(test_label_unique.tolist(), test_label_counts.tolist()))
 
             # 计算测试集轮廓系数
-            test_silhouette_score = eval_emb_with_knn(np.array(test_root_emb_list), k=5)
-            pca_pic_path = os.path.join(self.train_dict["pic_path"],
+            test_silhouette_score = eval_emb_with_knn(np.array(test_root_emb_list), k=self.train_dict["cls_num"])
+            pca_pic_path = os.path.join(self.train_dict["pic_path"], "pca",
                                         "pca_" + datetime.now().strftime("%Y%m%d%H%M%S") + ".png")
 
             draw_and_save_pca_pic(np.array(test_root_emb_list), test_label_list, save_path=pca_pic_path,
                                   title="uin_gangs")
+            y_dict["train_similarity_loss"].append(np.mean(train_similarity_loss))
+            y_dict["train_classify_loss"].append(np.mean(train_classify_loss))
+            y_dict["train_silhouette_score"].append(train_silhouette_score)
+            y_dict["test_similarity_loss"].append(np.mean(test_similarity_loss))
+            y_dict["test_classify_loss"].append(np.mean(test_classify_loss))
+            y_dict["test_silhouette_score"].append(test_silhouette_score)
+            loss_pic_path = os.path.join(self.train_dict["pic_path"], "loss",
+                                         "loss_curve_" + datetime.now().strftime("%Y%m%d%H%M%S") + ".png")
+            draw_and_save_loss_pic(x_dict=x_dict, y_dict=y_dict, save_path=loss_pic_path, title="loss curve")
 
             # if epoch % 10 == 0:
             detail_validation_info = "EPOCH %s : \n" \
@@ -194,8 +213,8 @@ class UinGangsModelTrain:
                                      "train_silhouette_score=%.6f, val_silhouette_score=%.6f \n" % (
                                          epoch,
                                          np.mean(train_loss), np.mean(test_loss),
-                                         # np.mean(train_similarity_loss), np.mean(test_similarity_loss),
-                                         0, 0,
+                                         np.mean(train_similarity_loss), np.mean(test_similarity_loss),
+                                         # 0, 0,
                                          np.mean(train_classify_loss), np.mean(test_classify_loss),
                                          train_silhouette_score, test_silhouette_score)
 
@@ -203,14 +222,13 @@ class UinGangsModelTrain:
             logger.info("The train label distribution is : \n %s", train_label_counts)
             logger.info("The test label distribution is : \n %s", test_label_counts)
 
-            thresholds = [0.8, 0.8, 0.8, 0.8, 0.8]
-
+            # thresholds = [self.train_dict["mul_cls_threshold"]] * self.train_dict["cls_num"]
+            #
             # roc_auc_scores, pr_auc_scores, precision_scores, recall_scores, f1_scores, confusion_mats = get_indicator_of_mutil_cls_base_sigmoid(
             #     np.array(y_onehot), np.array(y_pred), thresholds=thresholds)
-            auc_scores, precision_scores, recall_scores, f1_scores, confusion_mats = get_indicator_of_mutil_cls_base_softmax(
-                np.array(test_label_list), np.array(y_pred), 5)
-            # 分类指标
-            # for i in range(5):
+            #
+            # # 分类指标
+            # for i in range(self.train_dict["cls_num"]):
             #     label_class = self.test_data.uin_gangs_enum['label_class_enums'][i]
             #     class_info = f"Class {i} = {label_class}:" \
             #                  f" roc_auc = {roc_auc_scores[i]:.4f}," \
@@ -221,7 +239,9 @@ class UinGangsModelTrain:
             #                  f"confusion_matrix = \n {confusion_mats[i]} "
             #     detail_validation_info += "\n" + class_info
 
-            for i in range(5):
+            auc_scores, precision_scores, recall_scores, f1_scores, confusion_mats = get_indicator_of_mutil_cls_base_softmax(
+                np.array(test_label_list), np.array(y_pred), self.train_dict["cls_num"])
+            for i in range(self.train_dict["cls_num"]):
                 label_class = self.test_data.uin_gangs_enum['label_class_enums'][i]
                 class_info = f"Class {i} = {label_class}:" \
                              f" roc_auc = {auc_scores[i]:.4f}," \
@@ -234,9 +254,10 @@ class UinGangsModelTrain:
             detail_validation_info += "\n" + f"confusion_matrix = \n {confusion_mats}"
 
             logger.info(detail_validation_info)
-            logger.info("root_emb_list sample: \n %s", np.array(random.choices(test_root_emb_list, k=1)))
-            logger.info("y_pred sample: \n %s", np.array(random.choices(y_pred, k=5)))
-            logger.info("test_label_list sample: \n %s", np.array(random.choices(test_label_list, k=5)))
+            # logger.info("root_emb_list sample: \n %s", np.array(random.choices(test_root_emb_list, k=1)))
+            logger.info("y_pred sample: \n %s", np.array(random.choices(y_pred, k=self.train_dict["cls_num"])))
+            logger.info("test_label_list sample: \n %s",
+                        np.array(random.choices(test_label_list, k=2 * self.train_dict["cls_num"])))
 
     def setup_seed(self):
         torch.manual_seed(self.train_dict["seed"])

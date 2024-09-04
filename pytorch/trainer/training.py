@@ -17,7 +17,7 @@ from mmgog_long_term_sequence_model.pytorch.models.LossFunction import WeightedF
     WeightedFocalLoss, WeightedFocalBalanceBCELoss
 from mmgog_long_term_sequence_model.pytorch.models.basic_sequence_model import SeqBaseTransformer
 from mmgog_long_term_sequence_model.utils.utils import print_model_size, \
-    get_multi_cls_base_threshold_by_youden_index, get_indicator_of_mutil_cls_base_sigmoid, draw_and_save
+    get_multi_cls_base_threshold_by_youden_index, get_indicator_of_mutil_cls_base_sigmoid, draw_and_save_loss_pic
 from mmgog_long_term_sequence_model.pytorch.models.action_sequence_graph_model import SeqGraphUin2Uin
 from accelerate import Accelerator
 
@@ -282,7 +282,7 @@ class TrainSeqGraph:
 
         loss_pic_path = os.path.join(self.train_dict["pic_path"],
                                      "loss_curve_" + datetime.now().strftime("%Y%m%d%H%M%S") + ".png")
-        draw_and_save(x_dict=x_dict, y_dict=y_dict, save_path=loss_pic_path, title="loss curve")
+        draw_and_save_loss_pic(x_dict=x_dict, y_dict=y_dict, save_path=loss_pic_path, title="loss curve")
         return train_loss, test_loss
 
     def save_model_as_onnx(self, model):

@@ -8,8 +8,11 @@ import math
 import numpy as np
 import torch
 import yaml
+from sklearn.feature_extraction import FeatureHasher
 from torch.utils.data import IterableDataset
 import dgl
+
+from mmgog_long_term_sequence_model.utils.utils import min_max_scaler
 
 logger = logging.getLogger("my_logger")
 
@@ -106,8 +109,12 @@ class UinGangsDataIterable(IterableDataset):
         uin_src_node = []
         uin_dst_node = []
         for edge in graph_schema["edge_sets"]["uin-spread-uin"]["edges"]:
-            uin_src_node.append(int(edge["src_nodeid"]))
-            uin_dst_node.append(int(edge["dst_nodeid"]))
+            try:
+                uin_src_node.append(int(edge["src_nodeid"]))
+                uin_dst_node.append(int(edge["dst_nodeid"]))
+            except KeyError:
+                return None
+
         uin_src_node = torch.tensor(uin_src_node, dtype=torch.long)
         uin_dst_node = torch.tensor(uin_dst_node, dtype=torch.long)
         # 创建异构图
@@ -121,11 +128,22 @@ class UinGangsDataIterable(IterableDataset):
         # print("node_feat_shape", np.array(
         #     graph_schema["node_sets"]["uin"]["data"]["uin_number_feat"]["float_list"], dtype=np.float32).shape)
         # 提取节点特征
-        g.nodes['uin'].data['uin_number_feat'] = torch.from_numpy(1 - np.exp(-np.array(
-            graph_schema["node_sets"]["uin"]["data"]["uin_number_feat"]["float_list"], dtype=np.float32))).float()
+        # g.nodes['uin'].data['uin_acs_numberical_feat'] = torch.from_numpy(1 - np.exp(-np.array(
+        #     graph_schema["node_sets"]["uin"]["data"]["uin_acs_numberical_feat"]["float_list"],
+        #     dtype=np.float32))).float()
 
-        sample["uin_number_feat_size"] = g.nodes['uin'].data['uin_number_feat'].size(1)
-        # print("sample[uin_number_feat_size]", sample["uin_number_feat_size"])
+        # 数值特征
+        g.nodes['uin'].data['uin_acs_numberical_feat'] = torch.from_numpy(np.array(
+            graph_schema["node_sets"]["uin"]["data"]["uin_acs_numberical_feat"]["float_list"],
+            dtype=np.float32)).float()
+
+        # 类别特征
+        hasher = FeatureHasher(n_features=self.args_dict["uin_acs_categorical_feat_hasher_dim"], input_type='string')
+        g.nodes['uin'].data['uin_acs_categorical_feat'] = torch.from_numpy(hasher.transform(np.array(
+            graph_schema["node_sets"]["uin"]["data"]["uin_acs_categorical_feat"]["string_list"])).toarray()).float()
+
+        sample["uin_acs_numberical_feat_size"] = g.nodes['uin'].data['uin_acs_numberical_feat'].size(1)
+        # print("sample[uin_number_feat_size]", sample["uin_acs_numberical_feat_size"])
 
         sample["uin_node_num"] = g.num_nodes("uin")
         # print("sample[uin_node_num]", sample["uin_node_num"])
@@ -151,7 +169,12 @@ class UinGangsDataIterable(IterableDataset):
         batch_data["batch_label"] = torch.tensor(batch_label, dtype=torch.long)
         batch_data["batch_graph"] = dgl.batch(batch_graph)
 
+        # # 数值特征要统一处理
+        # batch_data["batch_graph"].nodes['uin'].data['uin_acs_numberical_feat'] = min_max_scaler(
+        #     batch_data["batch_graph"].nodes['uin'].data['uin_acs_numberical_feat'])
+
         end_time = time.time()
         # logger.info(f"The batch collate_fn took {end_time - start_time} seconds to complete.")
+        # print("batch_data", batch_data["batch_graph"].nodes['uin'].data['uin_acs_numberical_feat'])
 
         return batch_data

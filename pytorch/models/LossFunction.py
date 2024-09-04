@@ -180,6 +180,8 @@ class InfoNCELoss(nn.Module):
                 f" features.shape = {features.shape}, labels.shape = {labels.shape}")
         # print("features", features.shape)
         # print("labels", labels.shape)
+        # 归一化
+        features = nn.functional.normalize(features, dim=1)
         # 计算余弦相似度
         similarities = self.cosine_similarity(features.unsqueeze(1), features.unsqueeze(0)) / self.temperature
         # print("similarities", similarities.shape)
@@ -227,6 +229,8 @@ class InfoNCELossV2(nn.Module):
                 f" features.shape = {features.shape}, labels.shape = {labels.shape}")
         # print("features", features.shape)
         # print("labels", labels.shape)
+        # 归一化
+        features = nn.functional.normalize(features, dim=1)
         # 计算余弦相似度
         similarities = (self.cosine_similarity(features.unsqueeze(1), features.unsqueeze(0)) + 1.0) / 2.0
         epsilon = 1e-7
@@ -308,10 +312,66 @@ class InfoNCELossV3(nn.Module):
         return loss
 
 
+class CosineEmbeddingLossModule(nn.Module):
+    def __init__(self, negative_positive_ratio=1.0):
+        super(CosineEmbeddingLossModule, self).__init__()
+        self.negative_positive_ratio = negative_positive_ratio
+        self.loss_fn = nn.CosineEmbeddingLoss(margin=0.5)
+
+    def forward(self, features, labels):
+        # 归一化特征向量
+        normalized_features = nn.functional.normalize(features, p=2, dim=1)
+        features1, features2, targets = self.create_pairs(normalized_features, labels)
+        features1, features2, targets = self.balance_pairs(features1, features2, targets)
+        loss = self.loss_fn(features1, features2, targets)
+        return loss
+
+    def create_pairs(self, features, labels):
+        n = labels.size(0)
+        indices = torch.combinations(torch.arange(n), r=2)
+        features1 = features[indices[:, 0]]
+        features2 = features[indices[:, 1]]
+        labels1 = labels[indices[:, 0]]
+        labels2 = labels[indices[:, 1]]
+        targets = (labels1 == labels2).long() * 2 - 1  # True/False to 1/-1
+        return features1, features2, targets
+
+    def balance_pairs(self, features1, features2, targets):
+        positive_indices = targets == 1
+        negative_indices = targets == -1
+
+        num_positives = positive_indices.sum()
+        num_negatives = negative_indices.sum()
+
+        # 检查是否有足够的正负样本对
+        if num_positives == 0 or num_negatives == 0:
+            print("Warning: Not enough positive or negative pairs.")
+            # 可以选择返回一个特定的损失值，例如0或一个很大的数
+            return features1[:0], features2[:0], targets[:0]  # 返回空张量以避免计算损失
+
+        # 限制选择的样本对数量不超过存在的样本对数量
+        max_positive_pairs = num_positives
+        max_negative_pairs = int(min(num_negatives, self.negative_positive_ratio * max_positive_pairs))
+
+        # 随机选择正负样本对
+        positives = torch.randperm(num_positives)[:max_positive_pairs]
+        negatives = torch.randperm(num_negatives)[:max_negative_pairs]
+
+        # 获取平衡后的索引
+        balanced_positive_indices = positive_indices.nonzero().squeeze(1)[positives]
+        balanced_negative_indices = negative_indices.nonzero().squeeze(1)[negatives]
+        balanced_indices = torch.cat((balanced_positive_indices, balanced_negative_indices), dim=0)
+
+        return features1[balanced_indices], features2[balanced_indices], targets[balanced_indices]
+
+
 if __name__ == '__main__':
-    random_tensor_normal = torch.randn(6, 4)
-    labels = torch.tensor([0, 1, 2, 3, 0, 1])
-    y = nn.functional.one_hot(labels, 4)
-    weights = torch.tensor([0.1, 10, 15, 20])
-    loss = WeightedFocalBalanceBCELoss(weight=weights)(random_tensor_normal, y)
-    print(loss)
+    features = torch.randn(10, 128)  # 10个样本，每个样本128维
+    labels = torch.tensor([1, 1, 2, 2, 1, 3, 3, 3, 2, 1])
+
+    # 创建模型实例
+    model = CosineEmbeddingLossModule(negative_positive_ratio=20)
+
+    # 计算损失
+    loss = model(features, labels)
+    print("Loss:", loss.item())

@@ -32,6 +32,15 @@ def print_model_size(model):
     return total_params
 
 
+def min_max_scaler(tensor, epsilon=1e-10):
+    min_vals = torch.min(tensor, dim=0).values
+    max_vals = torch.max(tensor, dim=0).values
+    range_vals = max_vals - min_vals
+    # print("range_vals:", range_vals)
+    scaled_tensor = (tensor - min_vals) / (range_vals + epsilon)  # 添加epsilon避免除以零
+    return scaled_tensor
+
+
 def pad_zero_or_truncat(seq, max_len, padding_elem):
     """
     对序列截断或补足
@@ -181,7 +190,7 @@ def export_requirements(output_path):
         print(f"An error occurred while exporting requirements: {e}")
 
 
-def draw_and_save(x_dict, y_dict, save_path, title="标题"):
+def draw_and_save_loss_pic(x_dict, y_dict, save_path, title="标题"):
     """
     绘制并保存折线图
     """
@@ -197,6 +206,7 @@ def draw_and_save(x_dict, y_dict, save_path, title="标题"):
     plt.legend()
     plt.grid(True)
     plt.savefig(save_path)
+    plt.close()
 
 
 def draw_and_save_pca_pic(x, y, save_path=None, title="标题"):
@@ -214,6 +224,7 @@ def draw_and_save_pca_pic(x, y, save_path=None, title="标题"):
     plt.colorbar(scatter)
     # plt.show()
     plt.savefig(save_path)
+    plt.close()
 
 
 def eval_emb_with_knn(X, k=10):
