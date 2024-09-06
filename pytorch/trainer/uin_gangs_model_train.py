@@ -3,6 +3,9 @@ import logging
 import os
 import time
 
+logger = logging.getLogger("my_logger")
+os.environ['DGLBACKEND'] = 'pytorch'
+
 import dgl
 import numpy as np
 import random
@@ -10,6 +13,7 @@ import torch
 import torch.utils.data as Data
 from accelerate import Accelerator
 from torch import nn
+from transformers import AutoTokenizer, BertModel
 
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable import UinGangsDataIterable
 from mmgog_long_term_sequence_model.pytorch.models.LossFunction import InfoNCELoss, InfoNCELossV2, InfoNCELossV3, \
@@ -17,9 +21,6 @@ from mmgog_long_term_sequence_model.pytorch.models.LossFunction import InfoNCELo
 from mmgog_long_term_sequence_model.pytorch.models.uin_gangs_model import UinGangsModel
 from mmgog_long_term_sequence_model.utils.utils import print_model_size, eval_emb_with_knn, draw_and_save_pca_pic, \
     get_indicator_of_mutil_cls_base_sigmoid, get_indicator_of_mutil_cls_base_softmax, draw_and_save_loss_pic
-
-logger = logging.getLogger("my_logger")
-os.environ['DGLBACKEND'] = 'pytorch'
 
 
 class UinGangsModelTrain:
@@ -38,6 +39,7 @@ class UinGangsModelTrain:
 
         self.model = UinGangsModel(  # device=self.device,
             uin_acs_numberical_feat_dim=self.train_dict["uin_acs_numberical_feat_dim"],
+            uin_acs_text_feat_dim=self.train_dict["uin_acs_text_feat_dim"],
             uin_in_size=self.train_dict["uin_in_size"],
             uin_out_size=self.train_dict["uin_out_size"],
             drop_rate=self.train_dict["drop_rate"],
@@ -45,6 +47,16 @@ class UinGangsModelTrain:
             # uin_hidden_size=self.train_dict["uin_hidden_size"],
         )
         self.model.to(self.device)
+
+        # 预训练的文本embedding模型
+        # self.minirbt_tokenizer = AutoTokenizer.from_pretrained(self.train_dict["minirbt_path"])
+        self.minirbt_model = BertModel.from_pretrained(self.train_dict["minirbt_path"]).to(self.device)
+        # 冻结文本模型的参数
+        minirbt_model_params_size = 0
+        for param in self.minirbt_model.parameters():
+            param.requires_grad = False
+            minirbt_model_params_size += param.numel()
+        logger.info("minirbt_model params size: %s", minirbt_model_params_size)
 
         self.train_data = UinGangsDataIterable(self.train_dict, self.train_dict["train_data_path"])
         # logger.info("train_data.label_caculator:\n %s", train_data.label_caculator)
@@ -63,7 +75,8 @@ class UinGangsModelTrain:
         # criterion = InfoNCELoss(temperature=self.train_dict["temperature"],
         #                         ignore_labels=[0])
         # self.criterion = InfoNCELossV2(temperature=self.train_dict["temperature"])
-        self.criterion = CosineEmbeddingLossModule(negative_positive_ratio=self.train_dict["negative_positive_ratio"])
+        self.criterion = CosineEmbeddingLossModule(
+            negative_positive_ratio=self.train_dict["negative_positive_ratio"]).to(self.device)
         # self.classify_criterion = WeightedFocalBalanceBCELoss(
         #     weight=torch.tensor([1, 1, 1, 2, 3, 10], dtype=torch.float32).to(self.device),
         #     alpha=0.25,
@@ -103,7 +116,17 @@ class UinGangsModelTrain:
             for step, batch_data in enumerate(self.train_loader):
                 # print("batch_data", len(batch_data))
                 start_time = time.time()
+                batch_uin_acs_text_feat_input_ids = torch.cat(batch_data["batch_uin_acs_text_feat_input_ids"],
+                                                              dim=0).to(self.device)
+                batch_uin_acs_text_feat_attention_mask = torch.cat(batch_data["batch_uin_acs_text_feat_attention_mask"],
+                                                                   dim=0).to(self.device)
+                with torch.no_grad():
+                    uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
+                                                           batch_uin_acs_text_feat_attention_mask).pooler_output
+
                 batch_graph = batch_data["batch_graph"].to(self.device)
+                # 补充uin类型节点的文本特征
+                batch_graph.nodes['uin'].data['uin_acs_text_feat'] = uin_acs_text_feat
                 batch_label = batch_data["batch_label"].to(self.device)
                 # print("batch_label", batch_label)
                 batch_label_one_hot = nn.functional.one_hot(batch_label, self.train_dict["cls_num"]).to(self.device)
@@ -161,7 +184,18 @@ class UinGangsModelTrain:
             y_pred = []
             with torch.no_grad():
                 for step, batch_data in enumerate(self.test_loader):
+                    batch_uin_acs_text_feat_input_ids = torch.cat(batch_data["batch_uin_acs_text_feat_input_ids"],
+                                                                  dim=0).to(self.device)
+                    batch_uin_acs_text_feat_attention_mask = torch.cat(
+                        batch_data["batch_uin_acs_text_feat_attention_mask"],
+                        dim=0).to(self.device)
+                    with torch.no_grad():
+                        uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
+                                                               batch_uin_acs_text_feat_attention_mask).pooler_output
+
                     batch_graph = batch_data["batch_graph"].to(self.device)
+                    # 补充uin类型节点的文本特征
+                    batch_graph.nodes['uin'].data['uin_acs_text_feat'] = uin_acs_text_feat
                     batch_label = batch_data["batch_label"].to(self.device)
                     batch_label_one_hot = nn.functional.one_hot(batch_label, self.train_dict["cls_num"]).to(self.device)
                     y_onehot.extend(batch_label_one_hot.detach().cpu().numpy().tolist())

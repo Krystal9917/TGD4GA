@@ -1,7 +1,9 @@
+import os
+
 import torch
 from torch import nn
 import dgl
-
+os.environ['DGLBACKEND'] = 'pytorch'
 
 class FeatScaler(nn.Module):
     """
@@ -38,6 +40,20 @@ class WideDeepNet(nn.Module):
         return nn.functional.leaky_relu(out)
 
 
+class DNN(nn.Module):
+    def __init__(self, input_size, output_size):
+        super(DNN, self).__init__()
+        self.fc1 = nn.Linear(input_size, input_size * 2)
+        self.fc2 = nn.Linear(input_size * 2, output_size * 2)
+        self.fc3 = nn.Linear(output_size * 2, output_size)
+
+    def forward(self, x):
+        x = nn.functional.leaky_relu(self.fc1(x))
+        x = nn.functional.leaky_relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+
 class GNNLayer(nn.Module):
     def __init__(self, uin_in_size, uin_out_size, drop_rate):
         super(GNNLayer, self).__init__()
@@ -59,23 +75,27 @@ class GNNLayer(nn.Module):
 
 
 class UinGangsModel(nn.Module):
-    def __init__(self, uin_acs_numberical_feat_dim, uin_in_size, uin_out_size, out_size, drop_rate):
+    def __init__(self, uin_acs_numberical_feat_dim, uin_acs_text_feat_dim, uin_in_size, uin_out_size, out_size,
+                 drop_rate):
         super(UinGangsModel, self).__init__()
         self.feat_scaler = FeatScaler(uin_acs_numberical_feat_dim)
+        self.dnn = DNN(uin_acs_text_feat_dim, uin_out_size)
         self.uin_number_feat_model = WideDeepNet(uin_in_size, uin_out_size, drop_rate)
         self.gnn_layer1 = GNNLayer(uin_in_size, uin_out_size, drop_rate)
         # self.gnn_layer2 = GNNLayer(uin_hidden_size, uin_out_size)
-        self.mlp = nn.Linear(uin_out_size + uin_out_size, uin_out_size)
+        self.mlp = nn.Linear(uin_out_size + uin_out_size + uin_out_size, uin_out_size)
         self.classify_mlp = nn.Linear(uin_out_size, out_size)
 
     def forward(self, g):
-        node_feat_dict = {ntype: torch.concat([self.feat_scaler(g.nodes[ntype].data["uin_acs_numberical_feat"]),
-                                               g.nodes[ntype].data["uin_acs_categorical_feat"]], dim=1) for
+        node_feat_dict = {ntype: torch.cat([self.feat_scaler(g.nodes[ntype].data["uin_acs_numberical_feat"]),
+                                            g.nodes[ntype].data["uin_acs_categorical_feat"],
+                                            g.nodes[ntype].data["uin_acs_text_feat"]], dim=1) for
                           ntype in g.ntypes}
         uin_out = self.uin_number_feat_model(node_feat_dict["uin"])
+        text_out = self.dnn(g.nodes["uin"].data["uin_acs_text_feat"])
         h_dict1 = self.gnn_layer1(g, node_feat_dict)
         # h_dict2 = self.gnn_layer2(g, h_dict1)
-        out_emb = self.mlp(torch.cat([uin_out, h_dict1["uin"]], dim=1))
+        out_emb = self.mlp(torch.cat([uin_out, h_dict1["uin"], text_out], dim=1))
         mid_out = nn.functional.leaky_relu(out_emb)
         classify_out = self.classify_mlp(mid_out)
         # classify_out = torch.sigmoid(classify_out)
