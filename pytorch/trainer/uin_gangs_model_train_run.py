@@ -48,8 +48,8 @@ class ArgsUinGangs:
         parser.add_argument('--minirbt_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
         parser.add_argument('--best_loss', type=float, default=0.001)
-        parser.add_argument('--cls_num', type=int, default=6)
-        parser.add_argument('--out_size', type=int, default=6)
+        parser.add_argument('--cls_num', type=int, default=19)
+        parser.add_argument('--out_size', type=int, default=19)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
         parser.add_argument('--mul_cls_threshold', type=int, default=0.9)
         parser.add_argument('--batch_size', type=int, default=64)

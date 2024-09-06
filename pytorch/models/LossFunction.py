@@ -323,7 +323,12 @@ class CosineEmbeddingLossModule(nn.Module):
         normalized_features = nn.functional.normalize(features, p=2, dim=1)
         features1, features2, targets = self.create_pairs(normalized_features, labels)
         features1, features2, targets = self.balance_pairs(features1, features2, targets)
-        loss = self.loss_fn(features1, features2, targets)
+
+        # todo: 这里不是最优做法，应该直接忽略整个batch的计算
+        loss = torch.tensor(0.0, dtype=torch.float, device=features1.device)
+        if features1.size(0) > 0 and features2.size(0) > 0:
+            loss = self.loss_fn(features1, features2, targets)
+
         return loss
 
     def create_pairs(self, features, labels):

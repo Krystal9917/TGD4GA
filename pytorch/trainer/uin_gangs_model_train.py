@@ -224,6 +224,7 @@ class UinGangsModelTrain:
 
             # 计算测试集轮廓系数
             test_silhouette_score = eval_emb_with_knn(np.array(test_root_emb_list), k=self.train_dict["cls_num"])
+            os.makedirs(os.path.join(self.train_dict["pic_path"], "pca"), exist_ok=True)
             pca_pic_path = os.path.join(self.train_dict["pic_path"], "pca",
                                         "pca_" + datetime.now().strftime("%Y%m%d%H%M%S") + ".png")
 
@@ -235,6 +236,7 @@ class UinGangsModelTrain:
             y_dict["test_similarity_loss"].append(np.mean(test_similarity_loss))
             y_dict["test_classify_loss"].append(np.mean(test_classify_loss))
             y_dict["test_silhouette_score"].append(test_silhouette_score)
+            os.makedirs(os.path.join(self.train_dict["pic_path"], "loss"), exist_ok=True)
             loss_pic_path = os.path.join(self.train_dict["pic_path"], "loss",
                                          "loss_curve_" + datetime.now().strftime("%Y%m%d%H%M%S") + ".png")
             draw_and_save_loss_pic(x_dict=x_dict, y_dict=y_dict, save_path=loss_pic_path, title="loss curve")
