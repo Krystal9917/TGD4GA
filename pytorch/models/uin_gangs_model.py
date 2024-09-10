@@ -3,7 +3,9 @@ import os
 import torch
 from torch import nn
 import dgl
+
 os.environ['DGLBACKEND'] = 'pytorch'
+
 
 class FeatScaler(nn.Module):
     """

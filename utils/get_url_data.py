@@ -41,8 +41,8 @@ if __name__ == '__main__':
     # args_dict = ArgsUinGangs().args_dict
     # 指定包含URL的文件路径和输出文件路径
     train_input_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/train/240904_2/uin_gangs_train_dataset_train_240904_2.txt'
-    train_output_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/train/240904_2/uin_gangs_train_dataset_train_240904_2_20240906.txt'
+    train_output_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/train/240904_2/uin_gangs_train_dataset_train_240904_2_20240907.txt'
     process_urls_from_file(train_input_file_path, train_output_file_path)
     eval_input_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/eval/240904_2/uin_gangs_train_dataset_eval_240904_2.txt'
-    eval_output_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/eval/240904_2/uin_gangs_train_dataset_eval_240904_2_20240906.txt'
+    eval_output_file_path = '/mnt/cephfs/messizeng/nlp/mmgog_long_term_sequence_model/data/uin_gangs_train_dataset/eval/240904_2/uin_gangs_train_dataset_eval_240904_2_20240907.txt'
     process_urls_from_file(eval_input_file_path, eval_output_file_path)

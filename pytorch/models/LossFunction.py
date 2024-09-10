@@ -370,13 +370,84 @@ class CosineEmbeddingLossModule(nn.Module):
         return features1[balanced_indices], features2[balanced_indices], targets[balanced_indices]
 
 
+class MultiLabelClassifyBaseBCE(nn.Module):
+    def __init__(self, alpha=0.25, gamma=2.0, target_ratio=5, reduction='mean', weights=None):
+        super(MultiLabelClassifyBaseBCE, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.target_ratio = target_ratio
+        self.reduction = reduction
+        self.weights = nn.Parameter(weights.type(torch.float32))
+
+    def forward(self, inputs, targets):
+        n_class = targets.shape[1]
+
+        loss_list = []
+
+        for class_index in range(n_class):
+            # 采样后的标签和预测
+            sample_preds, sample_labels = self.down_sample_per_label(inputs, targets, class_index)
+            loss_list.append(self.focal_loss(sample_preds, sample_labels))
+
+        total_loss = self.weights * torch.stack(loss_list)
+
+        return total_loss.sum()
+
+    def down_sample_per_label(self, inputs, targets, class_index):
+        class_labels = targets[:, class_index]
+        class_preds = inputs[:, class_index]
+
+        positive_indices = torch.where(class_labels == 1)[0]
+        negative_indices = torch.where(class_labels == 0)[0]
+
+        # 检查正样本或负样本是否为空
+        if len(positive_indices) == 0 or len(negative_indices) == 0:
+            # 如果任一类样本为空，则不进行采样，直接使用现有样本
+            sample_preds, sample_labels = class_preds.type(torch.float32), class_labels.type(torch.float32)
+            return sample_preds, sample_labels
+
+        # 计算需要保留的负类样本数量
+        if len(negative_indices) > self.target_ratio * len(positive_indices):
+            n_neg_keep = self.target_ratio * len(positive_indices)
+            negative_indices = negative_indices[torch.randperm(len(negative_indices))[:int(n_neg_keep)]]
+
+        # 合并索引并排序
+        indices = torch.cat([positive_indices, negative_indices])
+        indices = indices[torch.randperm(len(indices))]
+
+        # 存储采样后的标签和预测
+        sample_preds, sample_labels = class_preds[indices].type(torch.float32), class_labels[indices].type(
+            torch.float32)
+
+        return sample_preds, sample_labels
+
+    def focal_loss(self, inputs, targets):
+        # 输入 inputs 是模型的原始输出，未经过 sigmoid 函数
+        # targets 是同样形状的标签，值为 0 或 1
+        BCE_loss = binary_cross_entropy_with_logits(inputs, targets, reduction='none')
+
+        # 计算 p_t
+        pt = torch.exp(-BCE_loss)  # 如果使用 BCELoss，pt = exp(-BCE) = p if y=1 else 1-p
+
+        # 计算 Focal Loss
+        focal_loss = self.alpha * (1 - pt) ** self.gamma * BCE_loss
+
+        if self.reduction == 'mean':
+            return torch.mean(focal_loss)
+        elif self.reduction == 'sum':
+            return torch.sum(focal_loss)
+        else:
+            return focal_loss
+
+
 if __name__ == '__main__':
-    features = torch.randn(10, 128)  # 10个样本，每个样本128维
-    labels = torch.tensor([1, 1, 2, 2, 1, 3, 3, 3, 2, 1])
+    labels = torch.randint(0, 2, (10, 5))  # 随机生成一些标签数据
+    features = torch.rand(10, 5)  # 随机生成一些预测数据
+    weights = torch.tensor([5, 10, 15, 20, 25])
 
     # 创建模型实例
-    model = CosineEmbeddingLossModule(negative_positive_ratio=20)
+    model = MultiLabelClassifyBaseBCE(weights=weights)
 
     # 计算损失
     loss = model(features, labels)
-    print("Loss:", loss.item())
+    print("Loss:", loss)

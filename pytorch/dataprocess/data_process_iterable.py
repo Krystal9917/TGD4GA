@@ -34,6 +34,11 @@ class UinGangsDataIterable(IterableDataset):
         # 获取每个类别标签的数量上限
         self.label_class_amount_upper_limit_dict = self.uin_gangs_enum["label_class_amount_upper_limit"]
 
+        # 获取每个类别标签的样本权重
+        self.label_class_weight_dict = self.uin_gangs_enum["label_class_weight"]
+        self.label_class_weight = torch.tensor(
+            [self.label_class_weight_dict[key] for key in range(len(self.label_class_weight_dict))])
+
         # 读取所有行号并随机打乱
         with open(self.file_path, 'r', encoding="utf-8") as file:
             self.line_indices = list(range(sum(1 for _ in file)))
