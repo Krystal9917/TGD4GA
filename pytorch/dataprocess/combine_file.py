@@ -17,7 +17,7 @@ def combine_supervise_file(in_dir, file1_name, file2_name, out_dir, outfile_name
             line_indices = list(range(sum(1 for _ in infile2)))
             random.shuffle(line_indices)
             print(f"Normal lines: {len(line_indices)}")
-            line_indices = line_indices[:infile1_len]
+            line_indices = line_indices[:(297-19)]
             print(line_indices)
 
         # Read from the second file and write to the output file
@@ -71,19 +71,28 @@ def read_file(in_dir, infile_name):
     with open(in_dir + infile_name, 'r') as f:
         for i, line in enumerate(f):
             data = json.loads(line)
-            if '团伙' in data['gangs_label']:
-                gang_list.append(i)
+            if 'gangs_label' in data.keys():
+                if '团伙' in data['gangs_label']:
+                    gang_list.append(i)
+                else:
+                    normal_list.append(i)
             else:
                 normal_list.append(i)
     print(len(gang_list), len(normal_list))
 
 if __name__ == '__main__':
     path_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/valid/raw/'
-    file1 = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241211.txt'
-    # file2 = 'uin_gangs_full_graph_dataset_train_241120_20241119.txt'
-    # file3 = 'uin_gangs_full_graph_dataset_train_241121_20241119.txt'
-    # output_file = 'uin_gangs_full_graph_dataset_train_241119_241121.txt'
-    # out_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/train/processed/'
-    # train_file = 'uin_gangs_supervise_full_graph_dataset_train_241204_20241204.txt'
-    # test_file = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt'
-    read_file(path_dir, file1)
+    # file1 = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241211.txt'
+    file2 = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241211.txt'
+    file3 = 'uin_gangs_supervise_full_graph_dataset_eval_normal_subgraphs.txt'
+    output_file = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_combined.txt'
+    out_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/valid/processed/'
+    train_file = 'uin_gangs_supervise_full_graph_dataset_train_241204_20241204.txt'
+    test_file = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt'
+    # read_file(path_dir, file1)
+
+    # combine_supervise_file(path_dir, file2, file3, path_dir, output_file)
+
+    # split_data(path_dir, output_file, out_dir, train_file, test_file)
+
+    read_file(out_dir, train_file)
