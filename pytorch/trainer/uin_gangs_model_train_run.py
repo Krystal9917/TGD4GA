@@ -23,21 +23,21 @@ class ArgsUinGangs:
         parser = argparse.ArgumentParser()
         parser.add_argument('--ds', type=str, default="")
         parser.add_argument('--train_data_url_path', type=str, default=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "uin_gangs_train_dataset",
+            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "uin_gangs_full_graph_dataset",
                          "train",
-                         "240904_2", "uin_gangs_train_dataset_train_240904_2.txt")))
+                         "240929_1", "uin_gangs_full_graph_dataset_train_240929_1.txt")))
         parser.add_argument('--test_data_url_path', type=str, default=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "uin_gangs_train_dataset",
+            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "uin_gangs_full_graph_dataset",
                          "eval",
-                         "240904_2", "uin_gangs_train_dataset_eval_240904_2.txt")))
+                         "240929_1", "uin_gangs_full_graph_dataset_eval_240929_1.txt")))
         parser.add_argument('--train_data_path', type=str, default=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "uin_gangs_train_dataset",
+            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "uin_gangs_full_graph_dataset",
                          "train",
-                         "240904_2", "uin_gangs_train_dataset_train_240904_2_20240907.txt")))
+                         "json_data", "uin_gangs_full_graph_dataset_train_240929_1_selected.txt")))
         parser.add_argument('--test_data_path', type=str, default=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "uin_gangs_train_dataset",
+            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "uin_gangs_full_graph_dataset",
                          "eval",
-                         "240904_2", "uin_gangs_train_dataset_eval_240904_2_20240907.txt")))
+                         "json_data", "uin_gangs_full_graph_dataset_eval_240929_1_selected.txt")))
         parser.add_argument('--uin_gangs_enum_yaml_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "config", "yml",
                          "uin_gangs_enum" + ".yaml")))
