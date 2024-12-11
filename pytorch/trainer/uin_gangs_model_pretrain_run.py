@@ -15,7 +15,7 @@ class ArgsUinGangs:
         parser.add_argument('--train_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "train", "raw",
-                         "uin_gangs_full_graph_dataset_train_241119_1.txt")))
+                         "uin_gangs_full_graph_dataset_train_241119_241121.txt")))
                          # "uin_gangs_full_graph_dataset", "valid", "processed",
                          # "uin_gangs_supervise_full_graph_dataset_train_241204_20241204.txt")))
         parser.add_argument('--test_data_path', type=str, default=os.path.abspath(
@@ -45,7 +45,7 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "pic")))
         parser.add_argument('--minirbt_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
-        parser.add_argument('--best_loss', type=float, default=9)
+        parser.add_argument('--best_loss', type=float, default=5)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
         parser.add_argument('--batch_size', type=int, default=40)
         parser.add_argument('--data_buffer_size', type=int, default=64)
@@ -125,7 +125,7 @@ def run_predict(args):
 
 if __name__ == '__main__':
     args = ArgsUinGangs()
-    args.args_dict["is_train"] = False
+    # args.args_dict["is_train"] = False
     if args.args_dict["is_train"]:
         run_pretraining_graph(args, args.args_dict["sampling"])
     else:

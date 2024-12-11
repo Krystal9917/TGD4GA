@@ -60,7 +60,7 @@ if __name__ == '__main__':
         # eval_output_file_path = prefix_dir + f'/eval/json_data/uin_gangs_full_graph_dataset_eval_{file_name}.txt'
         # process_urls_from_file(eval_input_file_path, eval_output_file_path)
     train_input_file_path = prefix_dir + f'/valid/241204_20241204/uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt'
-    train_output_file_path = prefix_dir + f'/valid/raw/uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt'
+    train_output_file_path = prefix_dir + f'/valid/raw/uin_gangs_supervise_full_graph_dataset_eval_241204_20241211.txt'
     st = time.time()
     process_urls_from_file(train_input_file_path, train_output_file_path)
     # print(f"Process time: {time.time() - st:.4f} s")
