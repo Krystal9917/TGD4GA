@@ -6,18 +6,14 @@ from logging.handlers import TimedRotatingFileHandler
 import numpy
 import numpy as np
 from sklearn.cluster import KMeans
-from sklearn.datasets import make_blobs
 from sklearn.decomposition import PCA
-from sklearn.metrics import roc_curve, roc_auc_score, precision_score, recall_score, f1_score, confusion_matrix, \
-    precision_recall_curve, auc, silhouette_score
-from torch.utils.data import Dataset as tDataset
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
+from sklearn.metrics import roc_curve, roc_auc_score, precision_score, recall_score, f1_score, confusion_matrix, precision_recall_curve, auc, silhouette_score
 from datetime import datetime
 import os
-import re
-import pandas as pd
-import requests
 import torch
-from typing import List, Tuple, Dict, Any
+from typing import List
 import matplotlib.pyplot as plt
 
 
@@ -215,14 +211,13 @@ def draw_and_save_pca_pic(x, y, save_path=None, title="标题"):
     """
     pca = PCA(n_components=2)
     X_pca = pca.fit_transform(x)
-    # 可视化结果，使用标签来区分不同的点
+    # 可视化结果，使用标签来区分不同的样本
     plt.figure(figsize=(8, 6))
     scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], c=y, cmap='viridis', edgecolor='k', s=150)
-    plt.title('uin_gangs_embedding')
+    plt.title(title)
     plt.xlabel('uin_embedding')
     plt.ylabel('exposed_label')
     plt.colorbar(scatter)
-    # plt.show()
     plt.savefig(save_path)
     plt.close()
 
@@ -233,6 +228,25 @@ def eval_emb_with_knn(X, k=10):
     # 计算轮廓系数
     score = silhouette_score(X, kmeans.labels_)
     return score
+
+
+def visualization_fig_save(input_embedding, input_class, save_path, visual_type='PCA', is_show=False, data_type='Subgraph Type'):
+    if visual_type == 'PCA':
+        vis = PCA(n_components=2)
+    else:
+        vis = TSNE(n_components=2, random_state=42)
+    h_reduced = vis.fit_transform(input_embedding)
+    plt.figure(figsize=(10, 8))
+    scatter = plt.scatter(h_reduced[:, 0], h_reduced[:, 1], c=input_class, marker='.', cmap='viridis', alpha=0.7)
+    cbar = plt.colorbar(scatter, ticks=np.arange(0, 2))
+    cbar.set_label(data_type)
+    cbar.ax.set_yticklabels(np.arange(0, 2))
+    plt.title(f'{visual_type} Result')
+    plt.xlabel('Principal Component 1')
+    plt.ylabel('Principal Component 2')
+    plt.savefig(save_path, dpi=300)
+    if is_show:
+        plt.show()
 
 
 if __name__ == '__main__':

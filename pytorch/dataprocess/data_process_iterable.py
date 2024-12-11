@@ -130,13 +130,14 @@ class UinGangsDataIterable(IterableDataset):
         # 提取节点信息
         uin_src_node = []
         uin_dst_node = []
-        for edge in graph_schema["edge_sets"]["uin-spread-uin"]["edges"]:
-            try:
-                uin_src_node.append(int(edge["src_nodeid"]))
-                uin_dst_node.append(int(edge["dst_nodeid"]))
-            except KeyError:
-                print("Key error")
-                return None
+        for edge_type in graph_schema["edge_sets"].keys():
+            for edge in graph_schema["edge_sets"][edge_type]["edges"]:
+                try:
+                    uin_src_node.append(int(edge["src_nodeid"]))
+                    uin_dst_node.append(int(edge["dst_nodeid"]))
+                except KeyError:
+                    print("Key error")
+                    return None
 
         uin_src_node = torch.tensor(uin_src_node, dtype=torch.long)
         uin_dst_node = torch.tensor(uin_dst_node, dtype=torch.long)

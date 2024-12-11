@@ -1,0 +1,368 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="690ce246-b023-4a0a-8442-769ce35af91d" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/pytorch/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pytorch/dataprocess/combine_file.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pytorch/dataprocess/data_example_test.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pytorch/dataprocess/data_process_iterable_pyg.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pytorch/dataprocess/data_process_iterable_pyg.sh" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pytorch/models/gat_model.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pytorch/models/han_model.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pytorch/models/rgat_model.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pytorch/models/rgcn_model.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pytorch/models/statistics.sh" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pytorch/models/test.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_run.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_run.sh" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/utils/pyg_format.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/config/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/data/config/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pytorch/dataprocess/data_process_iterable.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/dataprocess/data_process_iterable.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_train_run.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_train_run.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_train_run.sh" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_train_run.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/get_url_data.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/get_url_data.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/get_url_data.sh" beforeDir="false" afterPath="$PROJECT_DIR$/utils/get_url_data.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/utils.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 8
+}</component>
+  <component name="ProjectId" id="2lh68wbKyEiLLy0LFdD0MqhInpx" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python.GNNModel.executor": "Debug",
+    "Python.RGCN.executor": "Debug",
+    "Python.combine_file (1).executor": "Debug",
+    "Python.data_example_test.executor": "Debug",
+    "Python.data_process_iterable_pyg.executor": "Debug",
+    "Python.fraudar.executor": "Debug",
+    "Python.gat_model.executor": "Debug",
+    "Python.get_url_data.executor": "Debug",
+    "Python.han_model.executor": "Debug",
+    "Python.heterogeneous_graph_model.executor": "Debug",
+    "Python.pyg_format.executor": "Debug",
+    "Python.test.executor": "Debug",
+    "Python.test_copy.executor": "Debug",
+    "Python.test_cora.executor": "Debug",
+    "Python.uin_gangs_model_pretrain.executor": "Debug",
+    "Python.uin_gangs_model_pretrain_run.executor": "Debug",
+    "Python.uin_gangs_model_train.executor": "Debug",
+    "Python.uin_gangs_model_train_run.executor": "Debug",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "WebServerToolWindowPanel.toolwindow.highlight.mappings": "true",
+    "WebServerToolWindowPanel.toolwindow.highlight.symlinks": "true",
+    "WebServerToolWindowPanel.toolwindow.show.date": "false",
+    "WebServerToolWindowPanel.toolwindow.show.permissions": "false",
+    "WebServerToolWindowPanel.toolwindow.show.size": "false",
+    "git-widget-placeholder": "master",
+    "last_opened_file_path": "D:/Projects/mmgog_long_term_sequence_model/pytorch/models",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="D:\Projects\mmgog_long_term_sequence_model\pytorch\models" />
+      <recent name="D:\Projects\mmgog_long_term_sequence_model\pytorch\trainer" />
+      <recent name="D:\Projects\mmgog_long_term_sequence_model\pytorch\dataprocess" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\Projects\mmgog_long_term_sequence_model\pytorch\dataprocess" />
+    </key>
+  </component>
+  <component name="RunManager" selected="Python.data_example_test">
+    <configuration name="combine_file" type="PythonConfigurationType" factoryName="Python" temporary="true">
+      <module name="mmgog_long_term_sequence_model" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/pytorch/dataprocess" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/pytorch/dataprocess/combine_file.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="data_example_test" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="mmgog_long_term_sequence_model" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/pytorch/dataprocess" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/pytorch/dataprocess/data_example_test.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="gat_model" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="mmgog_long_term_sequence_model" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/pytorch/models" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/pytorch/models/gat_model.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="han_model" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="mmgog_long_term_sequence_model" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/pytorch/models" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/pytorch/models/han_model.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="uin_gangs_model_pretrain_run" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="mmgog_long_term_sequence_model" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/pytorch/trainer" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_run.py" />
+      <option name="PARAMETERS" value="--batch_size 20 --data_buffer 32 --num_workers 4 --is_train False --is_debug True --conv_type HAN --sampling fraudar --evaluate_task eval_labelled_subgraph_embedding" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <list>
+      <item itemvalue="Python.data_example_test" />
+      <item itemvalue="Python.han_model" />
+      <item itemvalue="Python.combine_file" />
+      <item itemvalue="Python.gat_model" />
+      <item itemvalue="Python.uin_gangs_model_pretrain_run" />
+    </list>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.data_example_test" />
+        <item itemvalue="Python.uin_gangs_model_pretrain_run" />
+        <item itemvalue="Python.han_model" />
+        <item itemvalue="Python.gat_model" />
+        <item itemvalue="Python.combine_file" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-1d06a55b98c1-0b3e54e931b4-JavaScript-PY-241.17890.14" />
+        <option value="bundled-python-sdk-5b207ade9991-7e9c3bbb6e34-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-241.17890.14" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="690ce246-b023-4a0a-8442-769ce35af91d" name="Changes" comment="" />
+      <created>1725619806063</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1725619806063</updated>
+      <workItem from="1725619808157" duration="4994000" />
+      <workItem from="1725938154628" duration="4797000" />
+      <workItem from="1725942985251" duration="15465000" />
+      <workItem from="1726734839742" duration="162000" />
+      <workItem from="1726735011106" duration="23000" />
+      <workItem from="1726735035581" duration="3704000" />
+      <workItem from="1726813351718" duration="12000" />
+      <workItem from="1726813365413" duration="6916000" />
+      <workItem from="1727144629062" duration="1582000" />
+      <workItem from="1727168859361" duration="4328000" />
+      <workItem from="1727421893125" duration="10062000" />
+      <workItem from="1728354078397" duration="28560000" />
+      <workItem from="1728454321516" duration="8085000" />
+      <workItem from="1728540935278" duration="2981000" />
+      <workItem from="1728543932254" duration="11000" />
+      <workItem from="1728543945405" duration="53547000" />
+      <workItem from="1728958999255" duration="46528000" />
+      <workItem from="1729134764293" duration="675000" />
+      <workItem from="1729135452686" duration="14481000" />
+      <workItem from="1729564181125" duration="105919000" />
+      <workItem from="1730270736306" duration="12740000" />
+      <workItem from="1730362812357" duration="1467000" />
+      <workItem from="1730364293572" duration="24000" />
+      <workItem from="1730364319262" duration="4000" />
+      <workItem from="1730364331984" duration="68000" />
+      <workItem from="1730364404060" duration="34000" />
+      <workItem from="1730364452246" duration="20000" />
+      <workItem from="1730364485534" duration="92000" />
+      <workItem from="1730364580529" duration="13050000" />
+      <workItem from="1730771985745" duration="76249000" />
+      <workItem from="1731376055478" duration="68369000" />
+      <workItem from="1731903025172" duration="64747000" />
+      <workItem from="1732077259318" duration="251000" />
+      <workItem from="1732077521346" duration="29926000" />
+      <workItem from="1732605162233" duration="7211000" />
+      <workItem from="1732613170609" duration="67513000" />
+      <workItem from="1733208739575" duration="13000" />
+      <workItem from="1733208754678" duration="29842000" />
+      <workItem from="1733292593500" duration="45171000" />
+      <workItem from="1733455323375" duration="65000" />
+      <workItem from="1733455390508" duration="2420000" />
+      <workItem from="1733457847030" duration="14000" />
+      <workItem from="1733457862555" duration="2537000" />
+      <workItem from="1733461629599" duration="19000" />
+      <workItem from="1733461651008" duration="18131000" />
+      <workItem from="1733711604770" duration="11000" />
+      <workItem from="1733711617946" duration="56424000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$USER_HOME$/AppData/Local/JetBrains/PyCharm2024.1/remote_sources/1373383295/-419086817/torch_geometric/nn/conv/message_passing.py</url>
+          <line>243</line>
+          <option name="timeStamp" value="80" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/pytorch/dataprocess/data_example_test.py</url>
+          <line>188</line>
+          <option name="timeStamp" value="133" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/pytorch/dataprocess/data_example_test.py</url>
+          <line>168</line>
+          <option name="timeStamp" value="136" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/pytorch/dataprocess/data_example_test.py</url>
+          <line>169</line>
+          <option name="timeStamp" value="137" />
+        </line-breakpoint>
+      </breakpoints>
+      <default-breakpoints>
+        <breakpoint type="python-exception">
+          <properties notifyOnTerminate="true" exception="BaseException">
+            <option name="notifyOnTerminate" value="true" />
+          </properties>
+        </breakpoint>
+      </default-breakpoints>
+    </breakpoint-manager>
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$data_example_test.coverage" NAME="data_example_test Coverage Results" MODIFIED="1733899785417" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/dataprocess" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$test_copy.coverage" NAME="test_copy Coverage Results" MODIFIED="1730965078970" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/models" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$GNNModel.coverage" NAME="GNNModel Coverage Results" MODIFIED="1729684333763" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/models" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$uin_gangs_model_train.coverage" NAME="uin_gangs_model_train Coverage Results" MODIFIED="1728634555631" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/trainer" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$data_process_iterable_pyg.coverage" NAME="data_process_iterable_pyg Coverage Results" MODIFIED="1729759081825" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/dataprocess" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$pyg_format.coverage" NAME="pyg_format Coverage Results" MODIFIED="1728993625930" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/utils" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$uin_gangs_model_train_run.coverage" NAME="uin_gangs_model_train_run Coverage Results" MODIFIED="1729047258852" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/trainer" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$gat_model.coverage" NAME="gat_model Coverage Results" MODIFIED="1733736933236" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/models" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$RGCN.coverage" NAME="RGCN Coverage Results" MODIFIED="1728553939279" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/models" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$fraudar.coverage" NAME="fraudar Coverage Results" MODIFIED="1732016316635" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/dataprocess" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$uin_gangs_model_pretrain.coverage" NAME="uin_gangs_model_pretrain Coverage Results" MODIFIED="1733884672698" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/trainer" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$test.coverage" NAME="test Coverage Results" MODIFIED="1730966125399" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/models" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$combine_file__1_.coverage" NAME="combine_file (1) Coverage Results" MODIFIED="1733719859445" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/dataprocess" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$heterogeneous_graph_model.coverage" NAME="heterogeneous_graph_model Coverage Results" MODIFIED="1730202563494" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/models" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$han_model.coverage" NAME="han_model Coverage Results" MODIFIED="1733818080624" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/models" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$test_cora.coverage" NAME="test_cora Coverage Results" MODIFIED="1733318303496" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/dataprocess" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$uin_gangs_model_pretrain_run.coverage" NAME="uin_gangs_model_pretrain_run Coverage Results" MODIFIED="1733887498285" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/trainer" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$get_url_data.coverage" NAME="get_url_data Coverage Results" MODIFIED="1733304255731" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/utils" />
+  </component>
+</project>

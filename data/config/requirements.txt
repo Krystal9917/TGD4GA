@@ -2,3 +2,6 @@ onnx==1.16.0
 onnxruntime==1.16.3
 protobuf==3.20.*
 dgl-cu110==0.6.1
+numpy
+pandas
+scikit-learn
