@@ -6,12 +6,12 @@ import networkx as nx
 from torch_scatter import scatter_mean
 from torch_geometric.utils import to_dense_adj, subgraph
 from torch_geometric.data import HeteroData, Batch
+
 sys.path.append(os.path.abspath(
     os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir)))
 from mmgog_long_term_sequence_model.pytorch.dataprocess.fraudar import fraudar
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
 from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
-
 
 
 def random_drop_nodes(graph_data, aug_ratio=0.1):
@@ -102,29 +102,33 @@ def generate_positive_samples_by_fraudar(graph_data, return_nodes_num=False):
         return graph_data
 
 
-def load_model(model_name):
+def load_model(model_name, sample_type):
     if model_name == 'RGCN':
         model = RGCN(input_dim=846,
                      hidden_dim=1024,
                      output_dim=846,
                      num_relations=10)
-        model_file = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/saved_model/GNN_models/pretraining_filter_subgraph_cl/sample_fraudar_filter_5_lr_0.001/uin_gangs_RGCN_model_epoch_30.pth'
+        if sample_type == 'fraudar':
+            model_file = f'/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/saved_model/GNN_models/pretraining_filter_subgraph_cl/sample_fraudar_filter_5_lr_0.001/uin_gangs_RGCN_model_epoch_30.pth'
+        elif sample_type == 'random':
+            model_file = f'/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/saved_model/GNN_models/pretraining_filter_subgraph_cl/sample_random_filter_5_lr_0.001/uin_gangs_RGCN_model_epoch_100.pth'
     elif model_name == 'HAN':
         metadata = (['uin'],
                     [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
-                    ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
-                    ('uin', 'payee', 'uin'), ('uin', 'payer', 'uin'), ('uin', 'bankcard', 'uin'),
-                    ('uin', 'download_app', 'uin')])
+                     ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
+                     ('uin', 'payee', 'uin'), ('uin', 'payer', 'uin'), ('uin', 'bankcard', 'uin'),
+                     ('uin', 'download_app', 'uin')])
         model = HAN(in_channels=846,
                     hidden_channels=1024,
                     out_channels=846,
                     metadata=metadata,
                     heads=2)
         model_file = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/saved_model/GNN_models/pretraining_filter_subgraph_cl/HAN_sample_fraudar_filter_5_lr_0.001/uin_gangs_HAN_model_best_loss.pth'
-    model_weight = torch.load(model_file)
+    model_weight = torch.load(model_file, map_location=torch.device('cpu'))
     model.load_state_dict(model_weight)
     model.eval()
     return model
+
 
 def get_edge_info(batch):
     edge_index = [batch[edge_type].edge_index for edge_type in batch.edge_types]
@@ -132,6 +136,29 @@ def get_edge_info(batch):
     edge_counts = [batch[edge_type].num_edges for edge_type in batch.edge_types]
     edge_type = torch.concat([torch.ones(edge_counts[i]) * i for i in range(len(batch.edge_types))])
     return edge_index, edge_type.long()
+
+
+def extract_single_subgraph(batch, node_indices):
+    x = batch['uin'].x[node_indices].clone()
+    score = batch['uin'].score[node_indices].clone()
+    graph_data = HeteroData()
+    graph_data['uin'].x = x
+    graph_data['uin'].score = score
+    max_node_idx = node_indices.max()
+    for edge_type in batch.edge_types:
+        try:
+            current_max_node_idx = batch[edge_type].edge_index.max()
+            max_node_idx = min(max_node_idx, current_max_node_idx)
+            if max_node_idx < max_node_idx:
+                node_indices = node_indices[node_indices <= max_node_idx]
+            edge_index, _ = subgraph(node_indices, batch[edge_type].edge_index, relabel_nodes=True)
+        except Exception as e:
+            print(f"Extract subgraph error: <{e}>, "
+                  f"edge type: {edge_type}, "
+                  f"node_indices: {node_indices}")
+        else:
+            graph_data[edge_type].edge_index = edge_index
+    return graph_data
 
 
 def extract_batch_subgraphs(batch, subgraph_node_indices=None):
@@ -152,8 +179,8 @@ def extract_batch_subgraphs(batch, subgraph_node_indices=None):
             edge_index, _ = subgraph(subgraph_node_indices, batch[edge_type].edge_index)
         except Exception as e:
             print(f"Extract subgraph error: <{e}>, "
-                      f"edge type: {edge_type}, "
-                      f"subgraph: {subgraph_node_indices}")
+                  f"edge type: {edge_type}, "
+                  f"subgraph: {node_indices}")
             del new_batch[edge_type]
         else:
             # no such type of edges
@@ -163,10 +190,18 @@ def extract_batch_subgraphs(batch, subgraph_node_indices=None):
                 del new_batch[edge_type]
     return new_batch
 
+def cosine_similarity(h1, h2):
+    h1_abs = h1.norm(dim=1)
+    h2_abs = h2.norm(dim=1)
+    sim_matrix = torch.einsum('ik,jk->ij', h1, h2) / torch.einsum('i,j->ij', h1_abs, h2_abs)
+    return sim_matrix
+
+
 if __name__ == '__main__':
     model_name = 'RGCN'
+    sampling = 'random'
     batch = load_batch_from_file()
-    model = load_model(model_name)
+    model = load_model(model_name, sampling)
     if model_name == 'RGCN':
         batch_edge_index, batch_edge_types = get_edge_info(batch)
         batch_h = model(batch['uin'].x, batch_edge_index, batch_edge_types)
@@ -177,19 +212,25 @@ if __name__ == '__main__':
     gang_idx = (batch['uin'].gang_label == 1).nonzero().squeeze().detach().cpu().tolist()
     gang_batch_h_g = batch_h_g[gang_idx]
     normal_batch_h_g = batch_h_g[normal_idx]
+    if sampling == 'fraudar':
+        fraudar_data_list = []
+        for i in range(batch['uin'].gang_label.shape[0]):
+            if batch['uin'].gang_label[i] == 1:
+                node_indices = (batch['uin'].batch == i).nonzero().squeeze()
+                pyg_data = extract_single_subgraph(batch, node_indices)
+                fraudar_data = generate_positive_samples_by_fraudar(pyg_data)
+                fraudar_data_list.append(fraudar_data)
+        fraudar_batch = Batch.from_data_list(fraudar_data_list)
 
-    fraudar_batch = extract_batch_subgraphs(batch)
-    if model_name == 'RGCN':
-        fraudar_batch_edge_index, fraudar_batch_edge_types = get_edge_info(fraudar_batch)
-        fraudar_batch_h = model(fraudar_batch['uin'].x, fraudar_batch_edge_index, fraudar_batch_edge_types)
-    elif model_name == 'HAN':
-        fraudar_batch_h = model(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
-    fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
-
-    print(torch.cosine_similarity(gang_batch_h_g, gang_batch_h_g))
-    print(torch.cosine_similarity(normal_batch_h_g, normal_batch_h_g))
-    print(torch.cosine_similarity(gang_batch_h_g, fraudar_batch_h_g))
-    print(torch.cosine_similarity(gang_batch_h_g, normal_batch_h_g))
+        if model_name == 'RGCN':
+            fraudar_batch_edge_index, fraudar_batch_edge_types = get_edge_info(fraudar_batch)
+            fraudar_batch_h = model(fraudar_batch['uin'].x, fraudar_batch_edge_index, fraudar_batch_edge_types)
+        elif model_name == 'HAN':
+            fraudar_batch_h = model(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
+        fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
+        print(torch.cosine_similarity(gang_batch_h_g, fraudar_batch_h_g).mean())
 
 
-
+    print(cosine_similarity(gang_batch_h_g, gang_batch_h_g).mean())
+    print(cosine_similarity(normal_batch_h_g, normal_batch_h_g).mean())
+    print(cosine_similarity(gang_batch_h_g, normal_batch_h_g).mean())
