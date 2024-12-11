@@ -46,7 +46,6 @@ class UinGangsModelPreTrain:
                                        ('uin', 'payee', 'uin'), ('uin', 'payer', 'uin'), ('uin', 'bankcard', 'uin'),
                                        ('uin', 'download_app', 'uin')])
             self.model = HAN(in_channels=args_dict['input_dim'],
-                             hidden_channels=args_dict['hidden_dim'],
                              out_channels=args_dict['output_dim'],
                              metadata=self.metadata,
                              heads=args_dict['num_heads'])
@@ -75,7 +74,7 @@ class UinGangsModelPreTrain:
                                                         num_workers=self.train_dict["num_workers"],
                                                         collate_fn=self.train_data.pos_collate_fn_for_fraudar)
             if not self.train_dict["is_debug"]:
-                self.log_file_path = f"sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
+                self.log_file_path = f"1922_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
                 log_path = os.path.join(args_dict['log_dir'], self.train_dict["model_states_path"].split('/')[-1],
                                         self.log_file_path)
                 if not os.path.exists(log_path):
