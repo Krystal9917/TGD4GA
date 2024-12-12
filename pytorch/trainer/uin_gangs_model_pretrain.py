@@ -550,10 +550,10 @@ class UinGangsModelPreTrain:
         if self.train_dict["eval_epoch"] != 0:
             epoch_num = self.train_dict["eval_epoch"]
             file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
-            fig_name = f"filter_{self.conv_type}_{self.train_dict['sampling']}_subgraph_pca_epoch_{str(epoch_num)}.png"
+            fig_name = f"filter_retrain_{self.conv_type}_{self.train_dict['sampling']}_subgraph_pca_epoch_{str(epoch_num)}.png"
         else:
             file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
-            fig_name = f"filter_{self.conv_type}_{self.train_dict['sampling']}_subgraph_pca_best_epoch.png"
+            fig_name = f"filter_retrain_{self.conv_type}_{self.train_dict['sampling']}_subgraph_pca_best_epoch.png"
         model_weight = torch.load(file_name, map_location=self.device)
         self.model.load_state_dict(model_weight)
         self.model.eval()
@@ -611,10 +611,10 @@ class UinGangsModelPreTrain:
         if self.train_dict["eval_epoch"] != 0:
             epoch_num = self.train_dict["eval_epoch"]
             file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
-            fig_name = f"filter_{self.conv_type}_subgraph_pca_epoch_{str(epoch_num)}.png"
+            fig_name = f"filter_retrain_{self.conv_type}_subgraph_pca_epoch_{str(epoch_num)}.png"
         else:
             file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
-            fig_name = f"filter_{self.conv_type}_subgraph_pca_best_epoch.png"
+            fig_name = f"filter_retrain_{self.conv_type}_subgraph_pca_best_epoch.png"
         model_weight = torch.load(file_name, map_location=self.device)
         self.model.load_state_dict(model_weight)
         self.model.eval()
@@ -661,18 +661,22 @@ class UinGangsModelPreTrain:
         self.setup_seed()
         self.model.to(self.device)
         self.minirbt_model.to(self.device)
-        if self.train_dict["eval_epoch"] != 0:
-            epoch_num = self.train_dict["eval_epoch"]
-            file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
+        if not self.train_dict["is_supervised"]:
+            if self.train_dict["eval_epoch"] != 0:
+                epoch_num = self.train_dict["eval_epoch"]
+                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
+            else:
+                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
+            model_weight = torch.load(file_name, map_location=self.device)
+            self.model.load_state_dict(model_weight)
+            print(f"Load: {file_name}")
+            self.model.eval()
+            for param in self.model.parameters():
+                param.requires_grad = False
         else:
-            file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
-        model_weight = torch.load(file_name, map_location=self.device)
-        self.model.load_state_dict(model_weight)
-        self.model.eval()
-        print(f"Load: {file_name}")
-        self.model.load_state_dict(model_weight)
-        for param in self.model.parameters():
-            param.requires_grad = False
+            self.model.train()
+            for param in self.model.parameters():
+                param.requires_grad = True
         for param in self.classifier.parameters():
             param.requires_grad = True
         self.classifier.to(self.device)
@@ -708,7 +712,7 @@ class UinGangsModelPreTrain:
             current_loss = sum(epoch_loss) / len(epoch_loss)
             if current_loss < best_loss:
                 best_loss = current_loss
-                file_name = self.train_dict["cls_model_states_path"] + f"combine_{self.conv_type}_best_loss.pth"
+                file_name = self.train_dict["cls_model_states_path"] + f"{self.conv_type}_best_loss.pth"
                 torch.save(self.classifier.state_dict(), file_name)
                 print(f"Now best loss: {best_loss:.4f}, save model to {file_name}")
             self.evaluate_classifier()
