@@ -109,7 +109,7 @@ def load_model(model_name, sample_type):
                      output_dim=846,
                      num_relations=10)
         if sample_type == 'fraudar':
-            model_file = f'/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/saved_model/GNN_models/pretraining_filter_subgraph_cl/sample_fraudar_filter_5_lr_0.001/uin_gangs_RGCN_model_epoch_30.pth'
+            model_file = f'/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/saved_model/GNN_models/pretraining_filter_subgraph_cl/RGCN_sample_fraudar_filter_5_lr_0.001/uin_gangs_RGCN_model_best_loss.pth'
         elif sample_type == 'random':
             model_file = f'/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/saved_model/GNN_models/pretraining_filter_subgraph_cl/sample_random_filter_5_lr_0.001/uin_gangs_RGCN_model_epoch_100.pth'
     elif model_name == 'HAN':
@@ -199,7 +199,7 @@ def cosine_similarity(h1, h2):
 
 if __name__ == '__main__':
     model_name = 'RGCN'
-    sampling = 'random'
+    sampling = 'fraudar'
     batch = load_batch_from_file()
     model = load_model(model_name, sampling)
     if model_name == 'RGCN':
