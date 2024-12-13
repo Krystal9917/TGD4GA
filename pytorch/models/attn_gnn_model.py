@@ -114,7 +114,7 @@ class SHANConv(MessagePassing):
                                  alpha=(alpha_src, alpha_dst),
                                  edge_weight=w)
 
-            out = F.relu(out)
+            out = F.leaky_relu(out)
             out_dict[dst_type].append(out)
 
         # iterate over node types:
@@ -148,12 +148,24 @@ def load_batch_from_file():
     return torch.load(path)
 
 
+class SHAN(torch.nn.Module):
+    def __init__(self, in_channels, out_channels, metadata, heads=4):
+        super().__init__()
+        self.conv1 = SHANConv(in_channels, out_channels, metadata, dropout=0.2, heads=heads)
+        # self.conv2 = SHANConv(out_channels, out_channels, metadata, dropout=0.2, heads=heads)
+
+    def forward(self, x, edge_index, score):
+        out = self.conv1(x, edge_index, score)
+        # out = self.conv2(out, edge_index, score)
+        return out['uin']
+
+
 if __name__ == '__main__':
     batch = load_batch_from_file()
-    han = SHANConv(in_channels=846, out_channels=846, heads=2, metadata=batch.metadata())
+    han = SHAN(in_channels=batch['uin'].x.shape[1], out_channels=batch['uin'].x.shape[1],
+               heads=2, metadata=batch.metadata())
     batch.x_dict['uin'] = torch.nn.functional.normalize(batch.x_dict['uin'], dim=1)
-    out = han(batch.x_dict, batch.edge_index_dict, batch.score_dict)
-    x_out = out['uin']
+    x_out = han(batch.x_dict, batch.edge_index_dict, batch.score_dict)
     gang_idx = (batch['uin'].gang_label == 1).nonzero().squeeze().tolist()
     normal_idx = (batch['uin'].gang_label == 0).nonzero().squeeze().tolist()
     batch_h_g = scatter_mean(x_out, batch['uin'].batch, dim=0)
