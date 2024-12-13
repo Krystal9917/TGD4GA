@@ -1,29 +1,34 @@
 import os
 import sys
-import time
-import torch
 import logging
 import argparse
+import torch.multiprocessing as mp
+
+
 logger = logging.getLogger("my_logger")
 sys.path.append(os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir)))
-from mmgog_long_term_sequence_model.pytorch.trainer.uin_gangs_model_pretrain import UinGangsModelPreTrain
+    os.path.join(os.path.dirname(__file__),
+                 os.path.pardir,
+                 os.path.pardir,
+                 os.path.pardir)))
+from mmgog_long_term_sequence_model.pytorch.trainer.uin_gangs_model_pretrain_ddp import UinGangsModelPreTrainDDP
+
 
 class ArgsUinGangs:
     def __init__(self):
         parser = argparse.ArgumentParser()
         parser.add_argument('--train_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "uin_gangs_full_graph_dataset", "train", "raw",
-                         "uin_gangs_full_graph_dataset_train_241119_241121.txt")))
-                         # "uin_gangs_full_graph_dataset", "valid", "processed",
-                         # "uin_gangs_supervise_full_graph_dataset_train_241204_20241204.txt")))
+                         # "uin_gangs_full_graph_dataset", "train", "raw",
+                         # "uin_gangs_full_graph_dataset_train_241119_241121.txt")))
+                         "uin_gangs_full_graph_dataset", "valid", "processed",
+                         "uin_gangs_supervise_full_graph_dataset_train_241204_20241204.txt")))
         parser.add_argument('--test_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "uin_gangs_full_graph_dataset", "eval", "raw",
-                         "uin_gangs_full_graph_dataset_train_241119_1.txt")))
-                         # "uin_gangs_full_graph_dataset", "valid", "processed",
-                         # "uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt")))
+                         # "uin_gangs_full_graph_dataset", "eval", "raw",
+                         # "uin_gangs_full_graph_dataset_train_241119_1.txt")))
+                         "uin_gangs_full_graph_dataset", "valid", "processed",
+                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt")))
         parser.add_argument('--eval_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "valid", "raw",
@@ -45,9 +50,9 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "pic")))
         parser.add_argument('--minirbt_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
-        parser.add_argument('--best_loss', type=float, default=1e2)
+        parser.add_argument('--best_loss', type=float, default=5)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
-        parser.add_argument('--batch_size', type=int, default=8)
+        parser.add_argument('--batch_size', type=int, default=40)
         parser.add_argument('--data_buffer_size', type=int, default=64)
         parser.add_argument('--lr', type=float, default=0.001)
         parser.add_argument('--n_epochs', type=int, default=100)
@@ -79,67 +84,32 @@ class ArgsUinGangs:
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--eval_epoch', type=int, default=0)
-        parser.add_argument('--evaluate_task', type=str, default='',
+        parser.add_argument('--evaluate_task', type=str, default='predict',
                             choices=['eval_labelled_subgraph_embedding', 'eval_subgraph_embedding',
                                      'eval_node_embedding', 'predict', ''])
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN'])
         parser.add_argument('--is_supervised', type=bool, default=False)
+        parser.add_argument('world_size', type=int, default=2)
+
 
         args = parser.parse_args()
         args_dict = vars(args)
         self.args_dict = args_dict
 
 
-def run_pretraining_graph(args, sampling_type):
-    logger.info("args_dict:\n %s", args.args_dict)
-    train_model = UinGangsModelPreTrain(args.args_dict)
+def run_pretraining_graph(args, world_size):
+    print(f"args_dict: {args.args_dict}")
+    sampling_type = args.args_dict["sampling"]
+    train_model = UinGangsModelPreTrainDDP(args.args_dict, world_size)
     if sampling_type == 'fraudar':
         print("Fraudar pretraining")
-        train_model.pretraining()
+        train_model.pretraining_ddp()
     elif sampling_type == 'random':
         print("Random pretraining")
         train_model.random_sampling_pretraining()
 
 
-def run_evaluate_node(args):
-    logger.info("args_dict:\n %s", args.args_dict)
-    train_model = UinGangsModelPreTrain(args.args_dict)
-    train_model.evaluate_node_embedding()
-
-
-def run_evaluate_graph(args):
-    logger.info("args_dict:\n %s", args.args_dict)
-    train_model = UinGangsModelPreTrain(args.args_dict)
-    train_model.evaluate_subgraph_embedding()
-
-
-def run_evaluate_labelled_graph(args):
-    logger.info("args_dict:\n %s", args.args_dict)
-    train_model = UinGangsModelPreTrain(args.args_dict)
-    train_model.evaluate_labelled_subgraph_embedding()
-
-def run_predict(args):
-    logger.info("args_dict:\n %s", args.args_dict)
-    train_model = UinGangsModelPreTrain(args.args_dict)
-    train_model.evaluate_subgraph_predict()
-
-
 if __name__ == '__main__':
     args = ArgsUinGangs()
-    args.args_dict["is_train"] = False
-    if args.args_dict["is_train"]:
-        run_pretraining_graph(args, args.args_dict["sampling"])
-    else:
-        if args.args_dict["evaluate_task"] == 'eval_subgraph_embedding':
-            print("Subgraph evaluating")
-            run_evaluate_graph(args)
-        elif args.args_dict["evaluate_task"] == 'eval_labelled_subgraph_embedding':
-            print("Labelled subgraph evaluating")
-            run_evaluate_labelled_graph(args)
-        elif args.args_dict["evaluate_task"] == 'eval_node_embedding':
-            print("Node evaluating")
-            run_evaluate_node(args)
-        elif args.args_dict["evaluate_task"] == 'predict':
-            print("Subgraph predicting")
-            run_predict(args)
-
+    mp.spawn(run_pretraining_graph, args=(args, args.args_dict["world_size"],),
+             nprocs=args.args_dict["world_size"], join=True)
