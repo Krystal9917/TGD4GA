@@ -8,53 +8,47 @@ logger = logging.getLogger("my_logger")
 os.environ['DGLBACKEND'] = 'pytorch'
 
 import numpy as np
-from torch_geometric.nn import to_hetero
 import torch.utils.data as Data
 from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
 from torch.utils.tensorboard import SummaryWriter
 from transformers import BertModel
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 from mmgog_long_term_sequence_model.utils.utils import visualization_fig_save
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
-from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN, SHAN
+from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix
 
 
-class UinGangsModelPreTrain:
+class UinGangsModelPreTrainDDP:
 
-    def __init__(self, args_dict):
+    def __init__(self, rank, args_dict, world_size):
         self.train_dict = args_dict
-        if torch.cuda.is_available() and self.train_dict["device"] == "gpu":
-            print("GPU train available")
-            self.device = torch.device("cuda")
-        else:
-            print("GPU train not available")
-            self.device = torch.device("cpu")
-
+        self.rank = rank
+        self.world_size = world_size
+        dist.init_process_group("nccl", rank=self.rank, world_size=self.world_size)
+        torch.cuda.set_device(self.rank)
+        self.device = torch.device(f"cuda: {self.rank}")
+        print(f"GPU device id: {self.rank}")
         self.conv_type = args_dict["conv_type"]
-
         if self.conv_type == 'RGCN':
-
             self.model = RGCN(input_dim=args_dict['input_dim'],
                               hidden_dim=args_dict['hidden_dim'],
                               output_dim=args_dict['output_dim'],
                               num_relations=args_dict['num_relations'])
-        elif self.conv_type in ['HAN', 'SHAN']:
+        elif self.conv_type == 'HAN':
             self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
                                        ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
                                        ('uin', 'payee', 'uin'), ('uin', 'payer', 'uin'), ('uin', 'bankcard', 'uin'),
                                        ('uin', 'download_app', 'uin')])
-            if self.conv_type == 'HAN':
-                self.model = HAN(in_channels=args_dict['input_dim'],
-                                 out_channels=args_dict['output_dim'],
-                                 metadata=self.metadata,
-                                 heads=args_dict['num_heads'])
-            elif self.conv_type == 'SHAN':
-                self.model = SHAN(in_channels=args_dict['input_dim'],
-                                  out_channels=args_dict['output_dim'],
-                                  metadata=self.metadata,
-                                  heads=args_dict['num_heads'])
+            self.model = HAN(in_channels=args_dict['input_dim'],
+                             out_channels=args_dict['output_dim'],
+                             metadata=self.metadata,
+                             heads=args_dict['num_heads'])
+        self.model.to(self.device)
+        self.model = DDP(self.model, device_ids=[self.rank])
 
         self.minirbt_model = BertModel.from_pretrained(self.train_dict["minirbt_path"])
         # 冻结文本模型的参数
@@ -63,6 +57,8 @@ class UinGangsModelPreTrain:
             param.requires_grad = False
             minirbt_model_params_size += param.numel()
         print(f"minirbt_model params size: {minirbt_model_params_size}")
+        self.minirbt_model.to(self.device)
+
         lr = self.train_dict["lr"]
         control_node_num = self.train_dict["filter_node_num"]
         sampling_type = self.train_dict["sampling"]
@@ -94,25 +90,13 @@ class UinGangsModelPreTrain:
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         else:
             self.save_model_path = os.path.join(self.train_dict["model_states_path"],
-                                                f"1922_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}")
-            if self.train_dict["evaluate_task"] == 'eval_subgraph_embedding':
-                self.pos_train_data = UinGangsDataIterablePyG(self.train_dict, self.train_dict["test_data_path"])
-                self.pos_train_loader = Data.DataLoader(self.pos_train_data,
-                                                        batch_size=self.train_dict["batch_size"],
-                                                        num_workers=self.train_dict["num_workers"],
-                                                        collate_fn=self.pos_train_data.pos_collate_fn_for_fraudar)
-            elif self.train_dict["evaluate_task"] == 'eval_labelled_subgraph_embedding':
+                                                f"{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}")
+            if self.train_dict["evaluate_task"] == 'eval_labelled_subgraph_embedding':
                 self.eval_data = UinGangsDataIterablePyG(self.train_dict, self.train_dict["eval_data_path"])
                 self.eval_loader = Data.DataLoader(self.eval_data,
                                                    batch_size=self.train_dict["batch_size"],
                                                    num_workers=self.train_dict["num_workers"],
                                                    collate_fn=self.eval_data.collate_fn)
-            elif self.train_dict["evaluate_task"] == 'eval_node_embedding':
-                self.test_data = UinGangsDataIterablePyG(self.train_dict, self.train_dict["test_data_path"])
-                self.test_loader = Data.DataLoader(self.test_data,
-                                                   batch_size=self.train_dict["batch_size"],
-                                                   num_workers=self.train_dict["num_workers"],
-                                                   collate_fn=self.test_data.collate_fn)
             elif self.train_dict["evaluate_task"] == 'predict':
                 self.train_data = UinGangsDataIterablePyG(self.train_dict, self.train_dict["train_data_path"])
                 self.eval_data = UinGangsDataIterablePyG(self.train_dict, self.train_dict["test_data_path"])
@@ -130,6 +114,7 @@ class UinGangsModelPreTrain:
                                                       torch.nn.Softmax(dim=1))
                 self.criterion = torch.nn.CrossEntropyLoss()
                 self.cls_optimizer = torch.optim.Adam(self.classifier.parameters(), lr=5e-4)
+        self.setup_seed()
 
     def setup_seed(self):
         torch.manual_seed(self.train_dict["seed"])
@@ -172,34 +157,12 @@ class UinGangsModelPreTrain:
             sim_matrix = torch.einsum('ik,jk->ij', h1, h3) / torch.einsum('i,j->ij', h1_abs, h3_abs)
             sim_matrix = torch.exp(sim_matrix / t)
         except Exception as e:
-            loss = torch.tensor(5.0, requires_grad=True).to(h1.device)
+            loss = torch.tensor(torch.nan).to(h1.device)
             print(f"Norm error <{e}>, h1 shape: {h1.shape}, h3 shape: {h3.shape}")
         else:
             loss = pos_sim / (sim_matrix.sum(dim=1) + 1e-4)
             loss = -torch.log(loss).mean()
         return loss
-
-    def node_level_contrastive_loss(self, high_malicious_h, low_malicious_h, high_mask, low_mask):
-        loop_idx = sorted(set(high_mask.tolist()))
-        batch_node_loss = torch.tensor(0.0, requires_grad=True).to(high_malicious_h.device)
-        t = self.train_dict["temperature"]
-        for i in loop_idx:
-            high_h = high_malicious_h[high_mask == i]
-            low_h = low_malicious_h[low_mask == i]
-            # low_h 采样
-            indices = list(range(low_h.shape[0]))
-            random.shuffle(indices)
-            indices = indices[:high_h.shape[0]]
-            low_h = low_h[indices]
-            high_h_norm = high_h.norm(dim=1)
-            low_h_norm = low_h.norm(dim=1)
-            pos_sim = torch.einsum('ik,jk->ij', high_h, high_h) / torch.einsum('i,j->ij', high_h_norm, high_h_norm)
-            pos_loss = torch.exp(pos_sim / t)
-            neg_sim = torch.einsum('ik,jk->ij', high_h, low_h) / torch.einsum('i,j->ij', high_h_norm, low_h_norm)
-            neg_loss = torch.exp(neg_sim / t)
-            node_loss = -torch.log(pos_loss.sum(dim=1) / (pos_loss.sum(dim=1) + neg_loss.sum(dim=1) + 1e-4)).mean()
-            batch_node_loss = batch_node_loss + node_loss
-        return batch_node_loss / len(loop_idx)
 
     def get_edge_info(self, batch):
         edge_index = [batch[edge_type].edge_index for edge_type in batch.edge_types]
@@ -239,9 +202,6 @@ class UinGangsModelPreTrain:
         return new_batch
 
     def random_sampling_pretraining(self):
-        self.setup_seed()
-        self.model.to(self.device)
-        self.minirbt_model.to(self.device)
         start_epoch = 1
         end_epoch = self.train_dict["n_epochs"] + 1
         if self.train_dict["re_train"]:
@@ -314,26 +274,17 @@ class UinGangsModelPreTrain:
         out = self.model(x_dict, edge_index_dict)
         return out
 
-    def shan_fit(self, x_dict, edge_index_dict, score_dict):
-        out = self.model(x_dict, edge_index_dict, score_dict)
-        return out
-
     def rgcn_fit(self, pos_batch, batch_x):
         try:
             batch_edge_index, batch_edge_types = self.get_edge_info(pos_batch)
-            batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
         except Exception as e:
-            print(f"Get edge information error: <{e}>, "
-                  f"x max: {batch_x.shape[0] - 1}, "
-                  f"edge_index max: {batch_edge_index.detach().cpu().max().item()}")
+            print(f"Get edge information error: <{e}>")
             return None
         else:
+            batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
             return batch_h
 
-    def pretraining(self):
-        self.setup_seed()
-        self.model.to(self.device)
-        self.minirbt_model.to(self.device)
+    def pretraining_ddp(self):
         start_epoch = 1
         end_epoch = self.train_dict["n_epochs"] + 1
         if self.train_dict["re_train"]:
@@ -343,13 +294,6 @@ class UinGangsModelPreTrain:
             self.model.load_state_dict(model_weight)
             start_epoch = epoch_num + 1
             end_epoch = start_epoch + self.train_dict["n_epochs"]
-        # num_fraudar_nodes = 0
-        # num_fraudar_edges = 0
-        # num_fraudar_graphs = 0
-        #
-        # num_low_malicious_nodes = 0
-        # num_low_malicious_edges = 0
-        # num_low_malicious_graphs = 0
 
         best_loss = self.train_dict["best_loss"]
         for epoch in range(start_epoch, end_epoch):
@@ -373,9 +317,6 @@ class UinGangsModelPreTrain:
                 pos_batch['uin'].x = batch_x.to(self.device)
                 if self.conv_type == 'HAN':
                     batch_h = self.han_fit(pos_batch.x_dict, pos_batch.edge_index_dict)
-                elif self.conv_type == 'SHAN':
-                    batch_h = self.shan_fit(pos_batch.x_dict, pos_batch.edge_index_dict,
-                                            pos_batch.score_dict)
                 elif self.conv_type == 'RGCN':
                     batch_h = self.rgcn_fit(pos_batch, batch_x)
                 batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
@@ -394,23 +335,9 @@ class UinGangsModelPreTrain:
                 if list_flag or int_flag:
                     fraudar_batch = self.extract_batch_subgraphs(pos_batch)
                     fraudar_batch = fraudar_batch.to(self.device)
-                    # count average size of positive samples generated by fraudar
-                    # if epoch == 1:
-                    #     try:
-                    #         num_fraudar_nodes += (fraudar_batch['uin'].idx == 1).nonzero().squeeze().shape[0]
-                    #         num_fraudar_edges += fraudar_batch.num_edges
-                    #         num_fraudar_graphs += len(pos_batch_idx) if list_flag else pos_batch_idx
-                    #     except Exception as e:
-                    #         print(f"Error: <{e}>")
-                    #         print((fraudar_batch['uin'].idx == 1).nonzero().squeeze().shape)
-                    #         print(fraudar_batch.num_edges)
-                    #         print(len(pos_batch_idx) if list_flag else pos_batch_idx)
 
                     if self.conv_type == 'HAN':
                         fraudar_batch_h = self.han_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
-                    elif self.conv_type == 'SHAN':
-                        fraudar_batch_h = self.shan_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict,
-                                                        fraudar_batch.score_dict)
                     elif self.conv_type == 'RGCN':
                         fraudar_batch_h = self.rgcn_fit(fraudar_batch, fraudar_batch['uin'].x)
 
@@ -418,59 +345,19 @@ class UinGangsModelPreTrain:
                         fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
                         fraudar_batch_h_g = fraudar_batch_h_g[pos_batch_idx]
 
-                        # pos_batch_node_idx = (pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()
-                        # pos_batch_h = batch_h[pos_batch_node_idx]
-                        # pos_batch_h_mask = pos_batch['uin'].batch[pos_batch_node_idx]
-
                         # readout for subgraph
                         pos_batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
-                        # pos_batch_h_g = scatter_mean(pos_batch_h, pos_batch_h_mask, dim=0)
                         pos_batch_h_g = pos_batch_h_g[pos_batch_idx]
 
                         if (type(neg_batch_idx) is list and len(neg_batch_idx) != 0) or type(neg_batch_idx) is int:
                             neg_batch_h_g = batch_h_g[neg_batch_idx]
-                        # if epoch == 1:
-                        #     node_idx_list = []
-                        #     for idx in neg_batch_idx:
-                        #         node_idx = (pos_batch['uin'].batch == idx).nonzero().squeeze().detach().cpu().tolist()
-                        #         node_idx_list.extend(node_idx)
-                        #     num_low_malicious_nodes += len(node_idx_list)
-                        #     normal_batch = self.extract_batch_subgraphs(pos_batch,
-                        #                                                 torch.tensor(node_idx_list).to(self.device))
-                        #     num_low_malicious_edges += normal_batch.num_edges
-                        #     num_low_malicious_graphs += len(neg_batch_idx)
                         else:
                             neg_batch_h_g = batch_h_g
-                        # if epoch == 1:
-                        #     num_low_malicious_nodes += pos_batch.num_nodes
-                        #     num_low_malicious_edges += pos_batch.num_edges
-                        #     num_low_malicious_graphs += pos_batch.num_graphs
 
                         # subgraph-level contrastive learning
                         loss = self.preference_contrastive_loss(fraudar_batch_h_g, pos_batch_h_g, neg_batch_h_g)
                     else:
                         loss = torch.tensor(torch.nan).to(self.device)
-                    # node-level contrastive learning
-                    # fraudar_batch_idx = (pos_batch['uin'].idx == 1).nonzero().squeeze()
-                    # fraudar_batch_mask = pos_batch['uin'].batch[fraudar_batch_idx]
-                    # mask_fraudar_batch_x = pos_batch['uin'].x.clone().requires_grad_(False)
-                    # mask掉被认为是异常的节点，即节点属性被置为全0，边的信息也需要mask
-                    # mask_fraudar_batch_x[fraudar_batch_idx] = 0.0
-                    # mask_fraudar_batch_x.requires_grad_(True)
-                    # exclude_batch_idx = (pos_batch['uin'].idx == 0).nonzero().squeeze()
-                    # 同时边也需要mask掉边
-                    # mask_fraudar_batch = self.extract_batch_subgraphs(pos_batch, exclude_batch_idx)
-                    # mask_fraudar_batch_edge_index, mask_fraudar_batch_edge_types = self.get_edge_info(
-                    #     mask_fraudar_batch)
-                    # mask_fraudar_batch_h = self.model(mask_fraudar_batch_x, mask_fraudar_batch_edge_index,
-                    #                                   mask_fraudar_batch_edge_types)
-                    # exclude_batch_h = mask_fraudar_batch_h[exclude_batch_idx]
-                    # exclude_batch_mask = pos_batch['uin'].batch[exclude_batch_idx]
-                    # fraudar_batch_h = fraudar_batch_h[fraudar_batch_idx]
-                    # compute node-level loss
-                    # node_loss = self.node_level_contrastive_loss(fraudar_batch_h, exclude_batch_h,
-                    #                                              fraudar_batch_mask, exclude_batch_mask)
-                    # loss = self.alpha * subgraph_loss + self.beta * node_loss
                     if not torch.isnan(loss):
                         loss.backward()
                         self.optimizer.step()
@@ -499,72 +386,11 @@ class UinGangsModelPreTrain:
                 file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), file_name)
                 print(f"Save model to {file_name}")
-            # if epoch == 1:
-            #     print(
-            #         "Average fraudar graph number={:.4f}, fraudar graph size node={:.4f}, edge={:.4f}.\n"
-            #         "Average highly normal graph number={:.4f}, normal graph size node={:.4f}, edge={:.4f}.".format(
-            #             num_fraudar_graphs, num_fraudar_nodes / num_fraudar_graphs,
-            #                                 num_fraudar_edges / num_fraudar_graphs,
-            #             num_low_malicious_graphs, num_low_malicious_nodes / num_low_malicious_graphs,
-            #                                 num_low_malicious_edges / num_low_malicious_graphs
-            #         ))
         if not self.train_dict["is_debug"]:
             self.writer.close()
-
-    def evaluate_node_embedding(self):
-        self.setup_seed()
-        self.model.to(self.device)
-        self.minirbt_model.to(self.device)
-        if self.train_dict["eval_epoch"] != 0:
-            epoch_num = self.train_dict["eval_epoch"]
-            file_name = os.path.join(self.save_model_path, f"uin_gangs_RGCN_model_epoch_{epoch_num}.pth")
-            fig_name = f"filter_subgraph_pca_epoch_{str(epoch_num)}.png"
-        else:
-            file_name = os.path.join(self.save_model_path, f"uin_gangs_RGCN_model_best_loss.pth")
-            fig_name = f"filter_subgraph_pca_best_epoch.png"
-        model_weight = torch.load(file_name, map_location=self.device)
-        self.model.load_state_dict(model_weight)
-        self.model.eval()
-        normal_h = []
-        anomaly_h = []
-        for i, batch in enumerate(self.test_loader):
-            batch = batch.to(self.device)
-            batch_uin_acs_text_feat_input_ids = batch['uin'].text_feat_input_ids
-            batch_uin_acs_text_feat_attention_mask = batch['uin'].text_feat_attention_mask
-            with torch.no_grad():
-                batch_uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
-                                                             batch_uin_acs_text_feat_attention_mask).pooler_output
-            # combine numerical, categorical and text attributes
-            batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
-            batch_x = torch.nn.functional.normalize(batch_x, dim=1)
-            batch['uin'].x = batch_x
-            # get edge information
-            batch_edge_index, batch_edge_types = self.get_edge_info(batch)
-            batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
-            root_node_idx = batch['uin'].batch[:-1].detach().cpu().tolist()
-            normal_node_idx = (batch['uin'].y < 2).nonzero().squeeze().detach().cpu().tolist()
-            anomaly_node_idx = (batch['uin'].y >= 2).nonzero().squeeze().detach().cpu().tolist()
-            root_node_h = batch_h[root_node_idx]
-            normal_node_h = root_node_h[normal_node_idx].detach().cpu()
-            anomaly_node_h = root_node_h[anomaly_node_idx].detach().cpu()
-            if len(normal_node_h.shape) == 1:
-                normal_node_h = normal_node_h.unsqueeze(0)
-            if len(anomaly_node_h.shape) == 1:
-                anomaly_node_h = anomaly_node_h.unsqueeze(0)
-            normal_h.append(normal_node_h)
-            anomaly_h.append(anomaly_node_h)
-            torch.cuda.empty_cache()
-        normal_h = torch.concat(normal_h, dim=0)
-        anomaly_h = torch.concat(anomaly_h, dim=0)
-        all_h = torch.concat([normal_h, anomaly_h], dim=0).numpy()
-        all_class = torch.concat([torch.ones(anomaly_h.shape[0]), torch.zeros(normal_h.shape[0])], dim=0).numpy()
-        visualization_fig_save(input_embedding=all_h.numpy(), input_class=all_class.numpy(), data_type='Node Type',
-                               save_path=os.path.join(self.train_dict["pic_path"], fig_name))
+        dist.destroy_process_group()
 
     def evaluate_labelled_subgraph_embedding(self):
-        self.setup_seed()
-        self.model.to(self.device)
-        self.minirbt_model.to(self.device)
         if self.train_dict["eval_epoch"] != 0:
             epoch_num = self.train_dict["eval_epoch"]
             file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
@@ -622,63 +448,7 @@ class UinGangsModelPreTrain:
         visualization_fig_save(input_embedding=all_h.numpy(), input_class=all_class.numpy(),
                                save_path=os.path.join(self.train_dict["pic_path"], fig_name))
 
-    def evaluate_subgraph_embedding(self):
-        self.setup_seed()
-        self.model.to(self.device)
-        self.minirbt_model.to(self.device)
-        if self.train_dict["eval_epoch"] != 0:
-            epoch_num = self.train_dict["eval_epoch"]
-            file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
-            fig_name = f"filter_retrain_{self.conv_type}_subgraph_pca_epoch_{str(epoch_num)}.png"
-        else:
-            file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
-            fig_name = f"filter_retrain_{self.conv_type}_subgraph_pca_best_epoch.png"
-        model_weight = torch.load(file_name, map_location=self.device)
-        self.model.load_state_dict(model_weight)
-        self.model.eval()
-        low_h = []
-        high_h = []
-        for (i, pos_batch) in enumerate(self.pos_train_loader):
-            pos_batch = pos_batch.to(self.device)
-            batch_uin_acs_text_feat_input_ids = pos_batch['uin'].text_feat_input_ids.to(self.device)
-            batch_uin_acs_text_feat_attention_mask = pos_batch['uin'].text_feat_attention_mask.to(self.device)
-            with torch.no_grad():
-                batch_uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
-                                                             batch_uin_acs_text_feat_attention_mask).pooler_output
-                batch_uin_acs_text_feat = batch_uin_acs_text_feat.to(self.device)
-            # combine numerical, categorical and text attributes
-            batch_x = torch.concat([pos_batch['uin'].x, batch_uin_acs_text_feat], dim=1)
-            batch_x = torch.nn.functional.normalize(batch_x, dim=1)
-            pos_batch['uin'].x = batch_x.to(self.device)
-            # get edge information
-            batch_edge_index, batch_edge_types = self.get_edge_info(pos_batch)
-            batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
-            # readout for subgraph
-            batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
-            pos_batch_idx = (pos_batch['uin'].flag == 1).nonzero().squeeze().detach().cpu().tolist()
-            if (type(pos_batch_idx) is list and len(pos_batch_idx) != 0) or type(pos_batch_idx) is int:
-                high_h_g = batch_h_g[pos_batch_idx]
-                if len(high_h_g.shape) == 1:
-                    high_h_g = high_h_g.unsqueeze(0)
-                high_h.append(high_h_g.detach().cpu())
-            neg_batch_idx = (pos_batch['uin'].flag == 0).nonzero().squeeze().detach().cpu().tolist()
-            if (type(neg_batch_idx) is list and len(neg_batch_idx) != 0) or type(neg_batch_idx) is int:
-                low_h_g = batch_h_g[neg_batch_idx]
-                if len(low_h_g.shape) == 1:
-                    low_h_g = low_h_g.unsqueeze(0)
-                low_h.append(low_h_g.detach().cpu())
-            torch.cuda.empty_cache()
-        high_h = torch.concat(high_h, dim=0)
-        low_h = torch.concat(low_h, dim=0)
-        all_h = torch.concat([high_h, low_h], dim=0)
-        all_class = torch.concat([torch.ones(high_h.shape[0]), torch.zeros(low_h.shape[0])], dim=0).numpy()
-        visualization_fig_save(input_embedding=all_h.numpy(), input_class=all_class.numpy(),
-                               save_path=os.path.join(self.train_dict["pic_path"], fig_name))
-
     def evaluate_subgraph_predict(self):
-        self.setup_seed()
-        self.model.to(self.device)
-        self.minirbt_model.to(self.device)
         if not self.train_dict["is_supervised"]:
             if self.train_dict["eval_epoch"] != 0:
                 epoch_num = self.train_dict["eval_epoch"]
@@ -718,20 +488,16 @@ class UinGangsModelPreTrain:
                 batch['uin'].x = batch_x
                 if self.conv_type == 'HAN':
                     batch_h = self.han_fit(batch.x_dict, batch.edge_index_dict)
-                elif self.conv_type == 'SHAN':
-                    batch_h = self.shan_fit(batch.x_dict, batch.edge_index_dict,
-                                            batch.score_dict)
                 elif self.conv_type == 'RGCN':
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
                 # get edge information
-                if batch_h is not None:
-                    batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                    batch_y = batch['uin'].gang_label.float()
-                    pred_y = self.classifier(batch_h_g).argmax(dim=1).float().to(self.device)
-                    cls_loss = self.criterion(pred_y, batch_y).requires_grad_(True)
-                    cls_loss.backward()
-                    self.cls_optimizer.step()
-                    epoch_loss.append(cls_loss.detach().cpu().item())
+                batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                batch_y = batch['uin'].gang_label.float()
+                pred_y = self.classifier(batch_h_g).argmax(dim=1).float().to(self.device)
+                cls_loss = self.criterion(pred_y, batch_y).requires_grad_(True)
+                cls_loss.backward()
+                self.cls_optimizer.step()
+                epoch_loss.append(cls_loss.detach().cpu().item())
             current_loss = sum(epoch_loss) / len(epoch_loss)
             if current_loss < best_loss:
                 best_loss = current_loss
@@ -762,22 +528,18 @@ class UinGangsModelPreTrain:
                 batch['uin'].x = batch_x
                 if self.conv_type == 'HAN':
                     batch_h = self.han_fit(batch.x_dict, batch.edge_index_dict)
-                elif self.conv_type == 'SHAN':
-                    batch_h = self.shan_fit(batch.x_dict, batch.edge_index_dict,
-                                            batch.score_dict)
                 elif self.conv_type == 'RGCN':
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
-                if batch_h is not None:
-                    batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                    batch_y = batch['uin'].gang_label
-                    prob_y = self.classifier(batch_h_g)[:, 1]
-                    pred_y = self.classifier(batch_h_g).argmax(dim=1)
-                    true_y = batch_y.detach().cpu()
-                    prob_y = prob_y.detach().cpu()
-                    pred_y = pred_y.detach().cpu()
-                    true_y_list.append(true_y)
-                    pred_y_list.append(pred_y)
-                    prob_y_list.append(prob_y)
+                batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                batch_y = batch['uin'].gang_label
+                prob_y = self.classifier(batch_h_g)[:, 1]
+                pred_y = self.classifier(batch_h_g).argmax(dim=1)
+                true_y = batch_y.detach().cpu()
+                prob_y = prob_y.detach().cpu()
+                pred_y = pred_y.detach().cpu()
+                true_y_list.append(true_y)
+                pred_y_list.append(pred_y)
+                prob_y_list.append(prob_y)
             true_y_list = torch.concat(true_y_list, dim=0).numpy()
             prob_y_list = torch.concat(prob_y_list, dim=0).numpy()
             pred_y_list = torch.concat(pred_y_list, dim=0).numpy()
