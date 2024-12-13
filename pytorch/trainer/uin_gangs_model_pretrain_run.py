@@ -82,7 +82,7 @@ class ArgsUinGangs:
         parser.add_argument('--evaluate_task', type=str, default='',
                             choices=['eval_labelled_subgraph_embedding', 'eval_subgraph_embedding',
                                      'eval_node_embedding', 'predict', ''])
-        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN'])
+        parser.add_argument('--conv_type', type=str, default='SHAN', choices=['RGCN', 'HAN', 'SHAN'])
         parser.add_argument('--is_supervised', type=bool, default=False)
 
         args = parser.parse_args()
