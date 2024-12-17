@@ -241,34 +241,59 @@ def edge_index_to_nx(edge_index):
     return G
 
 
+def compute_density(G):
+    num_nodes = G.number_of_nodes()
+    num_edges = G.number_of_edges()
+    if num_nodes <= 1:
+        return 0.0
+    density = num_edges / (num_nodes * (num_nodes - 1))
+    return num_nodes, num_edges, density
+
 def plot_graph(G, i):
+    nodes, edges, density = compute_density(G)
     pos = nx.spring_layout(G)
     nx.draw(G, pos, with_labels=True, node_color='red', node_size=500, font_size=12, font_color='black',
             font_weight='bold', edge_color='gray')
     plt.title("Graph Visualization")
     plt.savefig(f"/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/pic/malicious_subgraphs/subgraph_{str(i)}.png")
-    plt.show()
+    # plt.show()
+    return nodes, edges, density
 
 if __name__ == '__main__':
     # os.makedirs('/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/pic/malicious_subgraphs/')
     count = 0
+    average_nodes = []
+    average_edges = []
+    average_density = []
     for batch_num in range(1, 6):
         batch = load_batch_from_file(batch_num)
         for item_num in range(batch['uin'].batch.max().item()+1):
             gang_idx = ((batch['uin'].gang_mem == 1) & (batch['uin'].batch == item_num)).nonzero().squeeze()
-            batch_copy = batch.clone()
-            del batch_copy['uin']
-            batch_copy['uin'].x = batch['uin'].x[gang_idx].clone()
-            # batch_copy['uin'].batch = batch['uin'].batch.clone()
-            for edge_type in batch.edge_types:
-                del batch_copy[edge_type].edge_index
+            try:
                 gang_idx_max = gang_idx.max().item()
-                edge_idx_max = batch[edge_type].edge_index.max().item()
-                if gang_idx_max > edge_idx_max:
-                    gang_idx = gang_idx[gang_idx < edge_idx_max]
-                subgraph_edge_index, _ = subgraph(gang_idx, batch[edge_type].edge_index, relabel_nodes=True)
-                batch_copy[edge_type].edge_index = subgraph_edge_index
-            edge_index = torch.concat([batch_copy[edge_type].edge_index for edge_type in batch_copy.edge_types], dim=1)
-            time.sleep(3)
-            count += 1
-            plot_graph(edge_index_to_nx(edge_index), count)
+            except Exception as e:
+                print(f"Error: {e}")
+                continue
+            else:
+                batch_copy = batch.clone()
+                del batch_copy['uin']
+                batch_copy['uin'].x = batch['uin'].x[gang_idx].clone()
+                # batch_copy['uin'].batch = batch['uin'].batch.clone()
+                for edge_type in batch.edge_types:
+                    del batch_copy[edge_type].edge_index
+                    edge_idx_max = batch[edge_type].edge_index.max().item()
+                    if gang_idx_max > edge_idx_max:
+                        gang_idx = gang_idx[gang_idx < edge_idx_max]
+                    subgraph_edge_index, _ = subgraph(gang_idx, batch[edge_type].edge_index, relabel_nodes=True)
+                    batch_copy[edge_type].edge_index = subgraph_edge_index
+                edge_index = torch.concat([batch_copy[edge_type].edge_index for edge_type in batch_copy.edge_types],
+                                          dim=1)
+                time.sleep(3)
+                count += 1
+                nodes, edges, density = plot_graph(edge_index_to_nx(edge_index), count)
+                average_nodes.append(nodes)
+                average_edges.append(edges)
+                average_density.append(density)
+    print(f"average nodes: {sum(average_nodes) / len(average_nodes): .4f}, "
+          f"average edges: {sum(average_edges) / len(average_edges): .4f}, "
+          f"average density: {sum(average_density) / len(average_density): .4f}")
