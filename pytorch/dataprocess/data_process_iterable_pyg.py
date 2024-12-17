@@ -137,7 +137,13 @@ class UinGangsDataIterablePyG(IterableDataset):
         if data["original_label"] in self.class_label_enums_dict:
             data["label"] = self.class_label_enums_dict[data["original_label"]]
             if random.random() < self.label_class_amount_upper_limit_dict[data["label"]]:
-                return self.process_json_to_pyg(data, control_edge_number=self.control_node_num)
+                try:
+                    pyg_data = self.process_json_to_pyg(data, control_edge_number=self.control_node_num)
+                except Exception as e:
+                    print(f"Error: <{e}>")
+                    return None
+                else:
+                    return pyg_data
             else:
                 return None
         else:
