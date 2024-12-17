@@ -15,4 +15,4 @@ pip install /mnt/cephfs/jiujiuchen/projects/mmgog_long_term_sequence_model/data/
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 export MASTER_ADDR='localhost'
 export MASTER_PORT='10086'
-python3 -m torch.distributed.launch /mnt/cephfs/jiujiuchen/projects/mmgog_long_term_sequence_model/pytorch/trainer/uin_gangs_model_pretrain_ddp_run.py
+torchrun /mnt/cephfs/jiujiuchen/projects/mmgog_long_term_sequence_model/pytorch/trainer/uin_gangs_model_pretrain_ddp_run.py

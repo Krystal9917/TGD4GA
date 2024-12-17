@@ -221,7 +221,6 @@ class UinGangsDataIterablePyG(IterableDataset):
                 # obtain anomaly score
                 graph_data['uin'].score = torch.from_numpy(np.array(
                     graph_schema["node_sets"]["uin"]["data"]["uin_evil_score"]["float_list"], dtype=np.float32)).float()
-                # graph_data['uin'].score = torch.randn((graph_data['uin'].x.shape[0],))
                 if json_data['original_label'].strip() in self.class_label_enums_dict.keys():
                     graph_data['uin'].y = self.class_label_enums_dict[json_data['original_label'].strip()]
                 else:
@@ -233,6 +232,13 @@ class UinGangsDataIterablePyG(IterableDataset):
                         graph_data['uin'].gang_label = 0
                 else:
                     graph_data['uin'].gang_label = 0
+                graph_data['uin'].gang_mem = torch.zeros(graph_data['uin'].x.shape[0])
+                if 'uin_gangs_mem_list' in json_data.keys():
+                    gang_mem_list = json_data['uin_gangs_mem_list'].split(',')
+                    map_dict = graph_schema['uin2nodeid_map']
+                    for uin_gang_mem in gang_mem_list:
+                        nodeid = int(map_dict[uin_gang_mem])
+                        graph_data['uin'].gang_mem[nodeid] = 1
             else:
                 graph_data = None
         else:
