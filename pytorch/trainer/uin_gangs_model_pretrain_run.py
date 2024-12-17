@@ -15,7 +15,7 @@ class ArgsUinGangs:
         parser.add_argument('--train_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "train", "raw",
-                         "uin_gangs_full_graph_dataset_train_241119_241121.txt")))
+                         "uin_gangs_full_graph_dataset_train_241119_241130.txt")))
                          # "uin_gangs_full_graph_dataset", "valid", "processed",
                          # "uin_gangs_supervise_full_graph_dataset_train_241204_20241204.txt")))
         parser.add_argument('--test_data_path', type=str, default=os.path.abspath(
@@ -47,7 +47,7 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
         parser.add_argument('--best_loss', type=float, default=1e2)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
-        parser.add_argument('--batch_size', type=int, default=8)
+        parser.add_argument('--batch_size', type=int, default=40)
         parser.add_argument('--data_buffer_size', type=int, default=64)
         parser.add_argument('--lr', type=float, default=0.001)
         parser.add_argument('--n_epochs', type=int, default=100)
@@ -82,7 +82,7 @@ class ArgsUinGangs:
         parser.add_argument('--evaluate_task', type=str, default='',
                             choices=['eval_labelled_subgraph_embedding', 'eval_subgraph_embedding',
                                      'eval_node_embedding', 'predict', ''])
-        parser.add_argument('--conv_type', type=str, default='SHAN', choices=['RGCN', 'HAN', 'SHAN'])
+        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN', 'SHAN'])
         parser.add_argument('--is_supervised', type=bool, default=False)
 
         args = parser.parse_args()
@@ -126,7 +126,6 @@ def run_predict(args):
 
 if __name__ == '__main__':
     args = ArgsUinGangs()
-    args.args_dict["is_train"] = False
     if args.args_dict["is_train"]:
         run_pretraining_graph(args, args.args_dict["sampling"])
     else:

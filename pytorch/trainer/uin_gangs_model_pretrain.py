@@ -80,7 +80,7 @@ class UinGangsModelPreTrain:
                                                         num_workers=self.train_dict["num_workers"],
                                                         collate_fn=self.train_data.pos_collate_fn_for_fraudar)
             if not self.train_dict["is_debug"]:
-                self.log_file_path = f"1922_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
+                self.log_file_path = f"1930_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
                 log_path = os.path.join(args_dict['log_dir'], self.train_dict["model_states_path"].split('/')[-1],
                                         self.log_file_path)
                 if not os.path.exists(log_path):
@@ -324,8 +324,8 @@ class UinGangsModelPreTrain:
             batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
         except Exception as e:
             print(f"Get edge information error: <{e}>, "
-                  f"x max: {batch_x.shape[0] - 1}, "
-                  f"edge_index max: {batch_edge_index.detach().cpu().max().item()}")
+                  f"x max idx: {batch_x.shape[0] - 1}, "
+                  f"positive nodes idx: {(pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()}")
             return None
         else:
             return batch_h
