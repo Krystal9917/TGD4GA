@@ -80,7 +80,7 @@ class UinGangsModelPreTrain:
                                                         num_workers=self.train_dict["num_workers"],
                                                         collate_fn=self.train_data.pos_collate_fn_for_fraudar)
             if not self.train_dict["is_debug"]:
-                self.log_file_path = f"1930_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
+                self.log_file_path = f"1922_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
                 log_path = os.path.join(args_dict['log_dir'], self.train_dict["model_states_path"].split('/')[-1],
                                         self.log_file_path)
                 if not os.path.exists(log_path):
@@ -334,15 +334,20 @@ class UinGangsModelPreTrain:
         self.setup_seed()
         self.model.to(self.device)
         self.minirbt_model.to(self.device)
-        start_epoch = 1
+        start_epoch = 3
         end_epoch = self.train_dict["n_epochs"] + 1
         if self.train_dict["re_train"]:
             epoch_num = self.train_dict["start_epoch"]
-            file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
+            if epoch_num == 0:
+                file_name = os.path.join(self.save_model_path,
+                                         f"uin_gangs_{self.conv_type}_model_best_loss.pth")
+            else:
+                file_name = os.path.join(self.save_model_path,
+                                         f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
+                start_epoch = epoch_num + 1
+                end_epoch = start_epoch + self.train_dict["n_epochs"]
             model_weight = torch.load(file_name, map_location=self.device)
             self.model.load_state_dict(model_weight)
-            start_epoch = epoch_num + 1
-            end_epoch = start_epoch + self.train_dict["n_epochs"]
         # num_fraudar_nodes = 0
         # num_fraudar_edges = 0
         # num_fraudar_graphs = 0
@@ -407,10 +412,22 @@ class UinGangsModelPreTrain:
                     #         print(len(pos_batch_idx) if list_flag else pos_batch_idx)
 
                     if self.conv_type == 'HAN':
-                        fraudar_batch_h = self.han_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
+                        try:
+                            edge_index_dict = fraudar_batch.edge_index_dict
+                        except Exception as e:
+                            print(f"Error: {e}>")
+                            fraudar_batch_h = None
+                        else:
+                            fraudar_batch_h = self.han_fit(fraudar_batch.x_dict, edge_index_dict)
                     elif self.conv_type == 'SHAN':
-                        fraudar_batch_h = self.shan_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict,
-                                                        fraudar_batch.score_dict)
+                        try:
+                            edge_index_dict = fraudar_batch.edge_index_dict
+                        except Exception as e:
+                            print(f"Error: {e}>")
+                            fraudar_batch_h = None
+                        else:
+                            fraudar_batch_h = self.shan_fit(fraudar_batch.x_dict, edge_index_dict,
+                                                            fraudar_batch.score_dict)
                     elif self.conv_type == 'RGCN':
                         fraudar_batch_h = self.rgcn_fit(fraudar_batch, fraudar_batch['uin'].x)
 
