@@ -5,8 +5,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="690ce246-b023-4a0a-8442-769ce35af91d" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_ddp_run.sh" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pytorch/dataprocess/data_example_test.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/dataprocess/data_example_test.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_ddp.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_ddp.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_ddp_run.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_ddp_run.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_run.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_run.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -81,7 +86,7 @@
       <recent name="D:\Projects\mmgog_long_term_sequence_model\pytorch\dataprocess" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.data_example_test">
+  <component name="RunManager" selected="Python.uin_gangs_model_pretrain_run">
     <configuration name="attn_gnn_model" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="mmgog_long_term_sequence_model" />
       <option name="ENV_FILES" value="" />
@@ -189,7 +194,7 @@
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_run.py" />
-      <option name="PARAMETERS" value="--batch_size 20 --data_buffer 32 --num_workers 4 --is_debug True --conv_type RGCN --sampling fraudar --evaluate_task predict" />
+      <option name="PARAMETERS" value="--is_train False --is_debug True --batch_size 64 --data_buffer 80 --num_workers 4 --conv_type RGCN --sampling fraudar --evaluate_task eval_labelled_subgraph_embedding" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
       <option name="MODULE_MODE" value="false" />
@@ -199,16 +204,16 @@
     </configuration>
     <list>
       <item itemvalue="Python.attn_gnn_model" />
-      <item itemvalue="Python.get_url_data" />
-      <item itemvalue="Python.data_example_test" />
       <item itemvalue="Python.combine_file" />
+      <item itemvalue="Python.data_example_test" />
+      <item itemvalue="Python.get_url_data" />
       <item itemvalue="Python.uin_gangs_model_pretrain_run" />
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.uin_gangs_model_pretrain_run" />
         <item itemvalue="Python.data_example_test" />
         <item itemvalue="Python.attn_gnn_model" />
-        <item itemvalue="Python.uin_gangs_model_pretrain_run" />
         <item itemvalue="Python.combine_file" />
         <item itemvalue="Python.get_url_data" />
       </list>
@@ -276,7 +281,9 @@
       <workItem from="1733461629599" duration="19000" />
       <workItem from="1733461651008" duration="18131000" />
       <workItem from="1733711604770" duration="11000" />
-      <workItem from="1733711617946" duration="121623000" />
+      <workItem from="1733711617946" duration="124212000" />
+      <workItem from="1734407505056" duration="16000" />
+      <workItem from="1734407523367" duration="4777000" />
     </task>
     <servers />
   </component>
@@ -324,7 +331,7 @@
     <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$heterogeneous_graph_model.coverage" NAME="heterogeneous_graph_model Coverage Results" MODIFIED="1730202563494" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/models" />
     <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$han_model.coverage" NAME="han_model Coverage Results" MODIFIED="1733818080624" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/models" />
     <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$test_cora.coverage" NAME="test_cora Coverage Results" MODIFIED="1733318303496" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/dataprocess" />
-    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$uin_gangs_model_pretrain_run.coverage" NAME="uin_gangs_model_pretrain_run Coverage Results" MODIFIED="1734057248479" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/trainer" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$uin_gangs_model_pretrain_run.coverage" NAME="uin_gangs_model_pretrain_run Coverage Results" MODIFIED="1734411927695" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/trainer" />
     <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$get_url_data.coverage" NAME="get_url_data Coverage Results" MODIFIED="1733919266328" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/utils" />
   </component>
 </project>

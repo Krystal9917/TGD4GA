@@ -19,20 +19,12 @@ class ArgsUinGangs:
         parser = argparse.ArgumentParser()
         parser.add_argument('--train_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         # "uin_gangs_full_graph_dataset", "train", "raw",
-                         # "uin_gangs_full_graph_dataset_train_241119_241121.txt")))
-                         "uin_gangs_full_graph_dataset", "valid", "processed",
-                         "uin_gangs_supervise_full_graph_dataset_train_241204_20241204.txt")))
+                         "uin_gangs_full_graph_dataset", "train", "raw",
+                         "uin_gangs_full_graph_dataset_train_241119_241130.txt")))
         parser.add_argument('--test_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         # "uin_gangs_full_graph_dataset", "eval", "raw",
-                         # "uin_gangs_full_graph_dataset_train_241119_1.txt")))
-                         "uin_gangs_full_graph_dataset", "valid", "processed",
-                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt")))
-        parser.add_argument('--eval_data_path', type=str, default=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "uin_gangs_full_graph_dataset", "valid", "raw",
-                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_combined.txt")))
+                         "uin_gangs_full_graph_dataset", "eval", "raw",
+                         "uin_gangs_full_graph_dataset_train_241119_1.txt")))
         parser.add_argument('--uin_gangs_enum_yaml_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "config", "yml", "uin_gangs_enum.yaml")))
@@ -52,8 +44,8 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
         parser.add_argument('--best_loss', type=float, default=5)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
-        parser.add_argument('--batch_size', type=int, default=40)
-        parser.add_argument('--data_buffer_size', type=int, default=64)
+        parser.add_argument('--batch_size', type=int, default=128)
+        parser.add_argument('--data_buffer_size', type=int, default=80)
         parser.add_argument('--lr', type=float, default=0.001)
         parser.add_argument('--n_epochs', type=int, default=100)
         parser.add_argument('--uin_in_size', type=int, default=846)
@@ -84,7 +76,7 @@ class ArgsUinGangs:
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--eval_epoch', type=int, default=0)
-        parser.add_argument('--evaluate_task', type=str, default='predict',
+        parser.add_argument('--evaluate_task', type=str, default='',
                             choices=['eval_labelled_subgraph_embedding', 'eval_subgraph_embedding',
                                      'eval_node_embedding', 'predict', ''])
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN'])

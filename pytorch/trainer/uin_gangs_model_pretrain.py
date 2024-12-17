@@ -80,7 +80,7 @@ class UinGangsModelPreTrain:
                                                         num_workers=self.train_dict["num_workers"],
                                                         collate_fn=self.train_data.pos_collate_fn_for_fraudar)
             if not self.train_dict["is_debug"]:
-                self.log_file_path = f"1922_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
+                self.log_file_path = f"1921_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
                 log_path = os.path.join(args_dict['log_dir'], self.train_dict["model_states_path"].split('/')[-1],
                                         self.log_file_path)
                 if not os.path.exists(log_path):
@@ -94,7 +94,7 @@ class UinGangsModelPreTrain:
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         else:
             self.save_model_path = os.path.join(self.train_dict["model_states_path"],
-                                                f"1922_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}")
+                                                f"1921_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}")
             if self.train_dict["evaluate_task"] == 'eval_subgraph_embedding':
                 self.pos_train_data = UinGangsDataIterablePyG(self.train_dict, self.train_dict["test_data_path"])
                 self.pos_train_loader = Data.DataLoader(self.pos_train_data,

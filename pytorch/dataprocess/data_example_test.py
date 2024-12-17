@@ -66,10 +66,7 @@ def generate_data_batch(num_graphs=3, node_num=10, feature_dim=20):
 
 
 def load_batch_from_file():
-    path = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/valid/processed/test_samples.pt'
-    batch = torch.load(path)
-    return batch
-
+    return None
 
 def generate_positive_samples_by_fraudar(graph_data, return_nodes_num=False):
     G = nx.DiGraph()

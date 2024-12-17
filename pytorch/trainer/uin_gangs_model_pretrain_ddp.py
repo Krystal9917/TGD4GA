@@ -76,7 +76,7 @@ class UinGangsModelPreTrainDDP:
                                                         num_workers=self.train_dict["num_workers"],
                                                         collate_fn=self.train_data.pos_collate_fn_for_fraudar)
             if not self.train_dict["is_debug"]:
-                self.log_file_path = f"1922_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
+                self.log_file_path = f"1930_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}_GPU2"
                 log_path = os.path.join(args_dict['log_dir'], self.train_dict["model_states_path"].split('/')[-1],
                                         self.log_file_path)
                 if not os.path.exists(log_path):
@@ -88,32 +88,6 @@ class UinGangsModelPreTrainDDP:
             self.alpha = self.train_dict["pretraining_alpha"]
             self.beta = self.train_dict["pretraining_beta"]
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
-        else:
-            self.save_model_path = os.path.join(self.train_dict["model_states_path"],
-                                                f"{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}")
-            if self.train_dict["evaluate_task"] == 'eval_labelled_subgraph_embedding':
-                self.eval_data = UinGangsDataIterablePyG(self.train_dict, self.train_dict["eval_data_path"])
-                self.eval_loader = Data.DataLoader(self.eval_data,
-                                                   batch_size=self.train_dict["batch_size"],
-                                                   num_workers=self.train_dict["num_workers"],
-                                                   collate_fn=self.eval_data.collate_fn)
-            elif self.train_dict["evaluate_task"] == 'predict':
-                self.train_data = UinGangsDataIterablePyG(self.train_dict, self.train_dict["train_data_path"])
-                self.eval_data = UinGangsDataIterablePyG(self.train_dict, self.train_dict["test_data_path"])
-                self.train_loader = Data.DataLoader(self.train_data,
-                                                    batch_size=self.train_dict["batch_size"],
-                                                    num_workers=self.train_dict["num_workers"],
-                                                    collate_fn=self.train_data.collate_fn)
-                self.eval_loader = Data.DataLoader(self.eval_data,
-                                                   batch_size=self.train_dict["batch_size"],
-                                                   num_workers=self.train_dict["num_workers"],
-                                                   collate_fn=self.eval_data.collate_fn)
-                self.classifier = torch.nn.Sequential(torch.nn.Linear(args_dict['output_dim'], args_dict['hidden_dim']),
-                                                      torch.nn.ReLU(),
-                                                      torch.nn.Linear(args_dict['hidden_dim'], 2),
-                                                      torch.nn.Softmax(dim=1))
-                self.criterion = torch.nn.CrossEntropyLoss()
-                self.cls_optimizer = torch.optim.Adam(self.classifier.parameters(), lr=5e-4)
         self.setup_seed()
 
     def setup_seed(self):
@@ -123,12 +97,6 @@ class UinGangsModelPreTrainDDP:
         np.random.seed(self.train_dict["seed"])
         random.seed(self.train_dict["seed"])
         torch.backends.cudnn.deterministic = True
-
-    def cosine_similarity(self, h1, h2):
-        h1_abs = h1.norm(dim=1)
-        h2_abs = h2.norm(dim=1)
-        sim_matrix = torch.einsum('ik,jk->ij', h1, h2) / torch.einsum('i,j->ij', h1_abs, h2_abs)
-        return sim_matrix
 
     def contrastive_loss(self, h1, h2):
         r"""Compute contrastive InfoNCE loss"""
@@ -371,7 +339,6 @@ class UinGangsModelPreTrainDDP:
                                 time.time() - start_time))
 
                     torch.cuda.empty_cache()
-
             epoch_loss = loss_sum / batch_num
             if not self.train_dict["is_debug"]:
                 self.writer.add_scalar(f'{self.conv_type}_pretraining_loss', epoch_loss, epoch)
@@ -389,170 +356,3 @@ class UinGangsModelPreTrainDDP:
         if not self.train_dict["is_debug"]:
             self.writer.close()
         dist.destroy_process_group()
-
-    def evaluate_labelled_subgraph_embedding(self):
-        if self.train_dict["eval_epoch"] != 0:
-            epoch_num = self.train_dict["eval_epoch"]
-            file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
-            fig_name = f"filter_retrain_{self.conv_type}_{self.train_dict['sampling']}_subgraph_pca_epoch_{str(epoch_num)}.png"
-        else:
-            file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
-            fig_name = f"filter_retrain_{self.conv_type}_{self.train_dict['sampling']}_subgraph_pca_best_epoch.png"
-        model_weight = torch.load(file_name, map_location=self.device)
-        self.model.load_state_dict(model_weight)
-        self.model.eval()
-        all_h = []
-        all_class = []
-        positive_sim = []
-        negative_sim = []
-        positive_negative_sim = []
-        for (i, batch) in enumerate(self.eval_loader):
-            batch = batch.to(self.device)
-            batch_uin_acs_text_feat_input_ids = batch['uin'].text_feat_input_ids.to(self.device)
-            batch_uin_acs_text_feat_attention_mask = batch['uin'].text_feat_attention_mask.to(self.device)
-            with torch.no_grad():
-                batch_uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
-                                                             batch_uin_acs_text_feat_attention_mask).pooler_output
-                batch_uin_acs_text_feat = batch_uin_acs_text_feat.to(self.device)
-            # combine numerical, categorical and text attributes
-            batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
-            batch_x = torch.nn.functional.normalize(batch_x, dim=1)
-            batch['uin'].x = batch_x.to(self.device)
-            # get edge information
-            if self.conv_type == 'HAN':
-                batch_h = self.han_fit(batch.x_dict, batch.edge_index_dict)
-            elif self.conv_type == 'RGCN':
-                batch_h = self.rgcn_fit(batch, batch['uin'].x)
-            # readout for subgraph
-            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-            normal_idx = (batch['uin'].gang_label == 0).nonzero().squeeze().detach().cpu().tolist()
-            gang_idx = (batch['uin'].gang_label == 1).nonzero().squeeze().detach().cpu().tolist()
-            positive_sim.extend(self.cosine_similarity(batch_h_g[gang_idx, :], batch_h_g[gang_idx, :]).mean(
-                dim=1).detach().cpu().tolist())
-            negative_sim.extend(self.cosine_similarity(batch_h_g[normal_idx, :], batch_h_g[normal_idx, :]).mean(
-                dim=1).detach().cpu().tolist())
-            positive_negative_sim.extend(self.cosine_similarity(batch_h_g[gang_idx, :], batch_h_g[normal_idx, :]).mean(
-                dim=1).detach().cpu().tolist())
-            all_h.append(batch_h_g.detach().cpu())
-            all_class.append(batch['uin'].gang_label.detach().cpu())
-            torch.cuda.empty_cache()
-        pos_sim = np.mean(positive_sim)
-        neg_sim = np.mean(negative_sim)
-        pos_neg_sim = np.mean(positive_negative_sim)
-        print(f"Positive similarity: {pos_sim:.4f}, "
-              f"negative similarity: {neg_sim:.4f}, "
-              f"positive negative similarity: {pos_neg_sim:.4f}")
-
-        all_h = torch.concat(all_h, dim=0)
-        all_class = torch.concat(all_class, dim=0)
-        visualization_fig_save(input_embedding=all_h.numpy(), input_class=all_class.numpy(),
-                               save_path=os.path.join(self.train_dict["pic_path"], fig_name))
-
-    def evaluate_subgraph_predict(self):
-        if not self.train_dict["is_supervised"]:
-            if self.train_dict["eval_epoch"] != 0:
-                epoch_num = self.train_dict["eval_epoch"]
-                file_name = os.path.join(self.save_model_path,
-                                         f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
-            else:
-                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
-            model_weight = torch.load(file_name, map_location=self.device)
-            self.model.load_state_dict(model_weight)
-            print(f"Load: {file_name}")
-            self.model.eval()
-            for param in self.model.parameters():
-                param.requires_grad = False
-        else:
-            self.model.train()
-            for param in self.model.parameters():
-                param.requires_grad = True
-        for param in self.classifier.parameters():
-            param.requires_grad = True
-        self.classifier.to(self.device)
-        best_loss = self.train_dict["best_loss"]
-        for epoch in range(1, self.train_dict["n_epochs"] + 1):
-            st = time.time()
-            self.classifier.train()
-            epoch_loss = []
-            for i, batch in enumerate(self.train_loader):
-                self.cls_optimizer.zero_grad()
-                batch = batch.to(self.device)
-                batch_uin_acs_text_feat_input_ids = batch['uin'].text_feat_input_ids
-                batch_uin_acs_text_feat_attention_mask = batch['uin'].text_feat_attention_mask
-                with torch.no_grad():
-                    batch_uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
-                                                                 batch_uin_acs_text_feat_attention_mask).pooler_output
-                # combine numerical, categorical and text attributes
-                batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
-                batch_x = torch.nn.functional.normalize(batch_x, dim=1)
-                batch['uin'].x = batch_x
-                if self.conv_type == 'HAN':
-                    batch_h = self.han_fit(batch.x_dict, batch.edge_index_dict)
-                elif self.conv_type == 'RGCN':
-                    batch_h = self.rgcn_fit(batch, batch['uin'].x)
-                # get edge information
-                batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                batch_y = batch['uin'].gang_label.float()
-                pred_y = self.classifier(batch_h_g).argmax(dim=1).float().to(self.device)
-                cls_loss = self.criterion(pred_y, batch_y).requires_grad_(True)
-                cls_loss.backward()
-                self.cls_optimizer.step()
-                epoch_loss.append(cls_loss.detach().cpu().item())
-            current_loss = sum(epoch_loss) / len(epoch_loss)
-            if current_loss < best_loss:
-                best_loss = current_loss
-                file_name = self.train_dict["cls_model_states_path"] + f"{self.conv_type}_best_loss.pth"
-                torch.save(self.classifier.state_dict(), file_name)
-                print(f"Now best loss: {best_loss:.4f}, save model to {file_name}")
-            self.evaluate_classifier()
-            print(f"Epoch {epoch}, Cross entropy loss: {current_loss: .4f}, Time: {time.time() - st: .4f} s")
-
-    def evaluate_classifier(self):
-        self.classifier.eval()
-        true_y_list = []
-        pred_y_list = []
-        prob_y_list = []
-        with torch.no_grad():
-            for i, batch in enumerate(self.eval_loader):
-                batch = batch.to(self.device)
-                batch_uin_acs_text_feat_input_ids = batch['uin'].text_feat_input_ids
-                batch_uin_acs_text_feat_attention_mask = batch['uin'].text_feat_attention_mask
-                with torch.no_grad():
-                    batch_uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
-                                                                 batch_uin_acs_text_feat_attention_mask).pooler_output
-                # combine numerical, categorical and text attributes
-                batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
-                batch_x = torch.nn.functional.normalize(batch_x, dim=1)
-                batch['uin'].x = batch_x
-                # get edge information
-                batch['uin'].x = batch_x
-                if self.conv_type == 'HAN':
-                    batch_h = self.han_fit(batch.x_dict, batch.edge_index_dict)
-                elif self.conv_type == 'RGCN':
-                    batch_h = self.rgcn_fit(batch, batch['uin'].x)
-                batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                batch_y = batch['uin'].gang_label
-                prob_y = self.classifier(batch_h_g)[:, 1]
-                pred_y = self.classifier(batch_h_g).argmax(dim=1)
-                true_y = batch_y.detach().cpu()
-                prob_y = prob_y.detach().cpu()
-                pred_y = pred_y.detach().cpu()
-                true_y_list.append(true_y)
-                pred_y_list.append(pred_y)
-                prob_y_list.append(prob_y)
-            true_y_list = torch.concat(true_y_list, dim=0).numpy()
-            prob_y_list = torch.concat(prob_y_list, dim=0).numpy()
-            pred_y_list = torch.concat(pred_y_list, dim=0).numpy()
-            acc = accuracy_score(true_y_list, pred_y_list)
-            f1 = f1_score(true_y_list, pred_y_list)
-            pre = precision_score(true_y_list, pred_y_list)
-            rec = recall_score(true_y_list, pred_y_list)
-            roc_auc = roc_auc_score(true_y_list, prob_y_list)
-            cm = confusion_matrix(true_y_list, pred_y_list)
-            print(f"Test ACC: {acc: .4f}, "
-                  f"Precision: {pre: .4f}, "
-                  f"Recall: {rec: .4f}, "
-                  f"F1: {f1: .4f}, "
-                  f"ROC-AUC: {roc_auc: .4f}, "
-                  f"Confusion Matrix: {cm.tolist()}"
-                  )
