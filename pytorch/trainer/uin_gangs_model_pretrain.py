@@ -80,7 +80,7 @@ class UinGangsModelPreTrain:
                                                         num_workers=self.train_dict["num_workers"],
                                                         collate_fn=self.train_data.pos_collate_fn_for_fraudar)
             if not self.train_dict["is_debug"]:
-                self.log_file_path = f"1921_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
+                self.log_file_path = f"1930_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
                 log_path = os.path.join(args_dict['log_dir'], self.train_dict["model_states_path"].split('/')[-1],
                                         self.log_file_path)
                 if not os.path.exists(log_path):
@@ -334,7 +334,7 @@ class UinGangsModelPreTrain:
         self.setup_seed()
         self.model.to(self.device)
         self.minirbt_model.to(self.device)
-        start_epoch = 3
+        start_epoch = 1
         end_epoch = self.train_dict["n_epochs"] + 1
         if self.train_dict["re_train"]:
             epoch_num = self.train_dict["start_epoch"]
