@@ -24,10 +24,10 @@ from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_s
 
 class UinGangsModelPreTrainDDP:
 
-    def __init__(self, rank, args_dict, world_size):
+    def __init__(self, rank, args_dict):
         self.train_dict = args_dict
         self.rank = rank
-        self.world_size = world_size
+        self.world_size = args_dict["world_size"]
         dist.init_process_group("nccl", rank=self.rank, world_size=self.world_size)
         torch.cuda.set_device(self.rank)
         self.device = torch.device(f"cuda: {self.rank}")
@@ -340,19 +340,19 @@ class UinGangsModelPreTrainDDP:
 
                     torch.cuda.empty_cache()
             epoch_loss = loss_sum / batch_num
-            if not self.train_dict["is_debug"]:
+            if not self.train_dict["is_debug"] and self.rank == 0:
                 self.writer.add_scalar(f'{self.conv_type}_pretraining_loss', epoch_loss, epoch)
             print("Epoch: {}, Loss: {:.4f}, Time: {:.4f} s".format(epoch, epoch_loss,
                                                                    time.time() - epoch_start_time))
-            if epoch_loss < best_loss:
+            if epoch_loss < best_loss and self.rank == 0:
                 best_loss = epoch_loss
                 file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
                 print(f"Now best loss: {best_loss:.4f}, save model to {file_name}")
-            if epoch % 5 == 0:
+            if epoch % 5 == 0 and self.rank == 0:
                 file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), file_name)
                 print(f"Save model to {file_name}")
-        if not self.train_dict["is_debug"]:
+        if not self.train_dict["is_debug"] and self.rank == 0:
             self.writer.close()
         dist.destroy_process_group()

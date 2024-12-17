@@ -91,7 +91,7 @@ class ArgsUinGangs:
         self.args_dict = args_dict
 
 
-def run_pretraining_graph(args, world_size):
+def run_pretraining_graph(world_size, args):
     print(f"args_dict: {args.args_dict}")
     sampling_type = args.args_dict["sampling"]
     train_model = UinGangsModelPreTrainDDP(args.args_dict, world_size)
