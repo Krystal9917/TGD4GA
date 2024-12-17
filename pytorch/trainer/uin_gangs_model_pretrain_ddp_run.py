@@ -46,8 +46,8 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
         parser.add_argument('--best_loss', type=float, default=5)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
-        parser.add_argument('--batch_size', type=int, default=128)
-        parser.add_argument('--data_buffer_size', type=int, default=80)
+        parser.add_argument('--batch_size', type=int, default=40)
+        parser.add_argument('--data_buffer_size', type=int, default=64)
         parser.add_argument('--lr', type=float, default=0.001)
         parser.add_argument('--n_epochs', type=int, default=100)
         parser.add_argument('--uin_in_size', type=int, default=846)
@@ -91,20 +91,17 @@ class ArgsUinGangs:
         self.args_dict = args_dict
 
 
-def run_pretraining_graph(world_size, args):
-    print(f"args_dict: {args.args_dict}")
+def run_pretraining_graph(rank, args):
+    print(f"rank: {rank}, args_dict: {args.args_dict}")
     sampling_type = args.args_dict["sampling"]
-    train_model = UinGangsModelPreTrainDDP(args.args_dict, world_size)
+    train_model = UinGangsModelPreTrainDDP(rank, args.args_dict)
     if sampling_type == 'fraudar':
         print("Fraudar pretraining")
         train_model.pretraining_ddp()
-    elif sampling_type == 'random':
-        print("Random pretraining")
-        train_model.random_sampling_pretraining()
 
 
 if __name__ == '__main__':
     args = ArgsUinGangs()
     print(f"GPUs: {torch.cuda.device_count()}")
     mp.spawn(run_pretraining_graph, args=(args,),
-             nprocs=args.args_dict["num_workers"], join=True)
+             nprocs=args.args_dict["world_size"], join=True)

@@ -30,7 +30,7 @@ class UinGangsModelPreTrainDDP:
         self.world_size = args_dict["world_size"]
         dist.init_process_group("nccl", rank=self.rank, world_size=self.world_size)
         torch.cuda.set_device(self.rank)
-        self.device = torch.device(f"cuda: {self.rank}")
+        self.device = torch.device(f"cuda:{self.rank}")
         print(f"GPU device id: {self.rank}")
         self.conv_type = args_dict["conv_type"]
         if self.conv_type == 'RGCN':
