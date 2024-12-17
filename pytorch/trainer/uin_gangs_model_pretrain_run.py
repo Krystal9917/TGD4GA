@@ -27,7 +27,7 @@ class ArgsUinGangs:
         parser.add_argument('--eval_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "valid", "raw",
-                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_combined.txt")))
+                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211.txt")))
         parser.add_argument('--uin_gangs_enum_yaml_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "config", "yml", "uin_gangs_enum.yaml")))

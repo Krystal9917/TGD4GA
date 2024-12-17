@@ -2,6 +2,8 @@ import os
 import sys
 import logging
 import argparse
+
+import torch
 import torch.multiprocessing as mp
 
 
@@ -81,7 +83,7 @@ class ArgsUinGangs:
                                      'eval_node_embedding', 'predict', ''])
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN'])
         parser.add_argument('--is_supervised', type=bool, default=False)
-        parser.add_argument('world_size', type=int, default=2)
+        parser.add_argument('--world_size', type=int, default=2)
 
 
         args = parser.parse_args()
@@ -103,5 +105,6 @@ def run_pretraining_graph(args, world_size):
 
 if __name__ == '__main__':
     args = ArgsUinGangs()
-    mp.spawn(run_pretraining_graph, args=(args, args.args_dict["world_size"],),
-             nprocs=args.args_dict["world_size"], join=True)
+    print(f"GPUs: {torch.cuda.device_count()}")
+    mp.spawn(run_pretraining_graph, args=(args,),
+             nprocs=args.args_dict["num_workers"], join=True)
