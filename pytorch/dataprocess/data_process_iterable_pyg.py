@@ -237,8 +237,12 @@ class UinGangsDataIterablePyG(IterableDataset):
                     gang_mem_list = json_data['uin_gangs_mem_list'].split(',')
                     map_dict = graph_schema['uin2nodeid_map']
                     for uin_gang_mem in gang_mem_list:
-                        nodeid = int(map_dict[uin_gang_mem])
-                        graph_data['uin'].gang_mem[nodeid] = 1
+                        try:
+                            nodeid = int(map_dict[uin_gang_mem])
+                        except KeyError:
+                            print(f"node {uin_gang_mem} dose not exist in this subgraph")
+                        else:
+                            graph_data['uin'].gang_mem[nodeid] = 1
             else:
                 graph_data = None
         else:
