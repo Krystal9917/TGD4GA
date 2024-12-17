@@ -15,7 +15,7 @@ class ArgsUinGangs:
         parser.add_argument('--train_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "train", "raw",
-                         "uin_gangs_full_graph_dataset_train_241119_241130.txt")))
+                         "uin_gangs_full_graph_dataset_train_241119_241121.txt")))
                          # "uin_gangs_full_graph_dataset", "valid", "processed",
                          # "uin_gangs_supervise_full_graph_dataset_train_241204_20241204.txt")))
         parser.add_argument('--test_data_path', type=str, default=os.path.abspath(
@@ -75,14 +75,14 @@ class ArgsUinGangs:
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--is_train', type=bool, default=True)
-        parser.add_argument('--re_train', type=bool, default=False)
+        parser.add_argument('--re_train', type=bool, default=True)
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--eval_epoch', type=int, default=0)
         parser.add_argument('--evaluate_task', type=str, default='',
                             choices=['eval_labelled_subgraph_embedding', 'eval_subgraph_embedding',
                                      'eval_node_embedding', 'predict', ''])
-        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN', 'SHAN'])
+        parser.add_argument('--conv_type', type=str, default='SHAN', choices=['RGCN', 'HAN', 'SHAN'])
         parser.add_argument('--is_supervised', type=bool, default=False)
 
         args = parser.parse_args()

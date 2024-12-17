@@ -1,8 +1,11 @@
 import os
 import sys
+import time
+
 import torch
 import numpy as np
 import networkx as nx
+import matplotlib.pyplot as plt
 from torch_scatter import scatter_mean
 from torch_geometric.utils import to_dense_adj, subgraph
 from torch_geometric.data import HeteroData, Batch
@@ -196,10 +199,7 @@ def cosine_similarity(h1, h2):
     return sim_matrix
 
 
-if __name__ == '__main__':
-    model_name = 'RGCN'
-    sampling = 'fraudar'
-    batch = load_batch_from_file()
+def test_model(batch, model_name, sampling):
     model = load_model(model_name, sampling)
     if model_name == 'RGCN':
         batch_edge_index, batch_edge_types = get_edge_info(batch)
@@ -229,7 +229,46 @@ if __name__ == '__main__':
         fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
         print(torch.cosine_similarity(gang_batch_h_g, fraudar_batch_h_g).mean())
 
-
     print(cosine_similarity(gang_batch_h_g, gang_batch_h_g).mean())
     print(cosine_similarity(normal_batch_h_g, normal_batch_h_g).mean())
     print(cosine_similarity(gang_batch_h_g, normal_batch_h_g).mean())
+
+
+def edge_index_to_nx(edge_index):
+    G = nx.Graph()
+    for src, tgt in zip(edge_index[0], edge_index[1]):
+        G.add_edge(src.item(), tgt.item())
+    return G
+
+
+def plot_graph(G, i):
+    pos = nx.spring_layout(G)
+    nx.draw(G, pos, with_labels=True, node_color='red', node_size=500, font_size=12, font_color='black',
+            font_weight='bold', edge_color='gray')
+    plt.title("Graph Visualization")
+    plt.savefig(f"/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/pic/malicious_subgraphs/subgraph_{str(i)}.png")
+    plt.show()
+
+if __name__ == '__main__':
+    # os.makedirs('/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/pic/malicious_subgraphs/')
+    count = 0
+    for batch_num in range(1, 6):
+        batch = load_batch_from_file(batch_num)
+        for item_num in range(batch['uin'].batch.max().item()+1):
+            gang_idx = ((batch['uin'].gang_mem == 1) & (batch['uin'].batch == item_num)).nonzero().squeeze()
+            batch_copy = batch.clone()
+            del batch_copy['uin']
+            batch_copy['uin'].x = batch['uin'].x[gang_idx].clone()
+            # batch_copy['uin'].batch = batch['uin'].batch.clone()
+            for edge_type in batch.edge_types:
+                del batch_copy[edge_type].edge_index
+                gang_idx_max = gang_idx.max().item()
+                edge_idx_max = batch[edge_type].edge_index.max().item()
+                if gang_idx_max > edge_idx_max:
+                    gang_idx = gang_idx[gang_idx < edge_idx_max]
+                subgraph_edge_index, _ = subgraph(gang_idx, batch[edge_type].edge_index, relabel_nodes=True)
+                batch_copy[edge_type].edge_index = subgraph_edge_index
+            edge_index = torch.concat([batch_copy[edge_type].edge_index for edge_type in batch_copy.edge_types], dim=1)
+            time.sleep(3)
+            count += 1
+            plot_graph(edge_index_to_nx(edge_index), count)
