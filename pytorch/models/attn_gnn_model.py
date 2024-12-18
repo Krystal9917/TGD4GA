@@ -98,24 +98,26 @@ class SHANConv(MessagePassing):
         # Iterate over edge types:
         for edge_type, edge_index in edge_index_dict.items():
             src_type, _, dst_type = edge_type
-            edge_type = '__'.join(edge_type)
-            lin_src = self.lin_src[edge_type]
-            lin_dst = self.lin_dst[edge_type]
-            x_src = x_node_dict[src_type]
-            x_dst = x_node_dict[dst_type]
-            score_src = x_score_dict[src_type]
-            score_dst = x_score_dict[dst_type]
-            score_diff_abs = (score_src[edge_index[0, :]] - score_dst[edge_index[1, :]]).abs()
-            w = torch.exp(-score_diff_abs)
-            alpha_src = (x_src * lin_src).sum(dim=-1)
-            alpha_dst = (x_dst * lin_dst).sum(dim=-1)
-            # propagate_type: (x: PairTensor, alpha: PairTensor)
-            out = self.propagate(edge_index, x=(x_src, x_dst),
-                                 alpha=(alpha_src, alpha_dst),
-                                 edge_weight=w)
-
-            out = F.leaky_relu(out)
-            out_dict[dst_type].append(out)
+            if (src_type, _, dst_type) not in self.metadata[1]:
+                print(_)
+            else:
+                edge_type = '__'.join(edge_type)
+                lin_src = self.lin_src[edge_type]
+                lin_dst = self.lin_dst[edge_type]
+                x_src = x_node_dict[src_type]
+                x_dst = x_node_dict[dst_type]
+                score_src = x_score_dict[src_type]
+                score_dst = x_score_dict[dst_type]
+                score_diff_abs = (score_src[edge_index[0, :]] - score_dst[edge_index[1, :]]).abs()
+                w = torch.exp(-score_diff_abs)
+                alpha_src = (x_src * lin_src).sum(dim=-1)
+                alpha_dst = (x_dst * lin_dst).sum(dim=-1)
+                # propagate_type: (x: PairTensor, alpha: PairTensor)
+                out = self.propagate(edge_index, x=(x_src, x_dst),
+                                     alpha=(alpha_src, alpha_dst),
+                                     edge_weight=w)
+                out = F.leaky_relu(out)
+                out_dict[dst_type].append(out)
 
         # iterate over node types:
         semantic_attn_dict = {}
