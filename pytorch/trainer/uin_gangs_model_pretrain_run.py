@@ -26,6 +26,18 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "valid", "raw",
                          "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211.txt")))
+        parser.add_argument('--prompt_initial_data_path', type=str, default=os.path.abspath(
+            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
+                         "uin_gangs_full_graph_dataset", "valid", "raw",
+                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive_20.txt")))
+        parser.add_argument('--prompt_tuning_data_path', type=str, default=os.path.abspath(
+            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
+                         "uin_gangs_full_graph_dataset", "valid", "raw",
+                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive_20_40.txt")))
+        parser.add_argument('--prompt_evaluating_data_path', type=str, default=os.path.abspath(
+            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
+                         "uin_gangs_full_graph_dataset", "valid", "raw",
+                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive_exclude_40.txt")))
         parser.add_argument('--uin_gangs_enum_yaml_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "config", "yml", "uin_gangs_enum.yaml")))
@@ -45,8 +57,8 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
         parser.add_argument('--best_loss', type=float, default=1e2)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
-        parser.add_argument('--batch_size', type=int, default=40)
-        parser.add_argument('--data_buffer_size', type=int, default=64)
+        parser.add_argument('--batch_size', type=int, default=20)
+        parser.add_argument('--data_buffer_size', type=int, default=20)
         parser.add_argument('--lr', type=float, default=0.001)
         parser.add_argument('--n_epochs', type=int, default=100)
         parser.add_argument('--uin_in_size', type=int, default=846)
@@ -76,12 +88,13 @@ class ArgsUinGangs:
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--eval_epoch', type=int, default=0)
-        parser.add_argument('--evaluate_task', type=str, default='predict',
-                            choices=['eval_labelled_subgraph_embedding', 'eval_subgraph_embedding',
-                                     'eval_node_embedding', 'predict', ''])
-        parser.add_argument('--conv_type', type=str, default='SHAN', choices=['RGCN', 'HAN', 'SHAN'])
+        parser.add_argument('--eval_epoch', type=int, default=40)
+        parser.add_argument('--evaluate_task', type=str, default='subgraph_prompt_tuning',
+                            choices=['', 'eval_labelled_subgraph_embedding', 'eval_subgraph_embedding',
+                                     'eval_node_embedding', 'predict', 'subgraph_prompt_tuning'])
+        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN', 'SHAN'])
         parser.add_argument('--is_supervised', type=bool, default=False)
+        parser.add_argument('--is_prompt_tuning', type=bool, default=True)
 
         args = parser.parse_args()
         args_dict = vars(args)
@@ -122,6 +135,12 @@ def run_predict(args):
     train_model.evaluate_subgraph_predict()
 
 
+def run_prompt_tune(args):
+    logger.info("args_dict:\n %s", args.args_dict)
+    train_model = UinGangsModelPreTrain(args.args_dict)
+    train_model.subgraph_prompt_tuning()
+
+
 if __name__ == '__main__':
     args = ArgsUinGangs()
     if args.args_dict["is_train"]:
@@ -139,4 +158,7 @@ if __name__ == '__main__':
         elif args.args_dict["evaluate_task"] == 'predict':
             print("Subgraph predicting")
             run_predict(args)
+        elif args.args_dict["evaluate_task"] == 'subgraph_prompt_tuning':
+            print("Subgraph prompt tuning")
+            run_prompt_tune(args)
 
