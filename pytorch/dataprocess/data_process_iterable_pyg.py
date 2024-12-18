@@ -44,9 +44,9 @@ class UinGangsDataIterablePyG(IterableDataset):
             [self.label_class_weight_dict[key] for key in range(len(self.label_class_weight_dict))])
 
         # 读取所有行号并随机打乱
-        if args_dict["is_debug"] and args_dict["evaluate_task"] not in ['predict', 'eval_labelled_subgraph_embedding']:
+        if args_dict["is_debug"] and args_dict["evaluate_task"] not in ['predict', 'subgraph_prompt_tuning', 'eval_labelled_subgraph_embedding']:
             self.line_indices = list(range(400))
-        elif args_dict["is_debug"] and args_dict["evaluate_task"] in ['predict', 'eval_labelled_subgraph_embedding']:
+        elif args_dict["is_debug"] and args_dict["evaluate_task"] in ['predict', 'subgraph_prompt_tuning', 'eval_labelled_subgraph_embedding']:
             st = time.time()
             with open(self.file_path, 'r', encoding="utf-8") as file:
                 self.line_indices = list(range(sum(1 for _ in file)))

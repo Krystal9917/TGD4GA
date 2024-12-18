@@ -80,12 +80,25 @@ def read_file(in_dir, infile_name):
                 normal_list.append(i)
     print(len(gang_list), len(normal_list))
 
+
+def filter_positive_samples(in_dir, infile_name, outfile_name):
+    gang_list = []
+    with open(in_dir + infile_name, 'r') as f:
+        for i, line in enumerate(f):
+            data = json.loads(line)
+            if 'gangs_label' in data.keys():
+                if '异常团伙' in data['gangs_label']:
+                    gang_list.append(line)
+    with open(in_dir + outfile_name, 'w') as out_f:
+        for line in gang_list:
+            out_f.write(line)
+
 if __name__ == '__main__':
     path_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/valid/raw/'
     # file1 = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241211.txt'
     file2 = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241211.txt'
     file3 = 'uin_gangs_supervise_full_graph_dataset_eval_normal_subgraphs.txt'
-    output_file = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_combined.txt'
+    output_file = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive.txt'
     out_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/valid/processed/'
     train_file = 'uin_gangs_supervise_full_graph_dataset_train_241204_20241204.txt'
     test_file = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt'
@@ -95,4 +108,6 @@ if __name__ == '__main__':
 
     # split_data(path_dir, output_file, out_dir, train_file, test_file)
 
-    read_file(out_dir, train_file)
+    # read_file(out_dir, train_file)
+
+    filter_positive_samples(path_dir, file2, output_file)
