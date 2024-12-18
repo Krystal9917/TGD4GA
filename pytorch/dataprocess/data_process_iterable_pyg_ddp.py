@@ -19,15 +19,17 @@ logger = logging.getLogger("my_logger")
 os.environ['DGLBACKEND'] = 'pytorch'
 
 
-class UinGangsDataIterablePyG(IterableDataset):
+class UinGangsDataIterablePyGDDP(IterableDataset):
     """
     数据迭代加载类
     """
 
-    def __init__(self, args_dict, file_path):
-        super(UinGangsDataIterablePyG, self).__init__()
+    def __init__(self, args_dict, file_path, rank, world_size):
+        super(UinGangsDataIterablePyGDDP, self).__init__()
         self.args_dict = args_dict
         self.file_path = file_path
+        self.rank = rank
+        self.world_size = world_size
         # 读取数据配置文件
         with open(self.args_dict["uin_gangs_enum_yaml_path"], 'r', encoding='utf-8') as file:
             self.uin_gangs_enum = yaml.safe_load(file)
@@ -44,29 +46,11 @@ class UinGangsDataIterablePyG(IterableDataset):
             [self.label_class_weight_dict[key] for key in range(len(self.label_class_weight_dict))])
 
         # 读取所有行号并随机打乱
-        if args_dict["is_debug"] and args_dict["evaluate_task"] not in ['predict', 'eval_labelled_subgraph_embedding']:
-            self.line_indices = list(range(400))
-        elif args_dict["is_debug"] and args_dict["evaluate_task"] in ['predict', 'eval_labelled_subgraph_embedding']:
-            st = time.time()
-            with open(self.file_path, 'r', encoding="utf-8") as file:
-                self.line_indices = list(range(sum(1 for _ in file)))
-                random.shuffle(self.line_indices)
-                print(f"Reading file time: {time.time() - st:.4f} s")
-        else:
-            st = time.time()
-            with open(self.file_path, 'r', encoding="utf-8") as file:
-                self.line_indices = list(range(sum(1 for _ in file)))
-                random.shuffle(self.line_indices)
-                print(f"Reading file time: {time.time() - st:.4f} s")
-
-        print(f"Total lines: {len(self.line_indices)}")
+        with open(self.file_path, 'r', encoding="utf-8") as file:
+            self.line_indices = list(range(self.rank, sum(1 for _ in file), self.world_size))
+            random.shuffle(self.line_indices)
+        print(f"Rank: {self.rank}, lines: {len(self.line_indices)}")
         self.control_node_num = self.args_dict["filter_node_num"]
-
-        # 预训练的文本embedding模型的分词工具
-        if torch.cuda.is_available() and self.args_dict["device"] == "gpu":
-            self.device = torch.device("cuda")
-        else:
-            self.device = torch.device("cpu")
         self.minirbt_tokenizer = AutoTokenizer.from_pretrained(self.args_dict["minirbt_path"])
         self.undirected_edge_types = ['idcardid', 'bankcard', 'device', 'wifi', 'ipv6', 'room']
         self.hasher = FeatureHasher(n_features=300, input_type='string')
@@ -107,25 +91,6 @@ class UinGangsDataIterablePyG(IterableDataset):
         random.shuffle(buffer)
         while buffer:
             yield buffer.pop()
-
-    def filter_iterator(self):
-        # 定义缓冲区, 缓冲区要尽可能比 batch_size 大
-        buffer = []
-        with open(self.file_path, 'r', encoding="utf-8") as f:
-            for i, line in enumerate(f):
-                if i in self.line_indices:
-                    line = line.strip()
-                    if len(line) == 0:
-                        print("Warning: line is empty")
-                        continue
-                    flag = self.filter_subgraph(line)
-                    if flag:
-                        buffer.append(line)
-        with open(os.path.join(self.args_dict["eval_data_path"],
-                               "uin_gangs_supervised_full_graph_dataset_eval_normal_subgraphs.txt"), 'w') as file:
-            for item in buffer:
-                file.write(f"{item}\n")
-        print("SAVE!")
 
     def pre_process(self, line):
         data = {}
