@@ -290,10 +290,14 @@ if __name__ == '__main__':
                                           dim=1)
                 time.sleep(3)
                 count += 1
-                nodes, edges, density = plot_graph(edge_index_to_nx(edge_index), count)
-                average_nodes.append(nodes)
-                average_edges.append(edges)
-                average_density.append(density)
+                try:
+                    nodes, edges, density = plot_graph(edge_index_to_nx(edge_index), count)
+                except Exception as e:
+                    print(f"Error: {e}")
+                else:
+                    average_nodes.append(nodes)
+                    average_edges.append(edges)
+                    average_density.append(density)
     print(f"average nodes: {sum(average_nodes) / len(average_nodes): .4f}, "
           f"average edges: {sum(average_edges) / len(average_edges): .4f}, "
           f"average density: {sum(average_density) / len(average_density): .4f}")

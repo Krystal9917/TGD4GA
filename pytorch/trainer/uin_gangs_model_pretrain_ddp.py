@@ -9,17 +9,16 @@ os.environ['DGLBACKEND'] = 'pytorch'
 
 import numpy as np
 import torch.utils.data as Data
+from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
 from torch.utils.tensorboard import SummaryWriter
 from transformers import BertModel
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-from mmgog_long_term_sequence_model.utils.utils import visualization_fig_save
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
 from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
-from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix
+from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg_ddp import UinGangsDataIterablePyGDDP
 
 
 class UinGangsModelPreTrainDDP:
@@ -64,7 +63,8 @@ class UinGangsModelPreTrainDDP:
         sampling_type = self.train_dict["sampling"]
 
         if self.train_dict["is_train"]:
-            self.train_data = UinGangsDataIterablePyG(self.train_dict, self.train_dict["train_data_path"])
+            self.train_data = UinGangsDataIterablePyGDDP(self.train_dict, self.train_dict["train_data_path"],
+                                                         self.rank, self.world_size)
             if self.train_dict["sampling"] == 'random':
                 self.pos_train_loader = Data.DataLoader(self.train_data,
                                                         batch_size=self.train_dict["batch_size"],
@@ -79,12 +79,13 @@ class UinGangsModelPreTrainDDP:
                 self.log_file_path = f"1930_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}_GPU2"
                 log_path = os.path.join(args_dict['log_dir'], self.train_dict["model_states_path"].split('/')[-1],
                                         self.log_file_path)
-                if not os.path.exists(log_path):
+                if not os.path.exists(log_path) and self.rank == 0:
                     os.makedirs(log_path)
                 self.save_model_path = os.path.join(self.train_dict["model_states_path"], self.log_file_path)
-                if not os.path.exists(self.save_model_path):
+                if not os.path.exists(self.save_model_path) and self.rank == 0:
                     os.makedirs(self.save_model_path)
-                self.writer = SummaryWriter(log_dir=log_path)
+                if self.rank == 0:
+                    self.writer = SummaryWriter(log_dir=log_path)
             self.alpha = self.train_dict["pretraining_alpha"]
             self.beta = self.train_dict["pretraining_beta"]
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
