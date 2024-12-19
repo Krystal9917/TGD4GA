@@ -23,7 +23,6 @@ class UinGangsDataIterablePyG(IterableDataset):
     """
     数据迭代加载类
     """
-
     def __init__(self, args_dict, file_path):
         super(UinGangsDataIterablePyG, self).__init__()
         self.args_dict = args_dict
@@ -43,23 +42,12 @@ class UinGangsDataIterablePyG(IterableDataset):
         self.label_class_weight = torch.tensor(
             [self.label_class_weight_dict[key] for key in range(len(self.label_class_weight_dict))])
 
-        # 读取所有行号并随机打乱
-        if args_dict["is_debug"] and args_dict["evaluate_task"] not in ['predict', 'subgraph_prompt_tuning', 'eval_labelled_subgraph_embedding']:
-            self.line_indices = list(range(400))
-        elif args_dict["is_debug"] and args_dict["evaluate_task"] in ['predict', 'subgraph_prompt_tuning', 'eval_labelled_subgraph_embedding']:
-            st = time.time()
-            with open(self.file_path, 'r', encoding="utf-8") as file:
-                self.line_indices = list(range(sum(1 for _ in file)))
-                random.shuffle(self.line_indices)
-                print(f"Reading file time: {time.time() - st:.4f} s")
-        else:
-            st = time.time()
-            with open(self.file_path, 'r', encoding="utf-8") as file:
-                self.line_indices = list(range(sum(1 for _ in file)))
-                random.shuffle(self.line_indices)
-                print(f"Reading file time: {time.time() - st:.4f} s")
-
-        print(f"Total lines: {len(self.line_indices)}")
+        st = time.time()
+        with open(self.file_path, 'r', encoding="utf-8") as file:
+            self.line_indices = list(range(sum(1 for _ in file)))
+            random.shuffle(self.line_indices)
+            print(f"File: {self.file_path}, Total lines: {len(self.line_indices)}, "
+                  f"Load Time: {time.time() - st:.4f} s")
         self.control_node_num = self.args_dict["filter_node_num"]
 
         # 预训练的文本embedding模型的分词工具
@@ -249,7 +237,8 @@ class UinGangsDataIterablePyG(IterableDataset):
                         try:
                             nodeid = int(map_dict[uin_gang_mem])
                         except KeyError:
-                            print(f"node {uin_gang_mem} dose not exist in this subgraph")
+                            print(f"Process Node Error: Node id={uin_gang_mem} dose not exist node map.")
+                            continue
                         else:
                             graph_data['uin'].gang_mem[nodeid] = 1
             else:

@@ -9,7 +9,6 @@ os.environ['DGLBACKEND'] = 'pytorch'
 
 import numpy as np
 import torch.utils.data as Data
-from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
 from torch.utils.tensorboard import SummaryWriter
@@ -24,13 +23,22 @@ from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_py
 class UinGangsModelPreTrainDDP:
 
     def __init__(self, rank, args_dict):
-        self.train_dict = args_dict
         self.rank = rank
+        self.train_dict = args_dict
         self.world_size = args_dict["world_size"]
         dist.init_process_group("nccl", rank=self.rank, world_size=self.world_size)
         torch.cuda.set_device(self.rank)
         self.device = torch.device(f"cuda:{self.rank}")
-        print(f"GPU device id: {self.rank}")
+
+        # Load Pretrained Language Model for Text Embedding
+        self.minirbt_model = BertModel.from_pretrained(self.train_dict["minirbt_path"])
+        minirbt_model_params_size = 0
+        for param in self.minirbt_model.parameters():
+            param.requires_grad = False
+            minirbt_model_params_size += param.numel()
+        print(f"minirbt_model params size: {minirbt_model_params_size}")
+        self.minirbt_model.to(self.device)
+
         self.conv_type = args_dict["conv_type"]
         if self.conv_type == 'RGCN':
             self.model = RGCN(input_dim=args_dict['input_dim'],
@@ -50,49 +58,48 @@ class UinGangsModelPreTrainDDP:
                              out_channels=args_dict['output_dim'],
                              metadata=self.metadata,
                              heads=args_dict['num_heads'])
-        self.model.to(self.device)
-        self.model = DDP(self.model, device_ids=[self.rank])
-
-        self.minirbt_model = BertModel.from_pretrained(self.train_dict["minirbt_path"])
-        # 冻结文本模型的参数
-        minirbt_model_params_size = 0
-        for param in self.minirbt_model.parameters():
-            param.requires_grad = False
-            minirbt_model_params_size += param.numel()
-        print(f"minirbt_model params size: {minirbt_model_params_size}")
-        self.minirbt_model.to(self.device)
-
         lr = self.train_dict["lr"]
         control_node_num = self.train_dict["filter_node_num"]
         sampling_type = self.train_dict["sampling"]
 
-        if self.train_dict["is_train"]:
-            self.train_data = UinGangsDataIterablePyGDDP(self.train_dict, self.train_dict["train_data_path"],
-                                                         self.rank, self.world_size)
-            if self.train_dict["sampling"] == 'random':
-                self.pos_train_loader = Data.DataLoader(self.train_data,
-                                                        batch_size=self.train_dict["batch_size"],
-                                                        num_workers=self.train_dict["num_workers"],
-                                                        collate_fn=self.train_data.pos_collate_fn_for_random)
-            elif self.train_dict["sampling"] == 'fraudar':
-                self.pos_train_loader = Data.DataLoader(self.train_data,
-                                                        batch_size=self.train_dict["batch_size"],
-                                                        num_workers=self.train_dict["num_workers"],
-                                                        collate_fn=self.train_data.pos_collate_fn_for_fraudar)
-            if not self.train_dict["is_debug"]:
-                self.log_file_path = f"1930_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}_GPU2"
-                log_path = os.path.join(args_dict['log_dir'], self.train_dict["model_states_path"].split('/')[-1],
-                                        self.log_file_path)
-                if not os.path.exists(log_path) and self.rank == 0:
-                    os.makedirs(log_path)
-                self.save_model_path = os.path.join(self.train_dict["model_states_path"], self.log_file_path)
-                if not os.path.exists(self.save_model_path) and self.rank == 0:
-                    os.makedirs(self.save_model_path)
-                if self.rank == 0:
-                    self.writer = SummaryWriter(log_dir=log_path)
-            self.alpha = self.train_dict["pretraining_alpha"]
-            self.beta = self.train_dict["pretraining_beta"]
-            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.log_file_path = f"1930_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}_GPU2"
+        log_path = os.path.join(args_dict['log_dir'],
+                                self.train_dict["model_states_path"].split('/')[-1],
+                                self.log_file_path)
+        if not os.path.exists(log_path) and self.rank == 0:
+            os.makedirs(log_path)
+        if self.rank == 0:
+            self.writer = SummaryWriter(log_dir=log_path)
+        self.save_model_path = os.path.join(self.train_dict["model_states_path"], self.log_file_path)
+        if not os.path.exists(self.save_model_path) and self.rank == 0:
+            os.makedirs(self.save_model_path)
+        if self.train_dict["re_train"]:
+            epoch_num = self.train_dict["start_epoch"]
+            file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
+            model_weight = torch.load(file_name, map_location=self.device)
+            self.model.load_state_dict(model_weight)
+            self.start_epoch = epoch_num + 1
+            self.end_epoch = self.start_epoch + self.train_dict["n_epochs"]
+        else:
+            self.start_epoch = 1
+            self.end_epoch = self.train_dict["n_epochs"]
+        self.model.to(self.device)
+        self.model = DDP(self.model, device_ids=[self.rank])
+
+        self.train_data = UinGangsDataIterablePyGDDP(self.train_dict, self.train_dict["train_data_path"],
+                                                     self.rank, self.world_size)
+        if self.train_dict["sampling"] == 'random':
+            self.pos_train_loader = Data.DataLoader(self.train_data,
+                                                    batch_size=self.train_dict["batch_size"],
+                                                    num_workers=self.train_dict["num_workers"],
+                                                    collate_fn=self.train_data.pos_collate_fn_for_random)
+        elif self.train_dict["sampling"] == 'fraudar':
+            self.pos_train_loader = Data.DataLoader(self.train_data,
+                                                    batch_size=self.train_dict["batch_size"],
+                                                    num_workers=self.train_dict["num_workers"],
+                                                    collate_fn=self.train_data.pos_collate_fn_for_fraudar)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.best_loss = self.train_dict["best_loss"]
         self.setup_seed()
 
     def setup_seed(self):
@@ -138,10 +145,14 @@ class UinGangsModelPreTrainDDP:
         return loss
 
     def get_edge_info(self, batch):
-        edge_index = [batch[edge_type].edge_index for edge_type in list(self.edge_types.keys()) if edge_type in batch.edge_types]
+        edge_index = [batch[edge_type].edge_index for edge_type in list(self.edge_types.keys()) if
+                      edge_type in batch.edge_types]
         edge_index = torch.concat(edge_index, dim=1)
-        edge_counts = {edge_type: batch[edge_type].num_edges for edge_type in list(self.edge_types.keys()) if edge_type in batch.edge_types}
-        edge_type = torch.concat([torch.ones(edge_counts[edge_type]) * edge_idx for edge_type, edge_idx in self.edge_types.items() if edge_type in batch.edge_types])
+        edge_counts = {edge_type: batch[edge_type].num_edges for edge_type in list(self.edge_types.keys()) if
+                       edge_type in batch.edge_types}
+        edge_type = torch.concat(
+            [torch.ones(edge_counts[edge_type]) * edge_idx for edge_type, edge_idx in self.edge_types.items() if
+             edge_type in batch.edge_types])
         return edge_index, edge_type.long()
 
     def extract_batch_subgraphs(self, batch, subgraph_node_indices=None):
@@ -161,10 +172,9 @@ class UinGangsModelPreTrainDDP:
                     subgraph_node_indices = subgraph_node_indices[subgraph_node_indices <= max_node_idx]
                 edge_index, _ = subgraph(subgraph_node_indices, batch[edge_type].edge_index)
             except Exception as e:
-                print(f"Extract subgraph error: <{e}>, "
-                      f"edge type: {edge_type}, "
-                      f"subgraph: {subgraph_node_indices}")
+                print(f"Extract Subgraph Error: <{e}>")
                 del new_batch[edge_type]
+                continue
             else:
                 # no such type of edges
                 if edge_index.shape[1] != 0:
@@ -174,21 +184,10 @@ class UinGangsModelPreTrainDDP:
         return new_batch
 
     def random_sampling_pretraining(self):
-        start_epoch = 1
-        end_epoch = self.train_dict["n_epochs"] + 1
-        if self.train_dict["re_train"]:
-            epoch_num = self.train_dict["start_epoch"]
-            model_weight = torch.load(self.train_dict["model_states_path"] + f"epoch_{str(epoch_num)}.pth",
-                                      map_location=self.device)
-            self.model.load_state_dict(model_weight)
-            start_epoch = epoch_num + 1
-            end_epoch = start_epoch + self.train_dict["n_epochs"]
-        best_loss = self.train_dict["best_loss"]
-        for epoch in range(start_epoch, end_epoch):
+        for epoch in range(self.start_epoch, self.end_epoch):
             self.model.train()
-            loss_sum = 0
+            epoch_loss = []
             epoch_start_time = time.time()
-            batch_num = 0
             for (i, batch) in enumerate(self.pos_train_loader):
                 start_time = time.time()
                 self.optimizer.zero_grad()
@@ -218,29 +217,29 @@ class UinGangsModelPreTrainDDP:
                 self.optimizer.step()
                 torch.cuda.empty_cache()
                 loss_value = loss.detach().cpu().item()
-                loss_sum += loss_value
-                batch_num += 1
+                epoch_loss.append(loss_value)
                 print(
                     "Batch: {}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
                         i + 1,
                         loss_value,
                         time.time() - start_time))
-            epoch_loss = loss_sum / batch_num
-            if not self.train_dict["is_debug"]:
+            epoch_loss = sum(epoch_loss) / len(epoch_loss)
+            if self.rank == 0:
                 self.writer.add_scalar('pretraining_loss', epoch_loss, epoch)
-            print("Epoch: {}, Loss: {:.4f}, Time: {:.4f} s".format(epoch, epoch_loss,
-                                                                   time.time() - epoch_start_time))
-            if epoch_loss < best_loss:
-                best_loss = epoch_loss
+            print("Rank Id: {}, Epoch: {}, Loss: {:.4f}, Time: {:.4f} s".format(self.rank, epoch, epoch_loss,
+                                                                                time.time() - epoch_start_time))
+            if epoch_loss < self.best_loss:
+                self.best_loss = epoch_loss
                 file_name = os.path.join(self.save_model_path, "uin_gangs_RGCN_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
-                print(f"Now best loss: {best_loss:.4f}, save model to {file_name}")
+                epoch_file_name = os.path.join(self.save_model_path, f"uin_gangs_RGCN_model_epoch_{epoch}.pth")
+                torch.save(self.model.state_dict(), epoch_file_name)
+                print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
             if epoch % 10 == 0:
                 file_name = os.path.join(self.save_model_path, f"uin_gangs_RGCN_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), file_name)
                 print(f"Save model to {file_name}")
-        if not self.train_dict["is_debug"]:
-            self.writer.close()
+        self.writer.close()
 
     def han_fit(self, x_dict, edge_index_dict):
         out = self.model(x_dict, edge_index_dict)
@@ -249,30 +248,18 @@ class UinGangsModelPreTrainDDP:
     def rgcn_fit(self, pos_batch, batch_x):
         try:
             batch_edge_index, batch_edge_types = self.get_edge_info(pos_batch)
+            batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
         except Exception as e:
-            print(f"Get edge information error: <{e}>")
+            print(f"RGCN Get Edge Information Error: <{e}>")
             return None
         else:
-            batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
             return batch_h
 
     def pretraining_ddp(self):
-        start_epoch = 1
-        end_epoch = self.train_dict["n_epochs"] + 1
-        if self.train_dict["re_train"]:
-            epoch_num = self.train_dict["start_epoch"]
-            file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
-            model_weight = torch.load(file_name, map_location=self.device)
-            self.model.load_state_dict(model_weight)
-            start_epoch = epoch_num + 1
-            end_epoch = start_epoch + self.train_dict["n_epochs"]
-
-        best_loss = self.train_dict["best_loss"]
-        for epoch in range(start_epoch, end_epoch):
+        for epoch in range(self.start_epoch, self.end_epoch):
             self.model.train()
-            loss_sum = 0
+            epoch_loss = []
             epoch_start_time = time.time()
-            batch_num = 0
             for (i, pos_batch) in enumerate(self.pos_train_loader):
                 start_time = time.time()
                 self.optimizer.zero_grad()
@@ -334,8 +321,7 @@ class UinGangsModelPreTrainDDP:
                         loss.backward()
                         self.optimizer.step()
                         loss_value = loss.detach().cpu().item()
-                        loss_sum += loss_value
-                        batch_num += 1
+                        epoch_loss.append(loss_value)
                         print(
                             "Batch: {}, Loss: {:.6f}, Time: {:.4f} s".format(
                                 i + 1,
@@ -343,20 +329,22 @@ class UinGangsModelPreTrainDDP:
                                 time.time() - start_time))
 
                     torch.cuda.empty_cache()
-            epoch_loss = loss_sum / batch_num
-            if not self.train_dict["is_debug"] and self.rank == 0:
+            epoch_loss = sum(epoch_loss) / len(epoch_loss)
+            if self.rank == 0:
                 self.writer.add_scalar(f'{self.conv_type}_pretraining_loss', epoch_loss, epoch)
-            print("Epoch: {}, Loss: {:.4f}, Time: {:.4f} s".format(epoch, epoch_loss,
-                                                                   time.time() - epoch_start_time))
-            if epoch_loss < best_loss and self.rank == 0:
-                best_loss = epoch_loss
+            print("Rank Id: {}, Epoch: {}, Loss: {:.4f}, Time: {:.4f} s".format(self.rank, epoch, epoch_loss,
+                                                                                time.time() - epoch_start_time))
+            if epoch_loss < self.best_loss and self.rank == 0:
+                self.best_loss = epoch_loss
                 file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
-                print(f"Now best loss: {best_loss:.4f}, save model to {file_name}")
-            if epoch % 5 == 0 and self.rank == 0:
+                epoch_file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
+                torch.save(self.model.state_dict(), epoch_file_name)
+                print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
+            if epoch % 10 == 0 and self.rank == 0:
                 file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), file_name)
                 print(f"Save model to {file_name}")
-        if not self.train_dict["is_debug"] and self.rank == 0:
+        if self.rank == 0:
             self.writer.close()
         dist.destroy_process_group()
