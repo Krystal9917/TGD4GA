@@ -40,6 +40,10 @@ class UinGangsModelPreTrain:
                               hidden_dim=args_dict['hidden_dim'],
                               output_dim=args_dict['output_dim'],
                               num_relations=args_dict['num_relations'])
+            self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
+                               ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
+                               ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
+                               ('uin', 'download_app', 'uin'): 9}
         elif self.conv_type in ['HAN', 'SHAN']:
             self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
                                        ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
@@ -137,12 +141,12 @@ class UinGangsModelPreTrain:
                 self.eval_data = UinGangsDataIterablePyG(self.train_dict,
                                                          self.train_dict["prompt_evaluating_data_path"])
                 self.initial_loader = Data.DataLoader(self.initial_data,
-                                                      batch_size=self.train_dict["batch_size"],
-                                                      num_workers=self.train_dict["num_workers"],
+                                                      batch_size=20,
+                                                      num_workers=2,
                                                       collate_fn=self.initial_data.collate_fn)
                 self.tune_loader = Data.DataLoader(self.tune_data,
-                                                   batch_size=self.train_dict["batch_size"],
-                                                   num_workers=self.train_dict["num_workers"],
+                                                   batch_size=20,
+                                                   num_workers=2,
                                                    collate_fn=self.tune_data.collate_fn)
                 self.eval_loader = Data.DataLoader(self.eval_data,
                                                    batch_size=self.train_dict["batch_size"],
@@ -231,11 +235,10 @@ class UinGangsModelPreTrain:
         return batch_node_loss / len(loop_idx)
 
     def get_edge_info(self, batch):
-        edge_index = [batch[edge_type].edge_index for edge_type in batch.edge_types]
+        edge_index = [batch[edge_type].edge_index for edge_type in list(self.edge_types.keys()) if edge_type in batch.edge_types]
         edge_index = torch.concat(edge_index, dim=1)
-        # adj = to_dense_adj(edge_index, batch=batch['uin'].batch, batch_size=self.train_dict['batch_size'])
-        edge_counts = [batch[edge_type].num_edges for edge_type in batch.edge_types]
-        edge_type = torch.concat([torch.ones(edge_counts[i]) * i for i in range(len(batch.edge_types))])
+        edge_counts = {edge_type: batch[edge_type].num_edges for edge_type in list(self.edge_types.keys()) if edge_type in batch.edge_types}
+        edge_type = torch.concat([torch.ones(edge_counts[edge_type]) * edge_idx for edge_type, edge_idx in self.edge_types.items() if edge_type in batch.edge_types])
         return edge_index, edge_type.long()
 
     def extract_batch_subgraphs(self, batch, subgraph_node_indices=None):
@@ -856,7 +859,7 @@ class UinGangsModelPreTrain:
         for param in self.model.parameters():
             param.requires_grad = False
         if self.is_prompt:
-            gang_subgraph_mean = []
+            gang_subgraphs = []
             for i, batch in enumerate(self.initial_loader):
                 batch = batch.to(self.device)
                 batch_uin_acs_text_feat_input_ids = batch['uin'].text_feat_input_ids
@@ -872,12 +875,12 @@ class UinGangsModelPreTrain:
                 try:
                     gang_h = batch_h[gang_mems]
                 except Exception as e:
-                    print(f"Prompt Tuning Error : <{e}>")
+                    print(f"Prompt Initialized Error : <{e}>")
                     continue
                 else:
                     batch_batch = batch['uin'].batch[gang_mems]
-                    gang_subgraph_mean.append(scatter_mean(gang_h, batch_batch, dim=0))
-            gang_subgraph_mean = torch.concat(gang_subgraph_mean, dim=0).mean(dim=0)
+                    gang_subgraphs.append(scatter_mean(gang_h, batch_batch, dim=0))
+            gang_subgraph_mean = torch.concat(gang_subgraphs, dim=0).mean(dim=0)
             subgraph_prompt = torch.nn.Parameter(gang_subgraph_mean)
         best_loss = self.train_dict["best_loss"]
         for param in self.classifier.parameters():
@@ -916,8 +919,8 @@ class UinGangsModelPreTrain:
             current_loss = sum(epoch_loss) / len(epoch_loss)
             if current_loss < best_loss:
                 best_loss = current_loss
-                file_name = self.train_dict[
-                                "cls_model_states_path"] + f"prompt_{self.conv_type}_best_loss.pth" if self.is_prompt else f"no_prompt_{self.conv_type}_best_loss.pth"
+                file_name = f"prompt_{self.conv_type}_best_loss.pth" if self.is_prompt else f"no_prompt_{self.conv_type}_best_loss.pth"
+                file_name = self.train_dict["cls_model_states_path"] + file_name
                 torch.save(self.classifier.state_dict(), file_name)
                 print(f"Now best loss: {best_loss:.4f}, save model to {file_name}")
             if self.is_prompt:
