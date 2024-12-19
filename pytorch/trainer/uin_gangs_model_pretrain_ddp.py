@@ -37,6 +37,10 @@ class UinGangsModelPreTrainDDP:
                               hidden_dim=args_dict['hidden_dim'],
                               output_dim=args_dict['output_dim'],
                               num_relations=args_dict['num_relations'])
+            self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
+                               ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
+                               ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
+                               ('uin', 'download_app', 'uin'): 9}
         elif self.conv_type == 'HAN':
             self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
                                        ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
@@ -134,11 +138,10 @@ class UinGangsModelPreTrainDDP:
         return loss
 
     def get_edge_info(self, batch):
-        edge_index = [batch[edge_type].edge_index for edge_type in batch.edge_types]
+        edge_index = [batch[edge_type].edge_index for edge_type in list(self.edge_types.keys()) if edge_type in batch.edge_types]
         edge_index = torch.concat(edge_index, dim=1)
-        # adj = to_dense_adj(edge_index, batch=batch['uin'].batch, batch_size=self.train_dict['batch_size'])
-        edge_counts = [batch[edge_type].num_edges for edge_type in batch.edge_types]
-        edge_type = torch.concat([torch.ones(edge_counts[i]) * i for i in range(len(batch.edge_types))])
+        edge_counts = {edge_type: batch[edge_type].num_edges for edge_type in list(self.edge_types.keys()) if edge_type in batch.edge_types}
+        edge_type = torch.concat([torch.ones(edge_counts[edge_type]) * edge_idx for edge_type, edge_idx in self.edge_types.items() if edge_type in batch.edge_types])
         return edge_index, edge_type.long()
 
     def extract_batch_subgraphs(self, batch, subgraph_node_indices=None):
