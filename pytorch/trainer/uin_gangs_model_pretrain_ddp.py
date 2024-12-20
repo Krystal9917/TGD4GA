@@ -325,7 +325,8 @@ class UinGangsModelPreTrainDDP:
                         loss_value = loss.detach().cpu().item()
                         epoch_loss.append(loss_value)
                         print(
-                            "Batch: {}, Loss: {:.6f}, Time: {:.4f} s".format(
+                            "Rank: {}, Batch: {}, Loss: {:.6f}, Time: {:.4f} s".format(
+                                self.rank,
                                 i + 1,
                                 loss_value,
                                 time.time() - start_time))

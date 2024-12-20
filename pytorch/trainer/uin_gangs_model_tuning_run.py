@@ -86,9 +86,10 @@ class ArgsUinGangs:
                             choices=['subgraph', 'subgraph_embedding', 'subgraph_prompt_tuning'])
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN'])
         parser.add_argument('--is_supervised', type=bool, default=False)
-        parser.add_argument('--prompt_insertion_type', type=str, default='concat_subgraph_plus_prompt',
+        parser.add_argument('--prompt_insertion_type', type=str, default='concat_subgraph_proj_prompt',
                             choices=[None, 'add_prompt', 'concat_prompt', 'concat_subgraph',
-                                     'concat_subgraph_prompt', 'concat_subgraph_plus_prompt'])
+                                     'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
+                                     'concat_subgraph_proj_prompt'])
 
         args = parser.parse_args()
         args_dict = vars(args)
