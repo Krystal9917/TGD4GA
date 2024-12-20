@@ -46,7 +46,7 @@ class UinGangsDataIterablePyG(IterableDataset):
         with open(self.file_path, 'r', encoding="utf-8") as file:
             self.line_indices = list(range(sum(1 for _ in file)))
             random.shuffle(self.line_indices)
-            print(f"File: {self.file_path}, Total lines: {len(self.line_indices)}, "
+            print(f"File: {self.file_path.split('/')[-1]}, Total lines: {len(self.line_indices)}, "
                   f"Load Time: {time.time() - st:.4f} s")
         self.control_node_num = self.args_dict["filter_node_num"]
 
@@ -237,7 +237,7 @@ class UinGangsDataIterablePyG(IterableDataset):
                         try:
                             nodeid = int(map_dict[uin_gang_mem])
                         except KeyError:
-                            print(f"Process Node Error: Node id={uin_gang_mem} dose not exist node map.")
+                            print(f"Process Node Error: Node id={uin_gang_mem} dose not exist in node map.")
                             continue
                         else:
                             graph_data['uin'].gang_mem[nodeid] = 1

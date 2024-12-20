@@ -45,11 +45,12 @@ class UinGangsDataIterablePyGDDP(IterableDataset):
         self.label_class_weight = torch.tensor(
             [self.label_class_weight_dict[key] for key in range(len(self.label_class_weight_dict))])
 
+        st = time.time()
         # 读取所有行号并随机打乱
         with open(self.file_path, 'r', encoding="utf-8") as file:
             self.line_indices = list(range(self.rank, sum(1 for _ in file), self.world_size))
             random.shuffle(self.line_indices)
-        print(f"Rank: {self.rank}, Lines: {len(self.line_indices)}")
+        print(f"Rank: {self.rank}, Lines: {len(self.line_indices)}, Load Time: {time.time() - st:.4f} s")
         self.control_node_num = self.args_dict["filter_node_num"]
         self.minirbt_tokenizer = AutoTokenizer.from_pretrained(self.args_dict["minirbt_path"])
         self.undirected_edge_types = ['idcardid', 'bankcard', 'device', 'wifi', 'ipv6', 'room']

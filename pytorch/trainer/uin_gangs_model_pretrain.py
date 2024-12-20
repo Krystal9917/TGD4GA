@@ -14,11 +14,9 @@ from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
 from torch.utils.tensorboard import SummaryWriter
 from transformers import BertModel
-from mmgog_long_term_sequence_model.utils.utils import visualization_fig_save
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
-from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN, SHAN
+from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN, Score_based_HAN
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix
 
 
 class UinGangsModelPreTrain:
@@ -61,7 +59,7 @@ class UinGangsModelPreTrain:
                                  metadata=self.metadata,
                                  heads=args_dict['num_heads'])
             elif self.conv_type == 'Score_based_HAN':
-                self.model = SHAN(in_channels=args_dict['input_dim'],
+                self.model = Score_based_HAN(in_channels=args_dict['input_dim'],
                                   out_channels=args_dict['output_dim'],
                                   metadata=self.metadata,
                                   heads=args_dict['num_heads'])
@@ -69,6 +67,7 @@ class UinGangsModelPreTrain:
         lr = self.train_dict["lr"]
         control_node_num = self.train_dict["filter_node_num"]
         sampling_type = self.train_dict["sampling"]
+        self.data_tag = self.train_dict["data_tag"]
         self.train_data = UinGangsDataIterablePyG(self.train_dict, self.train_dict["train_data_path"])
         if self.train_dict["sampling"] == 'random':
             self.pos_train_loader = Data.DataLoader(self.train_data,
@@ -81,7 +80,7 @@ class UinGangsModelPreTrain:
                                                     num_workers=self.train_dict["num_workers"],
                                                     collate_fn=self.train_data.pos_collate_fn_for_fraudar)
         if not self.train_dict["is_debug"]:
-            self.log_file_path = f"1921_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
+            self.log_file_path = f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
             log_path = os.path.join(args_dict['log_dir'], self.train_dict["model_states_path"].split('/')[-1],
                                     self.log_file_path)
             if not os.path.exists(log_path):
@@ -149,7 +148,7 @@ class UinGangsModelPreTrain:
             sim_matrix = torch.exp(sim_matrix / t)
         except Exception as e:
             loss = torch.tensor(5.0, requires_grad=True).to(h1.device)
-            print(f"Norm error <{e}>, h1 shape: {h1.shape}, h3 shape: {h3.shape}")
+            print(f"Norm Error {e}, h1 shape: {h1.shape}, h3 shape: {h3.shape}")
         else:
             loss = pos_sim / (sim_matrix.sum(dim=1) + 1e-4)
             loss = -torch.log(loss).mean()
@@ -201,7 +200,7 @@ class UinGangsModelPreTrain:
                     subgraph_node_indices = subgraph_node_indices[subgraph_node_indices <= max_node_idx]
                 edge_index, _ = subgraph(subgraph_node_indices, batch[edge_type].edge_index)
             except Exception as e:
-                print(f"Extract Subgraph Error: <{e}>")
+                print(f"Extract Subgraph Error: {e}")
                 del new_batch[edge_type]
             else:
                 # no such type of edges
@@ -272,7 +271,7 @@ class UinGangsModelPreTrain:
         out = self.model(x_dict, edge_index_dict)
         return out
 
-    def shan_fit(self, x_dict, edge_index_dict, score_dict):
+    def Score_based_HAN_fit(self, x_dict, edge_index_dict, score_dict):
         out = self.model(x_dict, edge_index_dict, score_dict)
         return out
 
@@ -281,7 +280,7 @@ class UinGangsModelPreTrain:
             batch_edge_index, batch_edge_types = self.get_edge_info(pos_batch)
             batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
         except Exception as e:
-            print(f"RGCN Get Edge Information Error: <{e}>")
+            print(f"RGCN Get Edge Information Error: {e}")
             return None
         else:
             return batch_h
@@ -314,8 +313,8 @@ class UinGangsModelPreTrain:
                 pos_batch['uin'].x = batch_x.to(self.device)
                 if self.conv_type == 'HAN':
                     batch_h = self.han_fit(pos_batch.x_dict, pos_batch.edge_index_dict)
-                elif self.conv_type == 'SHAN':
-                    batch_h = self.shan_fit(pos_batch.x_dict, pos_batch.edge_index_dict,
+                elif self.conv_type == 'Score_based_HAN':
+                    batch_h = self.Score_based_HAN_fit(pos_batch.x_dict, pos_batch.edge_index_dict,
                                             pos_batch.score_dict)
                 elif self.conv_type == 'RGCN':
                     batch_h = self.rgcn_fit(pos_batch, batch_x)
@@ -351,18 +350,18 @@ class UinGangsModelPreTrain:
                         try:
                             edge_index_dict = fraudar_batch.edge_index_dict
                         except Exception as e:
-                            print(f"Error: {e}>")
+                            print(f"HAN Error: {e}")
                             fraudar_batch_h = None
                         else:
                             fraudar_batch_h = self.han_fit(fraudar_batch.x_dict, edge_index_dict)
-                    elif self.conv_type == 'SHAN':
+                    elif self.conv_type == 'Score_based_HAN':
                         try:
                             edge_index_dict = fraudar_batch.edge_index_dict
                         except Exception as e:
-                            print(f"Error: {e}>")
+                            print(f"Error: {e}")
                             fraudar_batch_h = None
                         else:
-                            fraudar_batch_h = self.shan_fit(fraudar_batch.x_dict, edge_index_dict,
+                            fraudar_batch_h = self.Score_based_HAN_fit(fraudar_batch.x_dict, edge_index_dict,
                                                             fraudar_batch.score_dict)
                     elif self.conv_type == 'RGCN':
                         fraudar_batch_h = self.rgcn_fit(fraudar_batch, fraudar_batch['uin'].x)
