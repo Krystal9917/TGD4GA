@@ -61,8 +61,10 @@ class UinGangsModelPreTrainDDP:
         lr = self.train_dict["lr"]
         control_node_num = self.train_dict["filter_node_num"]
         sampling_type = self.train_dict["sampling"]
+        self.data_tag = self.train_dict["data_tag"]
+        self.device_tag = self.train_dict["device_tag"]
 
-        self.log_file_path = f"1930_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}_GPU2"
+        self.log_file_path = f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}{self.device_tag}"
         log_path = os.path.join(args_dict['log_dir'],
                                 self.train_dict["model_states_path"].split('/')[-1],
                                 self.log_file_path)

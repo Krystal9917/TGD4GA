@@ -8,6 +8,7 @@ logger = logging.getLogger("my_logger")
 os.environ['DGLBACKEND'] = 'pytorch'
 
 import numpy as np
+from collections import OrderedDict
 import torch.utils.data as Data
 from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
@@ -50,8 +51,10 @@ class UinGangsModelTuning:
         lr = self.eval_dict["lr"]
         control_node_num = self.eval_dict["filter_node_num"]
         sampling_type = self.eval_dict["sampling"]
+        self.data_tag = self.eval_dict["data_tag"]
+        self.device_tag = self.eval_dict["device_tag"]
         self.save_model_path = os.path.join(self.eval_dict["model_states_path"],
-                                            f"1921_{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}")
+                                            f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}{self.device_tag}")
         if not self.eval_dict["is_supervised"]:
             if self.eval_dict["eval_epoch"] != 0:
                 epoch_num = self.eval_dict["eval_epoch"]
@@ -60,7 +63,15 @@ class UinGangsModelTuning:
             else:
                 file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
             model_weight = torch.load(file_name, map_location=self.device)
-            self.model.load_state_dict(model_weight)
+            if self.data_tag == '1930_' and self.device_tag == '_GPU2':
+                rename_key_model_weight = OrderedDict()
+                for key in model_weight.keys():
+                    key_weight = model_weight[key]
+                    key = key.replace('module.', '')
+                    rename_key_model_weight[key] = key_weight
+                self.model.load_state_dict(rename_key_model_weight)
+            else:
+                self.model.load_state_dict(model_weight)
             print(f"Load: {file_name}")
         self.model.to(self.device)
 
@@ -108,12 +119,12 @@ class UinGangsModelTuning:
                                                num_workers=self.eval_dict["num_workers"],
                                                collate_fn=self.eval_data.collate_fn)
             self.prompt_type = self.eval_dict["prompt_insertion_type"]
-            self.is_prompt = True if self.prompt_type is not None else False
-            if self.prompt_type == 'concat_prompt':
+            self.is_prompt = True if self.prompt_type not in [None, 'concat_subgraph'] else False
+            if self.prompt_type in ['concat_prompt', 'concat_subgraph', 'concat_subgraph_plus_prompt']:
                 cls_input = args_dict['output_dim'] * 2
             elif self.prompt_type == 'concat_subgraph_prompt':
                 cls_input = args_dict['output_dim'] * 3
-            elif self.prompt_type is None:
+            elif self.prompt_type in [None, 'add_prompt']:
                 cls_input = args_dict['output_dim']
             self.classifier = torch.nn.Sequential(torch.nn.Linear(cls_input, args_dict['hidden_dim']),
                                                   torch.nn.ReLU(),
@@ -334,6 +345,23 @@ class UinGangsModelTuning:
                   f"Confusion Matrix: {cm.tolist()}"
                   )
 
+    def insert_prompt(self, batch_h, batch, prompt):
+        if self.prompt_type == 'add_prompt':
+            prompt_batch_h = batch_h + prompt.repeat(batch_h.shape[0], 1)
+        elif self.prompt_type == 'concat_prompt':
+            prompt_batch_h = torch.concat([batch_h, prompt.repeat(batch_h.shape[0], 1)], dim=1)
+        elif self.prompt_type == 'concat_subgraph_prompt':
+            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+            prompt_batch_h = torch.concat(
+                [batch_h, expand_batch_h_g, prompt.repeat(batch_h.shape[0], 1)], dim=1)
+        elif self.prompt_type == 'concat_subgraph_plus_prompt':
+            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+            prompt_batch_h = torch.concat(
+                [batch_h, expand_batch_h_g+prompt.repeat(batch_h.shape[0], 1)], dim=1)
+        return prompt_batch_h
+
     def evaluate_labelled_subgraph_prompt_tuning(self):
         self.model.eval()
         for param in self.model.parameters():
@@ -388,15 +416,13 @@ class UinGangsModelTuning:
                 # get edge information
                 if batch_h is not None:
                     if self.is_prompt:
-                        if self.prompt_type == 'concat_prompt':
-                            prompt_batch_h = torch.concat([batch_h, prompt.repeat(batch_h.shape[0], 1)], dim=1)
-                        elif self.prompt_type == 'concat_subgraph_prompt':
-                            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                            prompt_batch_h = torch.concat(
-                                [batch_h, expand_batch_h_g, prompt.repeat(batch_h.shape[0], 1)], dim=1)
+                        prompt_batch_h = self.insert_prompt(batch_h, batch, prompt)
                         pred_y = self.classifier(prompt_batch_h).argmax(dim=1).float().to(self.device)
                     else:
+                        if self.prompt_type == 'concat_subgraph':
+                            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                            batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
                         pred_y = self.classifier(batch_h).argmax(dim=1).float().to(self.device)
                     batch_y = batch['uin'].gang_mem.float()
                     cls_loss = self.criterion(pred_y, batch_y).requires_grad_(True)
@@ -464,15 +490,14 @@ class UinGangsModelTuning:
                 batch_h = self.rgcn_fit(batch, batch['uin'].x)
                 if batch_h is not None:
                     if prompt is not None:
-                        if self.prompt_type == 'concat_prompt':
-                            prompt_batch_h = torch.concat([batch_h, prompt.repeat(batch_h.shape[0], 1)], dim=1)
-                        elif self.prompt_type == 'concat_subgraph_prompt':
-                            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                            prompt_batch_h = torch.concat([batch_h, expand_batch_h_g, prompt.repeat(batch_h.shape[0], 1)], dim=1)
+                        prompt_batch_h = self.insert_prompt(batch_h, batch, prompt)
                         prob_y = self.classifier(prompt_batch_h)[:, 1]
                         pred_y = self.classifier(prompt_batch_h).argmax(dim=1)
                     else:
+                        if self.prompt_type == 'concat_subgraph':
+                            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                            batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
                         prob_y = self.classifier(batch_h)[:, 1]
                         pred_y = self.classifier(batch_h).argmax(dim=1)
                     batch_y = batch['uin'].gang_mem

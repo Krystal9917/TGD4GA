@@ -56,7 +56,7 @@ class ArgsUinGangs:
         parser.add_argument('--batch_size', type=int, default=40)
         parser.add_argument('--data_buffer_size', type=int, default=40)
         parser.add_argument('--lr', type=float, default=0.001)
-        parser.add_argument('--n_epochs', type=int, default=100)
+        parser.add_argument('--n_epochs', type=int, default=50)
         parser.add_argument('--uin_in_size', type=int, default=846)
         parser.add_argument('--uin_acs_numberical_feat_dim', type=int, default=290)
         parser.add_argument('--uin_acs_text_feat_dim', type=int, default=256)
@@ -79,14 +79,16 @@ class ArgsUinGangs:
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--is_debug', type=bool, default=False)
-        parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--eval_epoch', type=int, default=0)
+        parser.add_argument('--data_tag', type=str, default='1921_', choices=['', '1921_', '1930_', 'order_1930_'])
+        parser.add_argument('--device_tag', type=str, default='', choices=['', '_GPU2'])
+        parser.add_argument('--eval_epoch', type=int, default=40)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_prompt_tuning',
                             choices=['subgraph', 'subgraph_embedding', 'subgraph_prompt_tuning'])
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN'])
         parser.add_argument('--is_supervised', type=bool, default=False)
-        parser.add_argument('--prompt_insertion_type', type=str, default='concat_prompt',
-                            choices=[None, 'concat_prompt', 'concat_subgraph_prompt'])
+        parser.add_argument('--prompt_insertion_type', type=str, default='concat_subgraph_plus_prompt',
+                            choices=[None, 'add_prompt', 'concat_prompt', 'concat_subgraph',
+                                     'concat_subgraph_prompt', 'concat_subgraph_plus_prompt'])
 
         args = parser.parse_args()
         args_dict = vars(args)
