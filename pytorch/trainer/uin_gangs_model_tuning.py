@@ -120,7 +120,8 @@ class UinGangsModelTuning:
                                                collate_fn=self.eval_data.collate_fn)
             self.prompt_type = self.eval_dict["prompt_insertion_type"]
             self.is_prompt = True if self.prompt_type not in [None, 'concat_subgraph'] else False
-            if self.prompt_type in ['concat_prompt', 'concat_subgraph', 'concat_subgraph_plus_prompt']:
+            if self.prompt_type in ['concat_prompt', 'concat_subgraph',
+                                    'concat_subgraph_plus_prompt', 'concat_subgraph_proj_prompt']:
                 cls_input = args_dict['output_dim'] * 2
             elif self.prompt_type == 'concat_subgraph_prompt':
                 cls_input = args_dict['output_dim'] * 3
@@ -360,6 +361,11 @@ class UinGangsModelTuning:
             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
             prompt_batch_h = torch.concat(
                 [batch_h, expand_batch_h_g+prompt.repeat(batch_h.shape[0], 1)], dim=1)
+        elif self.prompt_type == 'concat_subgraph_proj_prompt':
+            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+            prompt_batch_h = torch.concat(
+                [batch_h, expand_batch_h_g * prompt.repeat(batch_h.shape[0], 1)], dim=1)
         return prompt_batch_h
 
     def evaluate_labelled_subgraph_prompt_tuning(self):

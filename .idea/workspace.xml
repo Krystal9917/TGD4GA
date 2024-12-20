@@ -6,16 +6,8 @@
   <component name="ChangeListManager">
     <list default="true" id="690ce246-b023-4a0a-8442-769ce35af91d" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pytorch/dataprocess/data_process_iterable_pyg.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/dataprocess/data_process_iterable_pyg.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pytorch/dataprocess/data_process_iterable_pyg_ddp.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/dataprocess/data_process_iterable_pyg_ddp.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_ddp.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_ddp.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_ddp_run.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_ddp_run.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_run.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_run.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_train.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_train_only_classify.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_train_run.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_train_run.sh" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning_run.sh" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning_run.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning_run.py" afterDir="false" />
     </list>
@@ -190,7 +182,7 @@
       <workItem from="1734407523367" duration="28610000" />
       <workItem from="1734505032003" duration="38426000" />
       <workItem from="1734600716126" duration="44000" />
-      <workItem from="1734600762496" duration="20727000" />
+      <workItem from="1734600762496" duration="22677000" />
     </task>
     <servers />
   </component>

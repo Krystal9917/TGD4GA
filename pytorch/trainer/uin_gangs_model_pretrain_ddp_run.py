@@ -82,7 +82,7 @@ class ArgsUinGangs:
 
 
 def run_pretraining_graph_ddp(rank, args):
-    print(f"rank: {rank}, args_dict: {args.args_dict}")
+    print(f"Rank: {rank}, Parameters: {args.args_dict}")
     sampling_type = args.args_dict["sampling"]
     train_model = UinGangsModelPreTrainDDP(rank, args.args_dict)
     if sampling_type == 'fraudar':
