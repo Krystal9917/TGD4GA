@@ -15,6 +15,7 @@ from torch_scatter import scatter_mean
 from torch.utils.tensorboard import SummaryWriter
 from transformers import BertModel
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
+from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN, Score_based_HAN
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
 
@@ -48,7 +49,14 @@ class UinGangsModelPreTrain:
                                ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
                                ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
                                ('uin', 'download_app', 'uin'): 9}
-        elif self.conv_type in ['HAN', 'Score_based_HAN']:
+        elif self.conv_type == 'GT':
+            self.model = GraphTransformer(
+                input_dim=args_dict['input_dim'],
+                hidden_dim=args_dict['hidden_dim'],
+                output_dim=args_dict['output_dim'],
+                heads=args_dict['heads']
+            )
+        elif self.conv_type in ['HAN', 'Score_based_HAN', 'HGT']:
             self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
                                        ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
                                        ('uin', 'payee', 'uin'), ('uin', 'payer', 'uin'), ('uin', 'bankcard', 'uin'),
@@ -60,9 +68,14 @@ class UinGangsModelPreTrain:
                                  heads=args_dict['num_heads'])
             elif self.conv_type == 'Score_based_HAN':
                 self.model = Score_based_HAN(in_channels=args_dict['input_dim'],
-                                  out_channels=args_dict['output_dim'],
-                                  metadata=self.metadata,
-                                  heads=args_dict['num_heads'])
+                                             out_channels=args_dict['output_dim'],
+                                             metadata=self.metadata,
+                                             heads=args_dict['num_heads'])
+            elif self.conv_type == 'HGT':
+                self.model = HeteroGraphTransformer(in_channels=args_dict['input_dim'],
+                                                    out_channels=args_dict['output_dim'],
+                                                    metadata=self.metadata,
+                                                    heads=args_dict['num_heads'])
 
         lr = self.train_dict["lr"]
         control_node_num = self.train_dict["filter_node_num"]
@@ -177,10 +190,14 @@ class UinGangsModelPreTrain:
         return batch_node_loss / len(loop_idx)
 
     def get_edge_info(self, batch):
-        edge_index = [batch[edge_type].edge_index for edge_type in list(self.edge_types.keys()) if edge_type in batch.edge_types]
+        edge_index = [batch[edge_type].edge_index for edge_type in list(self.edge_types.keys()) if
+                      edge_type in batch.edge_types]
         edge_index = torch.concat(edge_index, dim=1)
-        edge_counts = {edge_type: batch[edge_type].num_edges for edge_type in list(self.edge_types.keys()) if edge_type in batch.edge_types}
-        edge_type = torch.concat([torch.ones(edge_counts[edge_type]) * edge_idx for edge_type, edge_idx in self.edge_types.items() if edge_type in batch.edge_types])
+        edge_counts = {edge_type: batch[edge_type].num_edges for edge_type in list(self.edge_types.keys()) if
+                       edge_type in batch.edge_types}
+        edge_type = torch.concat(
+            [torch.ones(edge_counts[edge_type]) * edge_idx for edge_type, edge_idx in self.edge_types.items() if
+             edge_type in batch.edge_types])
         return edge_index, edge_type.long()
 
     def extract_batch_subgraphs(self, batch, subgraph_node_indices=None):
@@ -267,7 +284,7 @@ class UinGangsModelPreTrain:
         if not self.train_dict["is_debug"]:
             self.writer.close()
 
-    def han_fit(self, x_dict, edge_index_dict):
+    def hetero_fit(self, x_dict, edge_index_dict):
         out = self.model(x_dict, edge_index_dict)
         return out
 
@@ -284,6 +301,16 @@ class UinGangsModelPreTrain:
             return None
         else:
             return batch_h
+
+    def homo_fit(self, pos_batch, batch_x):
+        try:
+            batch_edge_index, _ = self.get_edge_info(pos_batch)
+        except Exception as e:
+            print(f"Get Edge Information Error: {e}")
+            return None
+        else:
+            out = self.model(batch_x, batch_edge_index)
+            return out
 
     def fraudar_sampling_pretraining(self):
         # num_fraudar_nodes = 0
@@ -311,15 +338,17 @@ class UinGangsModelPreTrain:
                 batch_x = torch.concat([pos_batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 pos_batch['uin'].x = batch_x.to(self.device)
-                if self.conv_type == 'HAN':
-                    batch_h = self.han_fit(pos_batch.x_dict, pos_batch.edge_index_dict)
+                if self.conv_type in ['HAN', 'HGT']:
+                    batch_h = self.hetero_fit(pos_batch.x_dict, pos_batch.edge_index_dict)
                 elif self.conv_type == 'Score_based_HAN':
                     batch_h = self.Score_based_HAN_fit(pos_batch.x_dict, pos_batch.edge_index_dict,
-                                            pos_batch.score_dict)
+                                                       pos_batch.score_dict)
                 elif self.conv_type == 'RGCN':
                     batch_h = self.rgcn_fit(pos_batch, batch_x)
-                batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
+                else:
+                    batch_h = self.homo_fit(pos_batch, batch_x)
 
+                batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
                 pos_batch_idx = (pos_batch['uin'].flag == 1).nonzero().squeeze().detach().cpu().tolist()
                 neg_batch_idx = (pos_batch['uin'].flag == 0).nonzero().squeeze().detach().cpu().tolist()
 
@@ -353,7 +382,7 @@ class UinGangsModelPreTrain:
                             print(f"HAN Error: {e}")
                             fraudar_batch_h = None
                         else:
-                            fraudar_batch_h = self.han_fit(fraudar_batch.x_dict, edge_index_dict)
+                            fraudar_batch_h = self.hetero_fit(fraudar_batch.x_dict, edge_index_dict)
                     elif self.conv_type == 'Score_based_HAN':
                         try:
                             edge_index_dict = fraudar_batch.edge_index_dict
@@ -362,9 +391,11 @@ class UinGangsModelPreTrain:
                             fraudar_batch_h = None
                         else:
                             fraudar_batch_h = self.Score_based_HAN_fit(fraudar_batch.x_dict, edge_index_dict,
-                                                            fraudar_batch.score_dict)
+                                                                       fraudar_batch.score_dict)
                     elif self.conv_type == 'RGCN':
                         fraudar_batch_h = self.rgcn_fit(fraudar_batch, fraudar_batch['uin'].x)
+                    else:
+                        fraudar_batch_h = self.homo_fit(fraudar_batch, fraudar_batch['uin'].x)
 
                     if fraudar_batch_h is not None:
                         fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
@@ -445,7 +476,8 @@ class UinGangsModelPreTrain:
                 self.best_loss = epoch_loss
                 file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
-                epoch_file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
+                epoch_file_name = os.path.join(self.save_model_path,
+                                               f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
             if epoch % 10 == 0:
@@ -463,4 +495,3 @@ class UinGangsModelPreTrain:
             #         ))
         if not self.train_dict["is_debug"]:
             self.writer.close()
-

@@ -56,7 +56,7 @@ class ArgsUinGangs:
         parser.add_argument('--batch_size', type=int, default=40)
         parser.add_argument('--data_buffer_size', type=int, default=40)
         parser.add_argument('--lr', type=float, default=0.001)
-        parser.add_argument('--n_epochs', type=int, default=50)
+        parser.add_argument('--n_epochs', type=int, default=30)
         parser.add_argument('--uin_in_size', type=int, default=846)
         parser.add_argument('--uin_acs_numberical_feat_dim', type=int, default=290)
         parser.add_argument('--uin_acs_text_feat_dim', type=int, default=256)
@@ -79,17 +79,19 @@ class ArgsUinGangs:
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--is_debug', type=bool, default=False)
-        parser.add_argument('--data_tag', type=str, default='1921_', choices=['', '1921_', '1930_', 'order_1930_'])
+        parser.add_argument('--data_tag', type=str, default='1921_', choices=['', '1921_', '1930_', 'order_1930'])
         parser.add_argument('--device_tag', type=str, default='', choices=['', '_GPU2'])
         parser.add_argument('--eval_epoch', type=int, default=40)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_prompt_tuning',
                             choices=['subgraph', 'subgraph_embedding', 'subgraph_prompt_tuning'])
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN'])
         parser.add_argument('--is_supervised', type=bool, default=False)
-        parser.add_argument('--prompt_insertion_type', type=str, default='concat_subgraph_proj_prompt',
+        parser.add_argument('--is_weighted_subgraph', type=bool, default=True)
+        parser.add_argument('--prompt_insertion_type', type=str, default=None,
                             choices=[None, 'add_prompt', 'concat_prompt', 'concat_subgraph',
                                      'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
-                                     'concat_subgraph_proj_prompt'])
+                                     'concat_subgraph_proj_prompt', 'concat_prompted_subgraph'])
+        parser.add_argument('--prompt_tuning_times', type=int, default=5)
 
         args = parser.parse_args()
         args_dict = vars(args)
@@ -99,14 +101,41 @@ class ArgsUinGangs:
 if __name__ == '__main__':
     args = ArgsUinGangs()
     print(f"Tuning Parameters: {args.args_dict}")
-    tuning_model = UinGangsModelTuning(args.args_dict)
     if args.args_dict["evaluate_task"] == 'subgraph':
+        tuning_model = UinGangsModelTuning(args.args_dict)
         print("======Labelled Subgraph Label Evaluation======")
         tuning_model.evaluate_labelled_subgraph_predict()
     elif args.args_dict["evaluate_task"] == 'subgraph_embedding':
+        tuning_model = UinGangsModelTuning(args.args_dict)
         print("======Labelled Subgraph Embedding Evaluation======")
         tuning_model.evaluate_labelled_subgraph_embedding()
     elif args.args_dict["evaluate_task"] == 'subgraph_prompt_tuning':
         print("======Labelled Subgraph Prompt Tuning======")
-        tuning_model.evaluate_labelled_subgraph_prompt_tuning()
-
+        times_list = ['1st', '2nd', '3rd', '4th', '5th']
+        ave_acc = 0
+        ave_pre = 0
+        ave_rec = 0
+        ave_f1 = 0
+        ave_roc_auc = 0
+        ave_cfm = 0
+        ave_jac = 0
+        for i in range(args.args_dict["prompt_tuning_times"]):
+            print(f"*****Start {times_list[i]} Time Tuning*****")
+            tuning_model = UinGangsModelTuning(args.args_dict)
+            test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm, test_jac = tuning_model.evaluate_labelled_subgraph_prompt_tuning()
+            ave_acc += test_acc
+            ave_pre += test_pre
+            ave_rec += test_rec
+            ave_f1 += test_f1
+            ave_roc_auc += test_roc_auc
+            ave_cfm += test_cfm
+            ave_jac += test_jac
+            print(f"*****End {times_list[i]} Time Tuning*****")
+        print(f"{len(times_list)} Times Average Best Test ACC: {ave_acc / len(times_list): .4f}, "
+              f"Precision: {ave_pre / len(times_list): .4f}, "
+              f"Recall: {ave_rec / len(times_list): .4f}, "
+              f"F1: {ave_f1 / len(times_list): .4f}, "
+              f"ROC-AUC: {ave_roc_auc / len(times_list): .4f}, "
+              f"Confusion Matrix: {ave_cfm / len(times_list)}, "
+              f"Jaccard Coefficient: {ave_jac / len(times_list): .4f}"
+              )

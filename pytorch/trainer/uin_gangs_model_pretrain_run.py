@@ -63,10 +63,11 @@ class ArgsUinGangs:
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN', 'Score_based_HAN'])
+        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN',
+                                                                              'Score_based_HAN', 'GT', 'HGT'])
         # RGCN
         parser.add_argument('--num_relations', type=int, default=10)
-        # HAN
+        # HAN/GT/HGT
         parser.add_argument('--num_heads', type=int, default=2)
         parser.add_argument('--data_tag', type=str, default='order_1930_', choices=['', '1921_', '1930_', 'order_1930_'])
         args = parser.parse_args()
