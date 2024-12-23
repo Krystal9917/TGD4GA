@@ -1,7 +1,7 @@
 import os
 import sys
 import torch
-from torch_geometric.nn import RGATConv, Linear, to_hetero
+from torch_geometric.nn import RGATConv
 sys.path.append(os.path.abspath(
     os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir)))
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_example_test import generate_data_batch
