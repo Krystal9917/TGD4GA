@@ -13,7 +13,7 @@ class ArgsUinGangs:
         parser.add_argument('--train_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "train", "raw",
-                         "uin_gangs_full_graph_dataset_train_241119_241121.txt")))
+                         "uin_gangs_full_graph_dataset_train_241119_241130.txt")))
         parser.add_argument('--test_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "eval", "raw",
@@ -57,19 +57,19 @@ class ArgsUinGangs:
         parser.add_argument('--input_dim', type=int, default=846)
         parser.add_argument('--hidden_dim', type=int, default=1024)
         parser.add_argument('--output_dim', type=int, default=846)
-        parser.add_argument('--filter_node_num', type=int, default=5)
+        parser.add_argument('--filter_node_num', type=int, default=3)
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN',
+        parser.add_argument('--conv_type', type=str, default='HGT', choices=['RGCN', 'HAN',
                                                                               'Score_based_HAN', 'GT', 'HGT'])
         # RGCN
         parser.add_argument('--num_relations', type=int, default=10)
         # HAN/GT/HGT
         parser.add_argument('--num_heads', type=int, default=2)
-        parser.add_argument('--data_tag', type=str, default='order_1930_', choices=['', '1921_', '1930_', 'order_1930_'])
+        parser.add_argument('--data_tag', type=str, default='1930_', choices=['', '1921_', '1930_', 'order_1930_'])
         args = parser.parse_args()
         args_dict = vars(args)
         self.args_dict = args_dict

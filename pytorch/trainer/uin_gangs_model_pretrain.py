@@ -8,7 +8,6 @@ logger = logging.getLogger("my_logger")
 os.environ['DGLBACKEND'] = 'pytorch'
 
 import numpy as np
-from torch_geometric.nn import to_hetero
 import torch.utils.data as Data
 from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
@@ -375,11 +374,11 @@ class UinGangsModelPreTrain:
                     #         print(fraudar_batch.num_edges)
                     #         print(len(pos_batch_idx) if list_flag else pos_batch_idx)
 
-                    if self.conv_type == 'HAN':
+                    if self.conv_type in ['HAN', 'HGT']:
                         try:
                             edge_index_dict = fraudar_batch.edge_index_dict
                         except Exception as e:
-                            print(f"HAN Error: {e}")
+                            print(f"{self.conv_type} Error: {e}")
                             fraudar_batch_h = None
                         else:
                             fraudar_batch_h = self.hetero_fit(fraudar_batch.x_dict, edge_index_dict)
@@ -480,7 +479,7 @@ class UinGangsModelPreTrain:
                                                f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
-            if epoch % 10 == 0:
+            if epoch % 5 == 0:
                 file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), file_name)
                 print(f"Save model to {file_name}")
