@@ -53,7 +53,7 @@ class UinGangsModelPreTrain:
                 input_dim=args_dict['input_dim'],
                 hidden_dim=args_dict['hidden_dim'],
                 output_dim=args_dict['output_dim'],
-                heads=args_dict['heads']
+                heads=args_dict['num_heads']
             )
         elif self.conv_type in ['HAN', 'Score_based_HAN', 'HGT']:
             self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
@@ -72,6 +72,7 @@ class UinGangsModelPreTrain:
                                              heads=args_dict['num_heads'])
             elif self.conv_type == 'HGT':
                 self.model = HeteroGraphTransformer(in_channels=args_dict['input_dim'],
+                                                    hidden_channels=args_dict['hidden_dim'],
                                                     out_channels=args_dict['output_dim'],
                                                     metadata=self.metadata,
                                                     heads=args_dict['num_heads'])
