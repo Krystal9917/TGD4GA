@@ -1,5 +1,5 @@
 import torch
-from .attn_gnn_model import SHANConv
+from .hetero_attn_conv import SHANConv
 from torch_geometric.nn import HANConv
 
 
@@ -15,7 +15,7 @@ class HAN(torch.nn.Module):
         return out['uin']
 
 
-class SHAN(torch.nn.Module):
+class Score_based_HAN(torch.nn.Module):
     def __init__(self, in_channels, out_channels, metadata, heads=4):
         super().__init__()
         self.conv1 = SHANConv(in_channels, out_channels, metadata, dropout=0.2, heads=heads)

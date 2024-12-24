@@ -145,11 +145,6 @@ class SHANConv(MessagePassing):
                 f'heads={self.heads})')
 
 
-def load_batch_from_file():
-    path = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/valid/processed/test_samples.pt'
-    return torch.load(path)
-
-
 class SHAN(torch.nn.Module):
     def __init__(self, in_channels, out_channels, metadata, heads=4):
         super().__init__()
@@ -161,24 +156,3 @@ class SHAN(torch.nn.Module):
         # out = self.conv2(out, edge_index, score)
         return out['uin']
 
-
-if __name__ == '__main__':
-    batch = load_batch_from_file()
-    han = SHAN(in_channels=batch['uin'].x.shape[1], out_channels=batch['uin'].x.shape[1],
-               heads=2, metadata=batch.metadata())
-    batch.x_dict['uin'] = torch.nn.functional.normalize(batch.x_dict['uin'], dim=1)
-    x_out = han(batch.x_dict, batch.edge_index_dict, batch.score_dict)
-    gang_idx = (batch['uin'].gang_label == 1).nonzero().squeeze().tolist()
-    normal_idx = (batch['uin'].gang_label == 0).nonzero().squeeze().tolist()
-    batch_h_g = scatter_mean(x_out, batch['uin'].batch, dim=0)
-    gang_h_g = batch_h_g[gang_idx]
-    normal_h_g = batch_h_g[normal_idx]
-    gang_h_g_norm = gang_h_g.norm(dim=1)
-    normal_h_g_norm = normal_h_g.norm(dim=1)
-    sim_matrix = (torch.einsum('ik,jk->ij', gang_h_g, normal_h_g) /
-                  torch.einsum('i,j->ij', gang_h_g_norm, normal_h_g_norm))
-    pos_sim = (torch.einsum('ik,jk->ij', gang_h_g, gang_h_g) /
-               torch.einsum('i,j->ij', gang_h_g_norm, gang_h_g_norm))
-    neg_sim = (torch.einsum('ik,jk->ij', normal_h_g, normal_h_g) /
-               torch.einsum('i,j->ij', normal_h_g_norm, normal_h_g_norm))
-    print(sim_matrix.mean(), pos_sim.mean(), neg_sim.mean())

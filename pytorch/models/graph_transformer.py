@@ -15,12 +15,12 @@ class GraphTransformer(torch.nn.Module):
 
 
 class HeteroGraphTransformer(torch.nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, metadata, heads):
+    def __init__(self, in_channels, hidden_channels, out_channels, metadata, heads):
         super().__init__()
-        self.conv1 = HGTConv(input_dim, hidden_dim, metadata=metadata, heads=heads)
-        self.conv2 = HGTConv(hidden_dim, output_dim, metadata=metadata, heads=heads)
+        self.conv1 = HGTConv(in_channels, hidden_channels, metadata=metadata, heads=heads)
+        self.conv2 = HGTConv(hidden_channels, out_channels, metadata=metadata, heads=heads)
 
     def forward(self, x_dict, edge_index_dict):
-        x = self.conv1(x_dict, edge_index_dict)
-        x = self.conv2(x, edge_index_dict)
-        return x
+        update_x_dict = self.conv1(x_dict, edge_index_dict)
+        out = self.conv2(update_x_dict, edge_index_dict)
+        return out['uin']
