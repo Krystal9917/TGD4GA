@@ -214,7 +214,11 @@ class UinGangsModelTuning:
             return batch_h
 
     def hetero_fit(self, x_dict, edge_index_dict):
-        out = self.model(x_dict, edge_index_dict)
+        filter_edge_dict = {}
+        for edge_type in list(edge_index_dict.keys()):
+            if edge_type in self.metadata[1]:
+                filter_edge_dict[edge_type] = edge_index_dict[edge_type]
+        out = self.model(x_dict, filter_edge_dict)
         return out
 
     def evaluate_labelled_subgraph_embedding(self):
@@ -283,6 +287,12 @@ class UinGangsModelTuning:
         for param in self.classifier.parameters():
             param.requires_grad = True
         best_loss = self.eval_dict["best_loss"]
+        best_test_acc = 0
+        best_test_pre = 0
+        best_test_rec = 0
+        best_test_f1 = 0
+        best_test_roc_auc = 0
+        best_test_cm = []
         for epoch in range(1, self.eval_dict["n_epochs"] + 1):
             st = time.time()
             self.classifier.train()
@@ -305,6 +315,9 @@ class UinGangsModelTuning:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 # get edge information
                 if batch_h is not None:
+                    if self.eval_dict["is_weighted_subgraph"]:
+                        exp_score = torch.exp(batch['uin'].score)
+                        batch_h = batch_h * exp_score
                     batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                     batch_y = batch['uin'].gang_label.float()
                     pred_y = self.classifier(batch_h_g).argmax(dim=1).float().to(self.device)
@@ -318,8 +331,16 @@ class UinGangsModelTuning:
                 file_name = self.eval_dict["cls_model_states_path"] + f"{self.conv_type}_best_loss.pth"
                 torch.save(self.classifier.state_dict(), file_name)
                 print(f"Now best loss: {best_loss:.4f}, save model to {file_name}")
-            self.evaluate_classifier()
             print(f"Epoch {epoch}, Cross entropy loss: {current_loss: .4f}, Time: {time.time() - st: .4f} s")
+            test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm = self.evaluate_classifier()
+            if test_acc > best_test_acc:
+                best_test_acc = test_acc
+                best_test_pre = test_pre
+                best_test_rec = test_rec
+                best_test_f1 = test_f1
+                best_test_roc_auc = test_roc_auc
+                best_test_cm = test_cm
+            return best_test_acc, best_test_pre, best_test_rec, best_test_f1, best_test_roc_auc, best_test_cm
 
     def evaluate_classifier(self):
         self.classifier.eval()
@@ -343,6 +364,9 @@ class UinGangsModelTuning:
                 elif self.conv_type == 'HGT':
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 if batch_h is not None:
+                    if self.eval_dict["is_weighted_subgraph"]:
+                        exp_score = torch.exp(batch['uin'].score)
+                        batch_h = batch_h * exp_score
                     batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                     batch_y = batch['uin'].gang_label
                     prob_y = self.classifier(batch_h_g)[:, 1]
@@ -369,6 +393,7 @@ class UinGangsModelTuning:
                   f"ROC-AUC: {roc_auc: .4f}, "
                   f"Confusion Matrix: {cm.tolist()}"
                   )
+            return acc, pre, rec, f1, roc_auc, cm
 
     def insert_prompt(self, batch_h, batch, prompt):
         if self.prompt_type == 'add_prompt':
