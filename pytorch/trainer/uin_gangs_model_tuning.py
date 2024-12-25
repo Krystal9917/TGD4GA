@@ -15,6 +15,7 @@ from torch_scatter import scatter_mean
 from transformers import BertModel
 from mmgog_long_term_sequence_model.utils.utils import visualization_fig_save
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
+from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix
 
@@ -47,6 +48,18 @@ class UinGangsModelTuning:
                                ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
                                ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
                                ('uin', 'download_app', 'uin'): 9}
+        elif self.conv_type == 'HGT':
+            self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
+                                       ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
+                                       ('uin', 'payee', 'uin'), ('uin', 'payer', 'uin'), ('uin', 'bankcard', 'uin'),
+                                       ('uin', 'download_app', 'uin')])
+            self.model = HeteroGraphTransformer(
+                in_channels=args_dict['input_dim'],
+                hidden_channels=args_dict['hidden_dim'],
+                out_channels=args_dict['output_dim'],
+                metadata=self.metadata,
+                heads=args_dict['num_heads']
+            )
 
         lr = self.eval_dict["lr"]
         control_node_num = self.eval_dict["filter_node_num"]
@@ -200,6 +213,10 @@ class UinGangsModelTuning:
         else:
             return batch_h
 
+    def hetero_fit(self, x_dict, edge_index_dict):
+        out = self.model(x_dict, edge_index_dict)
+        return out
+
     def evaluate_labelled_subgraph_embedding(self):
         self.model.eval()
         for param in self.model.parameters():
@@ -282,7 +299,10 @@ class UinGangsModelTuning:
                 batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 batch['uin'].x = batch_x
-                batch_h = self.rgcn_fit(batch, batch['uin'].x)
+                if self.conv_type == 'RGCN':
+                    batch_h = self.rgcn_fit(batch, batch['uin'].x)
+                elif self.conv_type == 'HGT':
+                    batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 # get edge information
                 if batch_h is not None:
                     batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
@@ -318,7 +338,10 @@ class UinGangsModelTuning:
                 batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 batch['uin'].x = batch_x
-                batch_h = self.rgcn_fit(batch, batch['uin'].x)
+                if self.conv_type == 'RGCN':
+                    batch_h = self.rgcn_fit(batch, batch['uin'].x)
+                elif self.conv_type == 'HGT':
+                    batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 if batch_h is not None:
                     batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                     batch_y = batch['uin'].gang_label
@@ -413,7 +436,12 @@ class UinGangsModelTuning:
                 batch['uin'].x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 gang_mems = (batch['uin'].gang_mem == 1).nonzero().squeeze().detach()
                 gang_batch = self.extract_batch_subgraphs(batch, subgraph_node_indices=gang_mems)
-                batch_h = self.rgcn_fit(gang_batch, torch.nn.functional.normalize(gang_batch['uin'].x, dim=1))
+                # normalized
+                gang_batch['uin'].x = torch.nn.functional.normalize(gang_batch['uin'].x, dim=1)
+                if self.conv_type == 'RGCN':
+                    batch_h = self.rgcn_fit(gang_batch, gang_batch['uin'].x)
+                elif self.conv_type == 'HGT':
+                    batch_h = self.hetero_fit(gang_batch.x_dict, gang_batch.edge_index_dict)
                 try:
                     gang_h = batch_h[gang_mems]
                 except Exception as e:
@@ -454,7 +482,10 @@ class UinGangsModelTuning:
                 batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 batch['uin'].x = batch_x
-                batch_h = self.rgcn_fit(batch, batch['uin'].x)
+                if self.conv_type == 'RGCN':
+                    batch_h = self.rgcn_fit(batch, batch['uin'].x)
+                elif self.conv_type == 'HGT':
+                    batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 # get edge information
                 if batch_h is not None:
                     if self.is_prompt:
@@ -551,7 +582,10 @@ class UinGangsModelTuning:
                 batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 batch['uin'].x = batch_x
-                batch_h = self.rgcn_fit(batch, batch['uin'].x)
+                if self.conv_type == 'RGCN':
+                    batch_h = self.rgcn_fit(batch, batch['uin'].x)
+                elif self.conv_type == 'HGT':
+                    batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 if batch_h is not None:
                     if prompt is not None:
                         prompt_batch_h = self.insert_prompt(batch_h, batch, prompt)
