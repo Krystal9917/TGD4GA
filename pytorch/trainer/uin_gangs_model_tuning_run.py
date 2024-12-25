@@ -102,7 +102,6 @@ if __name__ == '__main__':
     args = ArgsUinGangs()
     print(f"Tuning Parameters: {args.args_dict}")
     if args.args_dict["evaluate_task"] == 'subgraph':
-        tuning_model = UinGangsModelTuning(args.args_dict)
         print("======Labelled Subgraph Label Evaluation======")
         times_list = ['1st', '2nd', '3rd', '4th', '5th']
         ave_acc = 0
@@ -112,6 +111,7 @@ if __name__ == '__main__':
         ave_roc_auc = 0
         ave_cfm = 0
         for i in range(args.args_dict["test_times"]):
+            tuning_model = UinGangsModelTuning(args.args_dict)
             print(f"*****Start {times_list[i]} Time Testing*****")
             tuning_model = UinGangsModelTuning(args.args_dict)
             test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm = tuning_model.evaluate_labelled_subgraph_predict()
