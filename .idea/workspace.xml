@@ -180,7 +180,7 @@
       <workItem from="1734407523367" duration="28610000" />
       <workItem from="1734505032003" duration="38426000" />
       <workItem from="1734600716126" duration="44000" />
-      <workItem from="1734600762496" duration="67018000" />
+      <workItem from="1734600762496" duration="70795000" />
     </task>
     <servers />
   </component>
@@ -200,13 +200,6 @@
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning.py</url>
-          <line>96</line>
-          <option name="timeStamp" value="29" />
-        </line-breakpoint>
-      </breakpoints>
       <default-breakpoints>
         <breakpoint type="python-exception">
           <properties notifyOnTerminate="true" exception="BaseException">

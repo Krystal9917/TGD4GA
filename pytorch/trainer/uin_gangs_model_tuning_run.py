@@ -86,11 +86,12 @@ class ArgsUinGangs:
                             choices=['subgraph', 'subgraph_embedding', 'subgraph_prompt_tuning'])
         parser.add_argument('--conv_type', type=str, default='HGT', choices=['RGCN', 'HGT'])
         parser.add_argument('--is_supervised', type=bool, default=False)
-        parser.add_argument('--is_weighted_subgraph', type=bool, default=True)
+        parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
         parser.add_argument('--prompt_insertion_type', type=str, default=None,
                             choices=[None, 'add_prompt', 'concat_prompt', 'concat_subgraph',
                                      'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
-                                     'concat_subgraph_proj_prompt', 'concat_prompted_subgraph'])
+                                     'concat_subgraph_proj_prompt', 'concat_prompted_subgraph',
+                                     'linear_concat_subgraph_concat_prompt', 'weighted_addition_concat_prompt'])
         parser.add_argument('--test_times', type=int, default=5)
 
         args = parser.parse_args()
@@ -113,7 +114,6 @@ if __name__ == '__main__':
         for i in range(args.args_dict["test_times"]):
             tuning_model = UinGangsModelTuning(args.args_dict)
             print(f"*****Start {times_list[i]} Time Testing*****")
-            tuning_model = UinGangsModelTuning(args.args_dict)
             test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm = tuning_model.evaluate_labelled_subgraph_predict()
             ave_acc += test_acc
             ave_pre += test_pre
