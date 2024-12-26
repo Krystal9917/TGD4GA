@@ -181,13 +181,13 @@ class UinGangsModelTuning:
                     cls_input = args_dict['output_dim'] * 3
                 elif self.prompt_type in [None, 'add_prompt']:
                     cls_input = args_dict['output_dim']
-                params.append({'params': self.prompt, 'lr': 1e-2})
+                params.append({'params': self.prompt, 'lr': 1e-4})
             self.classifier = torch.nn.Sequential(torch.nn.Linear(cls_input, args_dict['hidden_dim']),
                                                   torch.nn.ReLU(),
                                                   torch.nn.Linear(args_dict['hidden_dim'], 2),
                                                   torch.nn.Softmax(dim=1))
             self.classifier.to(self.device)
-            params.append({'params': self.classifier.parameters(), 'lr': 1e-2})
+            params.append({'params': self.classifier.parameters(), 'lr': 1e-3})
             self.cls_optimizer = torch.optim.Adam(params)
             self.criterion = torch.nn.CrossEntropyLoss()
         # Set seed for whole environment
@@ -361,9 +361,9 @@ class UinGangsModelTuning:
                         exp_score = torch.exp(batch['uin'].score)
                         batch_h = batch_h * exp_score
                     batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                    batch_y = batch['uin'].gang_label.float()
-                    pred_y = self.classifier(batch_h_g).argmax(dim=1).float().to(self.device)
-                    cls_loss = self.criterion(pred_y, batch_y).requires_grad_(True)
+                    batch_y = batch['uin'].gang_label.long()
+                    pred_y = self.classifier(batch_h_g)
+                    cls_loss = self.criterion(pred_y, batch_y)
                     cls_loss.backward()
                     self.cls_optimizer.step()
                     epoch_loss.append(cls_loss.detach().cpu().item())
@@ -502,6 +502,7 @@ class UinGangsModelTuning:
         for epoch in range(1, self.eval_dict["n_epochs"] + 1):
             epoch_loss = []
             st = time.time()
+            self.classifier.train()
             if self.is_prompt and self.prompt_type not in ['concat_prompted_subgraph']:
                 self.prompt.requires_grad = True
             for i, batch in enumerate(self.tune_loader):
@@ -524,7 +525,7 @@ class UinGangsModelTuning:
                 if batch_h is not None:
                     if self.is_prompt:
                         prompt_batch_h = self.insert_prompt(batch_h, batch, self.prompt)
-                        pred_y = self.classifier(prompt_batch_h).argmax(dim=1).float().to(self.device)
+                        pred_y = self.classifier(prompt_batch_h)
                     else:
                         if self.prompt_type == 'concat_subgraph':
                             if self.eval_dict["is_weighted_subgraph"]:
@@ -533,9 +534,9 @@ class UinGangsModelTuning:
                             batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
                             batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
-                        pred_y = self.classifier(batch_h).argmax(dim=1).float().to(self.device)
-                    batch_y = batch['uin'].gang_mem.float()
-                    cls_loss = self.criterion(pred_y, batch_y).requires_grad_(True)
+                        pred_y = self.classifier(batch_h)
+                    batch_y = batch['uin'].gang_mem.long()
+                    cls_loss = self.criterion(pred_y, batch_y)
                     cls_loss.backward()
                     self.cls_optimizer.step()
                     epoch_loss.append(cls_loss.detach().cpu().item())
