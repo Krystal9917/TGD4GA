@@ -82,16 +82,16 @@ class ArgsUinGangs:
         parser.add_argument('--data_tag', type=str, default='1930_', choices=['', '1921_', '1930_', 'order_1930'])
         parser.add_argument('--device_tag', type=str, default='', choices=['', '_GPU2'])
         parser.add_argument('--eval_epoch', type=int, default=0)
-        parser.add_argument('--evaluate_task', type=str, default='subgraph',
+        parser.add_argument('--evaluate_task', type=str, default='subgraph_prompt_tuning',
                             choices=['subgraph', 'subgraph_embedding', 'subgraph_prompt_tuning'])
         parser.add_argument('--conv_type', type=str, default='HGT', choices=['RGCN', 'HGT'])
         parser.add_argument('--is_supervised', type=bool, default=False)
-        parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
-        parser.add_argument('--prompt_insertion_type', type=str, default=None,
+        parser.add_argument('--is_weighted_subgraph', type=bool, default=True)
+        parser.add_argument('--prompt_insertion_type', type=str, default='linear_concat_subgraph_concat_prompt',
                             choices=[None, 'add_prompt', 'concat_prompt', 'concat_subgraph',
                                      'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
-                                     'concat_subgraph_proj_prompt', 'concat_prompted_subgraph',
-                                     'linear_concat_subgraph_concat_prompt', 'weighted_addition_concat_prompt'])
+                                     'concat_subgraph_proj_prompt', 'linear_concat_subgraph_concat_prompt',
+                                     'weighted_addition_concat_prompt'])
         parser.add_argument('--test_times', type=int, default=5)
 
         args = parser.parse_args()
