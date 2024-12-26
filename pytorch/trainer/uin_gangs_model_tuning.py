@@ -133,29 +133,63 @@ class UinGangsModelTuning:
                                                collate_fn=self.eval_data.collate_fn)
             self.prompt_type = self.eval_dict["prompt_insertion_type"]
             self.is_prompt = True if self.prompt_type not in [None, 'concat_subgraph'] else False
-            if self.prompt_type in ['concat_prompt', 'concat_subgraph',
-                                    'concat_subgraph_plus_prompt', 'concat_subgraph_proj_prompt',
-                                    'weighted_add_subgraph_concat_prompt', 'linear_concat_subgraph_concat_prompt']:
-                cls_input = args_dict['output_dim'] * 2
-            elif self.prompt_type == 'concat_subgraph_prompt':
-                cls_input = args_dict['output_dim'] * 3
-            elif self.prompt_type in [None, 'add_prompt']:
-                cls_input = args_dict['output_dim']
-            if self.prompt_type == 'linear_concat_subgraph_concat_prompt':
-                self.combine_func = torch.nn.Sequential(torch.nn.Linear(cls_input, args_dict['hidden_dim']),
-                                                        torch.nn.ReLU(),
-                                                        torch.nn.Linear(args_dict['hidden_dim'],
-                                                                        args_dict['output_dim'])).to(self.device)
-            if self.prompt_type == 'weighted_add_subgraph_concat_prompt':
-                self.local_weight = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True).to(self.device)
-                self.global_weight = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True).to(self.device)
+            params = []
+            # Initialize Prompt
+            if self.is_prompt:
+                gang_subgraphs = []
+                for i, batch in enumerate(self.initial_loader):
+                    batch = batch.to(self.device)
+                    batch_uin_acs_text_feat_input_ids = batch['uin'].text_feat_input_ids
+                    batch_uin_acs_text_feat_attention_mask = batch['uin'].text_feat_attention_mask
+                    with torch.no_grad():
+                        batch_uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
+                                                                     batch_uin_acs_text_feat_attention_mask).pooler_output
+                    # combine numerical, categorical and text attributes
+                    batch['uin'].x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
+                    gang_mems = (batch['uin'].gang_mem == 1).nonzero().squeeze().detach()
+                    gang_batch = self.extract_batch_subgraphs(batch, subgraph_node_indices=gang_mems)
+                    # normalized
+                    gang_batch['uin'].x = torch.nn.functional.normalize(gang_batch['uin'].x, dim=1)
+                    if self.conv_type == 'RGCN':
+                        batch_h = self.rgcn_fit(gang_batch, gang_batch['uin'].x)
+                    elif self.conv_type == 'HGT':
+                        batch_h = self.hetero_fit(gang_batch.x_dict, gang_batch.edge_index_dict)
+                    try:
+                        gang_h = batch_h[gang_mems]
+                    except Exception as e:
+                        print(f"Prompt Initialized Error : <{e}>")
+                        continue
+                    else:
+                        batch_batch = batch['uin'].batch[gang_mems]
+                        gang_subgraphs.append(scatter_mean(gang_h, batch_batch, dim=0))
+                gang_subgraph_mean = torch.concat(gang_subgraphs, dim=0).mean(dim=0)
+                self.prompt = torch.nn.Parameter(gang_subgraph_mean, requires_grad=True).to(self.device)
+                if self.prompt_type in ['concat_prompt', 'concat_subgraph',
+                                        'concat_subgraph_plus_prompt', 'concat_subgraph_proj_prompt',
+                                        'weighted_addition_concat_prompt', 'linear_concat_subgraph_concat_prompt']:
+                    cls_input = args_dict['output_dim'] * 2
+                    if self.prompt_type == 'linear_concat_subgraph_concat_prompt':
+                        self.combine_func = torch.nn.Sequential(torch.nn.Linear(cls_input, args_dict['hidden_dim']),
+                                                                torch.nn.Linear(args_dict['hidden_dim'], args_dict['output_dim'])).to(self.device)
+                        params.append({'params': self.combine_func.parameters(), lr: 5e-4})
+                    if self.prompt_type == 'weighted_addition_concat_prompt':
+                        self.local_weight = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True).to(self.device)
+                        self.global_weight = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True).to(self.device)
+                        params.append({'params': self.local_weight, lr: 1e-4})
+                        params.append({'params': self.global_weight, lr: 1e-4})
+                elif self.prompt_type == 'concat_subgraph_prompt':
+                    cls_input = args_dict['output_dim'] * 3
+                elif self.prompt_type in [None, 'add_prompt']:
+                    cls_input = args_dict['output_dim']
+                params.append({'params': self.prompt, 'lr': 1e-2})
             self.classifier = torch.nn.Sequential(torch.nn.Linear(cls_input, args_dict['hidden_dim']),
                                                   torch.nn.ReLU(),
                                                   torch.nn.Linear(args_dict['hidden_dim'], 2),
                                                   torch.nn.Softmax(dim=1))
             self.classifier.to(self.device)
+            params.append({'params': self.classifier.parameters(), 'lr': 1e-2})
+            self.cls_optimizer = torch.optim.Adam(params)
             self.criterion = torch.nn.CrossEntropyLoss()
-            self.cls_optimizer = torch.optim.Adam(self.classifier.parameters(), lr=5e-4)
         # Set seed for whole environment
         self.setup_seed()
 
@@ -446,7 +480,7 @@ class UinGangsModelTuning:
                 batch_h = batch_h * exp_score
             batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-            weighted_batch_h = self.combine_func(torch.concat([batch_h_g, expand_batch_h_g], dim=1))
+            weighted_batch_h = self.combine_func(torch.concat([batch_h, expand_batch_h_g], dim=1))
             prompt_batch_h = torch.concat([weighted_batch_h, prompt.repeat(batch_h.shape[0], 1)], dim=1)
         return prompt_batch_h
 
@@ -456,36 +490,6 @@ class UinGangsModelTuning:
             param.requires_grad = False
         for param in self.classifier.parameters():
             param.requires_grad = True
-        # Initialize Prompt
-        if self.is_prompt:
-            gang_subgraphs = []
-            for i, batch in enumerate(self.initial_loader):
-                batch = batch.to(self.device)
-                batch_uin_acs_text_feat_input_ids = batch['uin'].text_feat_input_ids
-                batch_uin_acs_text_feat_attention_mask = batch['uin'].text_feat_attention_mask
-                with torch.no_grad():
-                    batch_uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
-                                                                 batch_uin_acs_text_feat_attention_mask).pooler_output
-                # combine numerical, categorical and text attributes
-                batch['uin'].x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
-                gang_mems = (batch['uin'].gang_mem == 1).nonzero().squeeze().detach()
-                gang_batch = self.extract_batch_subgraphs(batch, subgraph_node_indices=gang_mems)
-                # normalized
-                gang_batch['uin'].x = torch.nn.functional.normalize(gang_batch['uin'].x, dim=1)
-                if self.conv_type == 'RGCN':
-                    batch_h = self.rgcn_fit(gang_batch, gang_batch['uin'].x)
-                elif self.conv_type == 'HGT':
-                    batch_h = self.hetero_fit(gang_batch.x_dict, gang_batch.edge_index_dict)
-                try:
-                    gang_h = batch_h[gang_mems]
-                except Exception as e:
-                    print(f"Prompt Initialized Error : <{e}>")
-                    continue
-                else:
-                    batch_batch = batch['uin'].batch[gang_mems]
-                    gang_subgraphs.append(scatter_mean(gang_h, batch_batch, dim=0))
-            gang_subgraph_mean = torch.concat(gang_subgraphs, dim=0).mean(dim=0)
-            prompt = torch.nn.Parameter(gang_subgraph_mean)
         best_loss = self.eval_dict["best_loss"]
         # Prompt Tuning
         best_test_acc = 0
@@ -499,7 +503,7 @@ class UinGangsModelTuning:
             epoch_loss = []
             st = time.time()
             if self.is_prompt and self.prompt_type not in ['concat_prompted_subgraph']:
-                prompt.requires_grad = True
+                self.prompt.requires_grad = True
             for i, batch in enumerate(self.tune_loader):
                 self.cls_optimizer.zero_grad()
                 batch = batch.to(self.device)
@@ -519,7 +523,7 @@ class UinGangsModelTuning:
                 # get edge information
                 if batch_h is not None:
                     if self.is_prompt:
-                        prompt_batch_h = self.insert_prompt(batch_h, batch, prompt)
+                        prompt_batch_h = self.insert_prompt(batch_h, batch, self.prompt)
                         pred_y = self.classifier(prompt_batch_h).argmax(dim=1).float().to(self.device)
                     else:
                         if self.prompt_type == 'concat_subgraph':
@@ -542,13 +546,15 @@ class UinGangsModelTuning:
                 file_name = self.eval_dict["cls_model_states_path"] + file_name
                 torch.save(self.classifier.state_dict(), file_name)
                 print(f"Now best loss: {best_loss:.4f}, save model to {file_name}")
-            print(f"Epoch {epoch}, Cross Entropy Loss: {current_loss: .4f}, Time: {time.time() - st: .4f} s")
+            print(f"Epoch {epoch}, Cross Entropy Loss: {current_loss: .4f}, Prompt: {self.prompt[:20]}, Time: {time.time() - st: .4f} s")
             # Prompt Evaluation
             if self.is_prompt:
                 test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm, test_jac = self.evaluate_prompt_classifier(
-                    prompt=prompt)
+                    prompt=self.prompt)
             else:
                 test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm, test_jac = self.evaluate_prompt_classifier()
+            if self.prompt_type == 'weighted_addition_concat_prompt':
+                print(f"Current Weight: {self.local_weight.detach().cpu().item()}, {self.global_weight.detach().cpu().item()}")
             if test_acc > best_test_acc:
                 print(f"Current Best Test ACC: {test_acc: .4f}, "
                       f"Precision: {test_pre: .4f}, "

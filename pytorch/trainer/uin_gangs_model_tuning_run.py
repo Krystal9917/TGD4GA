@@ -75,19 +75,19 @@ class ArgsUinGangs:
         parser.add_argument('--output_dim', type=int, default=846)
         parser.add_argument('--num_relations', type=int, default=10)
         parser.add_argument('--num_heads', type=int, default=2)
-        parser.add_argument('--filter_node_num', type=int, default=3)
+        parser.add_argument('--filter_node_num', type=int, default=5)
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--is_debug', type=bool, default=False)
-        parser.add_argument('--data_tag', type=str, default='1930_', choices=['', '1921_', '1930_', 'order_1930'])
+        parser.add_argument('--data_tag', type=str, default='1921_', choices=['', '1921_', '1930_', 'order_1930'])
         parser.add_argument('--device_tag', type=str, default='', choices=['', '_GPU2'])
-        parser.add_argument('--eval_epoch', type=int, default=0)
+        parser.add_argument('--eval_epoch', type=int, default=40)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_prompt_tuning',
                             choices=['subgraph', 'subgraph_embedding', 'subgraph_prompt_tuning'])
-        parser.add_argument('--conv_type', type=str, default='HGT', choices=['RGCN', 'HGT'])
+        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT'])
         parser.add_argument('--is_supervised', type=bool, default=False)
-        parser.add_argument('--is_weighted_subgraph', type=bool, default=True)
-        parser.add_argument('--prompt_insertion_type', type=str, default='linear_concat_subgraph_concat_prompt',
+        parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
+        parser.add_argument('--prompt_insertion_type', type=str, default='concat_prompt',
                             choices=[None, 'add_prompt', 'concat_prompt', 'concat_subgraph',
                                      'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
                                      'concat_subgraph_proj_prompt', 'linear_concat_subgraph_concat_prompt',
