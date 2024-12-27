@@ -87,7 +87,7 @@ class ArgsUinGangs:
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT'])
         parser.add_argument('--is_supervised', type=bool, default=False)
         parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
-        parser.add_argument('--prompt_insertion_type', type=str, default='concat_prompt',
+        parser.add_argument('--prompt_insertion_type', type=str, default='concat_subgraph',
                             choices=[None, 'add_prompt', 'concat_prompt', 'concat_subgraph',
                                      'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
                                      'concat_subgraph_proj_prompt', 'linear_concat_subgraph_concat_prompt',

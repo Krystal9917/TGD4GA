@@ -114,9 +114,11 @@ class UinGangsModelTuning:
             self.cls_optimizer = torch.optim.Adam(self.classifier.parameters(), lr=5e-4)
         elif self.eval_dict["evaluate_task"] == 'subgraph_prompt_tuning':
             self.initial_data = UinGangsDataIterablePyG(self.eval_dict,
-                                                        self.eval_dict["prompt_initial_data_path"])
+                                                        self.eval_dict["prompt_initial_data_path"],
+                                                        is_shuffle=False)
             self.tune_data = UinGangsDataIterablePyG(self.eval_dict,
-                                                     self.eval_dict["prompt_tuning_data_path"])
+                                                     self.eval_dict["prompt_tuning_data_path"],
+                                                     is_shuffle=False)
             self.eval_data = UinGangsDataIterablePyG(self.eval_dict,
                                                      self.eval_dict["prompt_evaluating_data_path"])
             self.initial_loader = Data.DataLoader(self.initial_data,
@@ -164,24 +166,25 @@ class UinGangsModelTuning:
                         gang_subgraphs.append(scatter_mean(gang_h, batch_batch, dim=0))
                 gang_subgraph_mean = torch.concat(gang_subgraphs, dim=0).mean(dim=0)
                 self.prompt = torch.nn.Parameter(gang_subgraph_mean, requires_grad=True).to(self.device)
-                if self.prompt_type in ['concat_prompt', 'concat_subgraph',
-                                        'concat_subgraph_plus_prompt', 'concat_subgraph_proj_prompt',
-                                        'weighted_addition_concat_prompt', 'linear_concat_subgraph_concat_prompt']:
-                    cls_input = args_dict['output_dim'] * 2
-                    if self.prompt_type == 'linear_concat_subgraph_concat_prompt':
-                        self.combine_func = torch.nn.Sequential(torch.nn.Linear(cls_input, args_dict['hidden_dim']),
-                                                                torch.nn.Linear(args_dict['hidden_dim'], args_dict['output_dim'])).to(self.device)
-                        params.append({'params': self.combine_func.parameters(), lr: 5e-4})
-                    if self.prompt_type == 'weighted_addition_concat_prompt':
-                        self.local_weight = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True).to(self.device)
-                        self.global_weight = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True).to(self.device)
-                        params.append({'params': self.local_weight, lr: 1e-4})
-                        params.append({'params': self.global_weight, lr: 1e-4})
-                elif self.prompt_type == 'concat_subgraph_prompt':
-                    cls_input = args_dict['output_dim'] * 3
-                elif self.prompt_type in [None, 'add_prompt']:
-                    cls_input = args_dict['output_dim']
                 params.append({'params': self.prompt, 'lr': 1e-4})
+            if self.prompt_type in ['concat_prompt', 'concat_subgraph',
+                                    'concat_subgraph_plus_prompt', 'concat_subgraph_proj_prompt',
+                                    'weighted_addition_concat_prompt', 'linear_concat_subgraph_concat_prompt']:
+                cls_input = args_dict['output_dim'] * 2
+                if self.prompt_type == 'linear_concat_subgraph_concat_prompt':
+                    self.combine_func = torch.nn.Sequential(torch.nn.Linear(cls_input, args_dict['hidden_dim']),
+                                                            torch.nn.Linear(args_dict['hidden_dim'],
+                                                                            args_dict['output_dim'])).to(self.device)
+                    params.append({'params': self.combine_func.parameters(), lr: 5e-4})
+                if self.prompt_type == 'weighted_addition_concat_prompt':
+                    self.local_weight = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True).to(self.device)
+                    self.global_weight = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True).to(self.device)
+                    params.append({'params': self.local_weight, lr: 1e-4})
+                    params.append({'params': self.global_weight, lr: 1e-4})
+            elif self.prompt_type == 'concat_subgraph_prompt':
+                cls_input = args_dict['output_dim'] * 3
+            else:
+                cls_input = args_dict['output_dim']
             self.classifier = torch.nn.Sequential(torch.nn.Linear(cls_input, args_dict['hidden_dim']),
                                                   torch.nn.ReLU(),
                                                   torch.nn.Linear(args_dict['hidden_dim'], 2),
@@ -189,7 +192,7 @@ class UinGangsModelTuning:
             self.classifier.to(self.device)
             params.append({'params': self.classifier.parameters(), 'lr': 1e-3})
             self.cls_optimizer = torch.optim.Adam(params)
-            self.criterion = torch.nn.CrossEntropyLoss()
+            self.criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor([0.2, 0.8]).to(self.device))
         # Set seed for whole environment
         self.setup_seed()
 
@@ -547,7 +550,7 @@ class UinGangsModelTuning:
                 file_name = self.eval_dict["cls_model_states_path"] + file_name
                 torch.save(self.classifier.state_dict(), file_name)
                 print(f"Now best loss: {best_loss:.4f}, save model to {file_name}")
-            print(f"Epoch {epoch}, Cross Entropy Loss: {current_loss: .4f}, Prompt: {self.prompt[:20]}, Time: {time.time() - st: .4f} s")
+            print(f"Epoch {epoch}, Cross Entropy Loss: {current_loss: .4f}, Time: {time.time() - st: .4f} s")
             # Prompt Evaluation
             if self.is_prompt:
                 test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm, test_jac = self.evaluate_prompt_classifier(

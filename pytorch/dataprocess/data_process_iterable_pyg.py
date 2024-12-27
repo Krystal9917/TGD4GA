@@ -23,7 +23,7 @@ class UinGangsDataIterablePyG(IterableDataset):
     """
     数据迭代加载类
     """
-    def __init__(self, args_dict, file_path):
+    def __init__(self, args_dict, file_path, is_shuffle=True):
         super(UinGangsDataIterablePyG, self).__init__()
         self.args_dict = args_dict
         self.file_path = file_path
@@ -45,7 +45,8 @@ class UinGangsDataIterablePyG(IterableDataset):
         st = time.time()
         with open(self.file_path, 'r', encoding="utf-8") as file:
             self.line_indices = list(range(sum(1 for _ in file)))
-            random.shuffle(self.line_indices)
+            if is_shuffle:
+                random.shuffle(self.line_indices)
             print(f"File: {self.file_path.split('/')[-1]}, Total lines: {len(self.line_indices)}, "
                   f"Load Time: {time.time() - st:.4f} s")
         self.control_node_num = self.args_dict["filter_node_num"]
