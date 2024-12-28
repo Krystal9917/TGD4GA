@@ -175,12 +175,13 @@ class UinGangsModelTuning:
                     self.combine_func = torch.nn.Sequential(torch.nn.Linear(cls_input, args_dict['hidden_dim']),
                                                             torch.nn.Linear(args_dict['hidden_dim'],
                                                                             args_dict['output_dim'])).to(self.device)
-                    params.append({'params': self.combine_func.parameters(), lr: 5e-4})
+                    params.append({'params': self.combine_func.parameters(), 'lr': 5e-4})
                 if self.prompt_type == 'weighted_addition_concat_prompt':
-                    self.local_weight = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True).to(self.device)
-                    self.global_weight = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True).to(self.device)
-                    params.append({'params': self.local_weight, lr: 1e-4})
-                    params.append({'params': self.global_weight, lr: 1e-4})
+                    self.local_weight = torch.nn.Parameter(torch.tensor(0.5, device=self.device), requires_grad=True)
+                    self.global_weight = torch.nn.Parameter(torch.tensor(0.5, device=self.device), requires_grad=True)
+                    print(self.local_weight.is_leaf, self.global_weight.is_leaf)
+                    params.append({'params': self.local_weight, 'lr': 1e-4})
+                    params.append({'params': self.global_weight, 'lr': 1e-4})
             elif self.prompt_type == 'concat_subgraph_prompt':
                 cls_input = args_dict['output_dim'] * 3
             else:
@@ -443,6 +444,13 @@ class UinGangsModelTuning:
     def insert_prompt(self, batch_h, batch, prompt):
         if self.prompt_type == 'add_prompt':
             prompt_batch_h = batch_h + prompt.repeat(batch_h.shape[0], 1)
+        elif self.prompt_type == 'add_subgraph':
+            if self.eval_dict["is_weighted_subgraph"]:
+                exp_score = torch.exp(batch['uin'].score)
+                batch_h = batch_h * exp_score
+            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+            prompt_batch_h = batch_h + expand_batch_h_g
         elif self.prompt_type == 'concat_prompt':
             prompt_batch_h = torch.concat([batch_h, prompt.repeat(batch_h.shape[0], 1)], dim=1)
         elif self.prompt_type == 'concat_subgraph_prompt':
@@ -506,7 +514,7 @@ class UinGangsModelTuning:
             epoch_loss = []
             st = time.time()
             self.classifier.train()
-            if self.is_prompt and self.prompt_type not in ['concat_prompted_subgraph']:
+            if self.is_prompt:
                 self.prompt.requires_grad = True
             for i, batch in enumerate(self.tune_loader):
                 self.cls_optimizer.zero_grad()
