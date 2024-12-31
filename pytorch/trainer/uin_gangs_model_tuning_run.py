@@ -25,15 +25,15 @@ class ArgsUinGangs:
         parser.add_argument('--prompt_initial_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "valid", "raw",
-                         "uin_gangs_supervise_full_graph_dataset_prompt_initialization.txt")))
+                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive_20.txt")))
         parser.add_argument('--prompt_tuning_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "valid", "raw",
-                         "uin_gangs_supervise_full_graph_dataset_prompt_tuning.txt")))
+                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive_20_40.txt")))
         parser.add_argument('--prompt_evaluating_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "valid", "raw",
-                         "uin_gangs_supervise_full_graph_dataset_prompt_testing.txt")))
+                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive_exclude_40.txt")))
         parser.add_argument('--uin_gangs_enum_yaml_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "config", "yml", "uin_gangs_enum.yaml")))
@@ -75,19 +75,19 @@ class ArgsUinGangs:
         parser.add_argument('--output_dim', type=int, default=846)
         parser.add_argument('--num_relations', type=int, default=10)
         parser.add_argument('--num_heads', type=int, default=2)
-        parser.add_argument('--filter_node_num', type=int, default=5)
+        parser.add_argument('--filter_node_num', type=int, default=3)
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--is_debug', type=bool, default=False)
-        parser.add_argument('--data_tag', type=str, default='order_1930_', choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2'])
-        parser.add_argument('--eval_epoch', type=int, default=20)
-        parser.add_argument('--evaluate_task', type=str, default='subgraph_prompt_tuning',
+        parser.add_argument('--data_tag', type=str, default='1930_', choices=['', '1921_', '1930_', 'order_1930_'])
+        parser.add_argument('--device_tag', type=str, default='', choices=['', '_GPU2'])
+        parser.add_argument('--eval_epoch', type=int, default=10)
+        parser.add_argument('--evaluate_task', type=str, default='subgraph',
                             choices=['subgraph', 'subgraph_embedding', 'subgraph_prompt_tuning'])
-        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT'])
+        parser.add_argument('--conv_type', type=str, default='HGT', choices=['RGCN', 'HGT'])
         parser.add_argument('--is_supervised', type=bool, default=False)
         parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
-        parser.add_argument('--prompt_insertion_type', type=str, default='concat_prompt',
+        parser.add_argument('--prompt_insertion_type', type=str, default=None,
                             choices=[None, 'add_prompt', 'add_subgraph', 'concat_prompt', 'concat_subgraph',
                                      'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
                                      'concat_subgraph_proj_prompt', 'linear_concat_subgraph_concat_prompt',

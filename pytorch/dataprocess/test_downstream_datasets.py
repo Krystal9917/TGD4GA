@@ -108,6 +108,8 @@ if __name__ == '__main__':
         uin_gangs_enum = yaml.safe_load(file)
     class_label_enums_dict = uin_gangs_enum['class_label_enums']
     split_lines = {"prompt_init": {}, "prompt_tune": {}}
+    prompt_init_lines = []
+    prompt_tune_lines = []
     with open(args_dict["file_path"], 'r', encoding="utf-8") as file:
         for i, line in enumerate(file):
             json_data = json.loads(line)
@@ -115,27 +117,24 @@ if __name__ == '__main__':
             if label is not None:
                 if label not in split_lines["prompt_init"].keys():
                     split_lines["prompt_init"][label] = i
-    with open(args_dict["file_path"], 'r', encoding="utf-8") as file:
-        for i, line in enumerate(file):
-            json_data = json.loads(line)
-            label = count_dataset_labels(json_data)
-            if label is not None:
+                    prompt_init_lines.append(line)
                 if label not in split_lines["prompt_tune"].keys() and i != split_lines["prompt_init"][label]:
                     split_lines["prompt_tune"][label] = i
-    print(split_lines)
-    prompt_file = open(args_dict["prompt_file"], 'w', encoding="utf-8")
-    tuning_file = open(args_dict["tuning_file"], 'w', encoding="utf-8")
+                    prompt_tune_lines.append(line)
+    print(split_lines["prompt_init"].values())
+    print(split_lines["prompt_tune"].values())
+    with open(args_dict["prompt_file"], 'w', encoding="utf-8") as file:
+        for line in prompt_init_lines:
+            file.write(line)
+    with open(args_dict["tuning_file"], 'w', encoding="utf-8") as file:
+        for line in prompt_tune_lines:
+            file.write(line)
     test_file = open(args_dict["test_file"], 'w', encoding="utf-8")
+    except_lines = list(split_lines["prompt_init"].values()) + list(split_lines["prompt_tune"].values())
     with open(args_dict["file_path"], 'r', encoding="utf-8") as file:
         for i, line in enumerate(file):
-            if i in list(split_lines["prompt_init"].values()):
-                prompt_file.write(line)
-            elif i in list(split_lines["prompt_tune"].values()):
-                tuning_file.write(line)
-            else:
+            if i not in except_lines:
                 test_file.write(line)
-    prompt_file.close()
-    tuning_file.close()
     test_file.close()
 
 
