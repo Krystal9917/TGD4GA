@@ -134,7 +134,7 @@ class UinGangsModelTuning:
                                                num_workers=self.eval_dict["num_workers"],
                                                collate_fn=self.eval_data.collate_fn)
             self.prompt_type = self.eval_dict["prompt_insertion_type"]
-            self.is_prompt = True if self.prompt_type not in [None, 'concat_subgraph'] else False
+            self.is_prompt = True if self.prompt_type not in [None, 'concat_subgraph', 'node_subtract_subgraph'] else False
             params = []
             # Initialize Prompt
             if self.is_prompt:
@@ -444,55 +444,35 @@ class UinGangsModelTuning:
     def insert_prompt(self, batch_h, batch, prompt):
         if self.prompt_type == 'add_prompt':
             prompt_batch_h = batch_h + prompt.repeat(batch_h.shape[0], 1)
-        elif self.prompt_type == 'add_subgraph':
-            if self.eval_dict["is_weighted_subgraph"]:
-                exp_score = torch.exp(batch['uin'].score)
-                batch_h = batch_h * exp_score
-            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-            prompt_batch_h = batch_h + expand_batch_h_g
         elif self.prompt_type == 'concat_prompt':
             prompt_batch_h = torch.concat([batch_h, prompt.repeat(batch_h.shape[0], 1)], dim=1)
-        elif self.prompt_type == 'concat_subgraph_prompt':
+        else:
             if self.eval_dict["is_weighted_subgraph"]:
                 exp_score = torch.exp(batch['uin'].score)
-                batch_h = batch_h * exp_score
-            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-            prompt_batch_h = torch.concat(
-                [batch_h, expand_batch_h_g, prompt.repeat(batch_h.shape[0], 1)], dim=1)
-        elif self.prompt_type == 'concat_subgraph_plus_prompt':
-            if self.eval_dict["is_weighted_subgraph"]:
-                exp_score = torch.exp(batch['uin'].score)
-                batch_h = batch_h * exp_score
-            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-            prompt_batch_h = torch.concat(
-                [batch_h, expand_batch_h_g + prompt.repeat(batch_h.shape[0], 1)], dim=1)
-        elif self.prompt_type == 'concat_subgraph_proj_prompt':
-            if self.eval_dict["is_weighted_subgraph"]:
-                exp_score = torch.exp(batch['uin'].score)
-                batch_h = batch_h * exp_score
-            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-            prompt_batch_h = torch.concat(
-                [batch_h, expand_batch_h_g * prompt.repeat(batch_h.shape[0], 1)], dim=1)
-        elif self.prompt_type == 'weighted_addition_concat_prompt':
-            if self.eval_dict["is_weighted_subgraph"]:
-                exp_score = torch.exp(batch['uin'].score)
-                batch_h = batch_h * exp_score
-            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-            weighted_batch_h = self.local_weight * batch_h + self.global_weight * expand_batch_h_g
-            prompt_batch_h = torch.concat([weighted_batch_h, prompt.repeat(batch_h.shape[0], 1)], dim=1)
-        elif self.prompt_type == 'linear_concat_subgraph_concat_prompt':
-            if self.eval_dict["is_weighted_subgraph"]:
-                exp_score = torch.exp(batch['uin'].score)
-                batch_h = batch_h * exp_score
-            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-            weighted_batch_h = self.combine_func(torch.concat([batch_h, expand_batch_h_g], dim=1))
-            prompt_batch_h = torch.concat([weighted_batch_h, prompt.repeat(batch_h.shape[0], 1)], dim=1)
+                new_batch_h = batch_h * exp_score
+                batch_h_g = scatter_mean(new_batch_h, batch['uin'].batch, dim=0)
+            else:
+                batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+            if self.prompt_type == 'concat_subgraph_prompt':
+                expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                prompt_batch_h = torch.concat(
+                    [batch_h, expand_batch_h_g, prompt.repeat(batch_h.shape[0], 1)], dim=1)
+            elif self.prompt_type == 'concat_subgraph_plus_prompt':
+                expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                prompt_batch_h = torch.concat(
+                    [batch_h, expand_batch_h_g + prompt.repeat(batch_h.shape[0], 1)], dim=1)
+            elif self.prompt_type == 'concat_subgraph_proj_prompt':
+                expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                prompt_batch_h = torch.concat(
+                    [batch_h, expand_batch_h_g * prompt.repeat(batch_h.shape[0], 1)], dim=1)
+            elif self.prompt_type == 'weighted_addition_concat_prompt':
+                expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                weighted_batch_h = self.local_weight * batch_h + self.global_weight * expand_batch_h_g
+                prompt_batch_h = torch.concat([weighted_batch_h, prompt.repeat(batch_h.shape[0], 1)], dim=1)
+            elif self.prompt_type == 'linear_concat_subgraph_concat_prompt':
+                expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                weighted_batch_h = self.combine_func(torch.concat([batch_h, expand_batch_h_g], dim=1))
+                prompt_batch_h = torch.concat([weighted_batch_h, prompt.repeat(batch_h.shape[0], 1)], dim=1)
         return prompt_batch_h
 
     def evaluate_labelled_subgraph_prompt_tuning(self):
@@ -541,10 +521,21 @@ class UinGangsModelTuning:
                         if self.prompt_type == 'concat_subgraph':
                             if self.eval_dict["is_weighted_subgraph"]:
                                 exp_score = torch.exp(batch['uin'].score)
-                                batch_h = batch_h * exp_score
-                            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                                new_batch_h = batch_h * exp_score
+                                batch_h_g = scatter_mean(new_batch_h, batch['uin'].batch, dim=0)
+                            else:
+                                batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
                             batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
+                        elif self.prompt_type == 'node_subtract_subgraph':
+                            if self.eval_dict["is_weighted_subgraph"]:
+                                exp_score = torch.exp(batch['uin'].score)
+                                new_batch_h = batch_h * exp_score
+                                batch_h_g = scatter_mean(new_batch_h, batch['uin'].batch, dim=0)
+                            else:
+                                batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                            batch_h = batch_h - expand_batch_h_g
                         pred_y = self.classifier(batch_h)
                     batch_y = batch['uin'].gang_mem.long()
                     cls_loss = self.criterion(pred_y, batch_y)
@@ -642,10 +633,21 @@ class UinGangsModelTuning:
                         if self.prompt_type == 'concat_subgraph':
                             if self.eval_dict["is_weighted_subgraph"]:
                                 exp_score = torch.exp(batch['uin'].score)
-                                batch_h = batch_h * exp_score
-                            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                                new_batch_h = batch_h * exp_score
+                                batch_h_g = scatter_mean(new_batch_h, batch['uin'].batch, dim=0)
+                            else:
+                                batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
                             batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
+                        elif self.prompt_type == 'node_subtract_subgraph':
+                            if self.eval_dict["is_weighted_subgraph"]:
+                                exp_score = torch.exp(batch['uin'].score)
+                                new_batch_h = batch_h * exp_score
+                                batch_h_g = scatter_mean(new_batch_h, batch['uin'].batch, dim=0)
+                            else:
+                                batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                            batch_h = batch_h - expand_batch_h_g
                         prob_y = self.classifier(batch_h)[:, 1]
                         pred_y = self.classifier(batch_h).argmax(dim=1)
                     batch_y = batch['uin'].gang_mem
