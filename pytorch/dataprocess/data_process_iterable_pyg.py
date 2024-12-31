@@ -117,17 +117,16 @@ class UinGangsDataIterablePyG(IterableDataset):
         print("SAVE!")
 
     def pre_process(self, line):
-        data = {}
         try:
             data = json.loads(line)
+            if data["original_label"] in self.class_label_enums_dict:
+                data["label"] = self.class_label_enums_dict[data["original_label"]]
         except json.JSONDecodeError as e:
             print(f"JSON decode error: {e}")
             error_position = e.pos
-            print("Error context:")
-            print(line[max(0, error_position - 50):error_position + 50])
-
-        if data["original_label"] in self.class_label_enums_dict:
-            data["label"] = self.class_label_enums_dict[data["original_label"]]
+            print(f"Error context: {line[max(0, error_position - 100):error_position + 100]}")
+            return None
+        else:
             if random.random() < self.label_class_amount_upper_limit_dict[data["label"]]:
                 try:
                     pyg_data = self.process_json_to_pyg(data, control_edge_number=self.control_node_num)
@@ -138,8 +137,6 @@ class UinGangsDataIterablePyG(IterableDataset):
                     return pyg_data
             else:
                 return None
-        else:
-            return None
 
     def filter_subgraph(self, line):
         try:
