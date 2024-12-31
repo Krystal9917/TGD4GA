@@ -25,15 +25,15 @@ class ArgsUinGangs:
         parser.add_argument('--prompt_initial_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "valid", "raw",
-                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive_20.txt")))
+                         "uin_gangs_supervise_full_graph_dataset_prompt_initialization.txt")))
         parser.add_argument('--prompt_tuning_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "valid", "raw",
-                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive_20_40.txt")))
+                         "uin_gangs_supervise_full_graph_dataset_prompt_tuning.txt")))
         parser.add_argument('--prompt_evaluating_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "valid", "raw",
-                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive_exclude_40.txt")))
+                         "uin_gangs_supervise_full_graph_dataset_prompt_testing.txt")))
         parser.add_argument('--uin_gangs_enum_yaml_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "config", "yml", "uin_gangs_enum.yaml")))
@@ -87,7 +87,7 @@ class ArgsUinGangs:
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT'])
         parser.add_argument('--is_supervised', type=bool, default=False)
         parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
-        parser.add_argument('--prompt_insertion_type', type=str, default='node_subtract_subgraph',
+        parser.add_argument('--prompt_insertion_type', type=str, default='concat_prompt',
                             choices=[None, 'add_prompt', 'add_subgraph', 'concat_prompt', 'concat_subgraph',
                                      'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
                                      'concat_subgraph_proj_prompt', 'linear_concat_subgraph_concat_prompt',

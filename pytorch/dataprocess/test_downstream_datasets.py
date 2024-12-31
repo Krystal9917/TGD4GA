@@ -5,7 +5,7 @@ import yaml
 import torch
 import numpy as np
 from transformers import AutoTokenizer
-from torch_geometric.data import HeteroData, Batch
+from torch_geometric.data import HeteroData
 from sklearn.feature_extraction import FeatureHasher
 
 
@@ -88,7 +88,7 @@ def count_dataset_labels(json_data):
     if json_data['original_label'].strip() in class_label_enums_dict.keys():
         gang_label = class_label_enums_dict[json_data['original_label'].strip()]
     else:
-        gang_label = json_data['original_label'].strip()
+        gang_label = None
     return gang_label
 
 if __name__ == '__main__':
@@ -96,7 +96,10 @@ if __name__ == '__main__':
     args_dict = {
         "minirbt_path": os.path.join(dir_path, "minirbt-h256"),
         "uin_gangs_enum_yaml_path": os.path.join(dir_path, "data/config/yml/uin_gangs_enum.yaml"),
-        "file_path": os.path.join(dir_path, "data/uin_gangs_full_graph_dataset/valid/raw/uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive.txt")
+        "file_path": os.path.join(dir_path, "data/uin_gangs_full_graph_dataset/valid/raw/uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive.txt"),
+        "prompt_file": os.path.join(dir_path, "data/uin_gangs_full_graph_dataset/valid/raw/uin_gangs_supervise_full_graph_dataset_prompt_initialization.txt"),
+        "tuning_file": os.path.join(dir_path, "data/uin_gangs_full_graph_dataset/valid/raw/uin_gangs_supervise_full_graph_dataset_prompt_tuning.txt"),
+        "test_file": os.path.join(dir_path, "data/uin_gangs_full_graph_dataset/valid/raw/uin_gangs_supervise_full_graph_dataset_prompt_testing.txt")
     }
     minirbt_tokenizer = AutoTokenizer.from_pretrained(args_dict["minirbt_path"])
     undirected_edge_types = ['idcardid', 'bankcard', 'device', 'wifi', 'ipv6', 'room']
@@ -104,15 +107,35 @@ if __name__ == '__main__':
     with open(args_dict["uin_gangs_enum_yaml_path"], 'r', encoding='utf-8') as file:
         uin_gangs_enum = yaml.safe_load(file)
     class_label_enums_dict = uin_gangs_enum['class_label_enums']
-    label_count = {}
+    split_lines = {"prompt_init": {}, "prompt_tune": {}}
     with open(args_dict["file_path"], 'r', encoding="utf-8") as file:
-        for line in file:
+        for i, line in enumerate(file):
             json_data = json.loads(line)
             label = count_dataset_labels(json_data)
-            if label not in label_count.keys():
-                label_count[label] = 1
+            if label is not None:
+                if label not in split_lines["prompt_init"].keys():
+                    split_lines["prompt_init"][label] = i
+    with open(args_dict["file_path"], 'r', encoding="utf-8") as file:
+        for i, line in enumerate(file):
+            json_data = json.loads(line)
+            label = count_dataset_labels(json_data)
+            if label is not None:
+                if label not in split_lines["prompt_tune"].keys() and i != split_lines["prompt_init"][label]:
+                    split_lines["prompt_tune"][label] = i
+    print(split_lines)
+    prompt_file = open(args_dict["prompt_file"], 'w', encoding="utf-8")
+    tuning_file = open(args_dict["tuning_file"], 'w', encoding="utf-8")
+    test_file = open(args_dict["test_file"], 'w', encoding="utf-8")
+    with open(args_dict["file_path"], 'r', encoding="utf-8") as file:
+        for i, line in enumerate(file):
+            if i in list(split_lines["prompt_init"].values()):
+                prompt_file.write(line)
+            elif i in list(split_lines["prompt_tune"].values()):
+                tuning_file.write(line)
             else:
-                label_count[label] += 1
-    label_count = sorted(label_count.items(), key=lambda x: x[1], reverse=True)
-    print(label_count)
+                test_file.write(line)
+    prompt_file.close()
+    tuning_file.close()
+    test_file.close()
+
 
