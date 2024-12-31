@@ -79,7 +79,7 @@ class ArgsUinGangs:
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--is_debug', type=bool, default=False)
-        parser.add_argument('--data_tag', type=str, default='order_1930', choices=['', '1921_', '1930_', 'order_1930'])
+        parser.add_argument('--data_tag', type=str, default='order_1930_', choices=['', '1921_', '1930_', 'order_1930_'])
         parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2'])
         parser.add_argument('--eval_epoch', type=int, default=20)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_prompt_tuning',
