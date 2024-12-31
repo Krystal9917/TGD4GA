@@ -35,7 +35,7 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "pic")))
         parser.add_argument('--minirbt_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
-        parser.add_argument('--best_loss', type=float, default=1e2)
+        parser.add_argument('--best_loss', type=float, default=1.286)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
         parser.add_argument('--batch_size', type=int, default=40)
         parser.add_argument('--data_buffer_size', type=int, default=40)
@@ -60,9 +60,9 @@ class ArgsUinGangs:
         parser.add_argument('--filter_node_num', type=int, default=3)
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
-        parser.add_argument('--re_train', type=bool, default=False)
+        parser.add_argument('--re_train', type=bool, default=True)
         parser.add_argument('--is_debug', type=bool, default=False)
-        parser.add_argument('--start_epoch', type=int, default=0)
+        parser.add_argument('--start_epoch', type=int, default=10)
         parser.add_argument('--conv_type', type=str, default='HGT', choices=['RGCN', 'HAN',
                                                                               'Score_based_HAN', 'GT', 'HGT'])
         # RGCN
