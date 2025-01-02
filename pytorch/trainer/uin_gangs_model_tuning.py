@@ -88,12 +88,24 @@ class UinGangsModelTuning:
             print(f"Load: {file_name}")
         self.model.to(self.device)
 
-        if self.eval_dict["evaluate_task"] == 'subgraph_embedding':
-            self.eval_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["eval_data_path"])
-            self.eval_loader = Data.DataLoader(self.eval_data,
+        if self.eval_dict["evaluate_task"] == 'node_classification':
+            self.train_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["node_train_data_path"])
+            self.train_loader = Data.DataLoader(self.train_data,
+                                                batch_size=self.eval_dict["batch_size"],
+                                                num_workers=self.eval_dict["num_workers"],
+                                                collate_fn=self.train_data.collate_fn)
+            self.test_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["node_test_data_path"])
+            self.test_loader = Data.DataLoader(self.test_data,
                                                batch_size=self.eval_dict["batch_size"],
                                                num_workers=self.eval_dict["num_workers"],
-                                               collate_fn=self.eval_data.collate_fn)
+                                               collate_fn=self.test_data.collate_fn)
+            self.classifier = torch.nn.Sequential(torch.nn.Linear(args_dict['output_dim'], args_dict['hidden_dim']),
+                                                  torch.nn.ReLU(),
+                                                  torch.nn.Linear(args_dict['hidden_dim'], args_dict['node_types']),
+                                                  torch.nn.Softmax(dim=1))
+            self.classifier.to(self.device)
+            self.criterion = torch.nn.CrossEntropyLoss()
+            self.cls_optimizer = torch.optim.Adam(self.classifier.parameters(), lr=args_dict['lr'])
         elif self.eval_dict["evaluate_task"] == 'subgraph':
             self.train_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["train_data_path"])
             self.eval_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["test_data_path"])
@@ -134,7 +146,8 @@ class UinGangsModelTuning:
                                                num_workers=self.eval_dict["num_workers"],
                                                collate_fn=self.eval_data.collate_fn)
             self.prompt_type = self.eval_dict["prompt_insertion_type"]
-            self.is_prompt = True if self.prompt_type not in [None, 'concat_subgraph', 'node_subtract_subgraph'] else False
+            self.is_prompt = True if self.prompt_type not in [None, 'concat_subgraph',
+                                                              'node_subtract_subgraph'] else False
             params = []
             # Initialize Prompt
             if self.is_prompt:
@@ -176,12 +189,6 @@ class UinGangsModelTuning:
                                                             torch.nn.Linear(args_dict['hidden_dim'],
                                                                             args_dict['output_dim'])).to(self.device)
                     params.append({'params': self.combine_func.parameters(), 'lr': 5e-4})
-                if self.prompt_type == 'weighted_addition_concat_prompt':
-                    self.local_weight = torch.nn.Parameter(torch.tensor(0.5, device=self.device), requires_grad=True)
-                    self.global_weight = torch.nn.Parameter(torch.tensor(0.5, device=self.device), requires_grad=True)
-                    print(self.local_weight.is_leaf, self.global_weight.is_leaf)
-                    params.append({'params': self.local_weight, 'lr': 1e-4})
-                    params.append({'params': self.global_weight, 'lr': 1e-4})
             elif self.prompt_type == 'concat_subgraph_prompt':
                 cls_input = args_dict['output_dim'] * 3
             else:
@@ -267,57 +274,72 @@ class UinGangsModelTuning:
         out = self.model(x_dict, filter_edge_dict)
         return out
 
-    def evaluate_labelled_subgraph_embedding(self):
+    def evaluate_node_classification(self):
         self.model.eval()
         for param in self.model.parameters():
             param.requires_grad = False
-        if self.eval_dict["eval_epoch"] != 0:
-            epoch_num = self.eval_dict["eval_epoch"]
-            fig_name = f"filter_retrain_{self.conv_type}_{self.eval_dict['sampling']}_subgraph_pca_epoch_{str(epoch_num)}.png"
-        else:
-            fig_name = f"filter_retrain_{self.conv_type}_{self.eval_dict['sampling']}_subgraph_pca_best_epoch.png"
-        all_h = []
-        all_class = []
-        positive_sim = []
-        negative_sim = []
-        positive_negative_sim = []
-        for (i, batch) in enumerate(self.eval_loader):
-            batch = batch.to(self.device)
-            batch_uin_acs_text_feat_input_ids = batch['uin'].text_feat_input_ids.to(self.device)
-            batch_uin_acs_text_feat_attention_mask = batch['uin'].text_feat_attention_mask.to(self.device)
-            with torch.no_grad():
-                batch_uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
-                                                             batch_uin_acs_text_feat_attention_mask).pooler_output
-                batch_uin_acs_text_feat = batch_uin_acs_text_feat.to(self.device)
-            # combine numerical, categorical and text attributes
-            batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
-            batch_x = torch.nn.functional.normalize(batch_x, dim=1)
-            batch['uin'].x = batch_x.to(self.device)
-            batch_h = self.rgcn_fit(batch, batch['uin'].x)
-            # readout for subgraph
-            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-            normal_idx = (batch['uin'].gang_label == 0).nonzero().squeeze().detach().cpu().tolist()
-            gang_idx = (batch['uin'].gang_label == 1).nonzero().squeeze().detach().cpu().tolist()
-            positive_sim.extend(self.cosine_similarity(batch_h_g[gang_idx, :], batch_h_g[gang_idx, :]).mean(
-                dim=1).detach().cpu().tolist())
-            negative_sim.extend(self.cosine_similarity(batch_h_g[normal_idx, :], batch_h_g[normal_idx, :]).mean(
-                dim=1).detach().cpu().tolist())
-            positive_negative_sim.extend(self.cosine_similarity(batch_h_g[gang_idx, :], batch_h_g[normal_idx, :]).mean(
-                dim=1).detach().cpu().tolist())
-            all_h.append(batch_h_g.detach().cpu())
-            all_class.append(batch['uin'].gang_label.detach().cpu())
-            torch.cuda.empty_cache()
-        pos_sim = np.mean(positive_sim)
-        neg_sim = np.mean(negative_sim)
-        pos_neg_sim = np.mean(positive_negative_sim)
-        print(f"Positive similarity: {pos_sim:.4f}, "
-              f"Negative similarity: {neg_sim:.4f}, "
-              f"Positive Negative similarity: {pos_neg_sim:.4f}")
+        best_loss = self.eval_dict["best_loss"]
+        best_acc = 0
+        best_pre = 0
+        best_rec = 0
+        best_f1 = 0
+        best_roc_auc = 0
+        best_cm = 0
+        for epoch in range(self.eval_dict["n_epochs"]):
+            epoch_loss = []
+            st = time.time()
+            for batch in self.train_loader:
+                batch = batch.to(self.device)
+                batch_uin_acs_text_feat_input_ids = batch['uin'].text_feat_input_ids.to(self.device)
+                batch_uin_acs_text_feat_attention_mask = batch['uin'].text_feat_attention_mask.to(self.device)
+                with torch.no_grad():
+                    batch_uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
+                                                                 batch_uin_acs_text_feat_attention_mask).pooler_output
+                    batch_uin_acs_text_feat = batch_uin_acs_text_feat.to(self.device)
+                # combine numerical, categorical and text attributes
+                batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
+                batch_x = torch.nn.functional.normalize(batch_x, dim=1)
+                batch['uin'].x = batch_x.to(self.device)
+                if self.conv_type == 'RGCN':
+                    batch_h = self.rgcn_fit(batch, batch['uin'].x)
+                elif self.conv_type == 'HGT':
+                    batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
+                node_h = batch_h[batch['uin'].ptr[:-1]]
+                y_prob = self.classifier(node_h)
+                y_true = batch['uin'].y.long()
+                loss = self.criterion(y_prob, y_true)
+                loss.backward()
+                self.cls_optimizer.step()
+                epoch_loss.append(loss.detach().cpu().item())
+            current_loss = sum(epoch_loss) / len(epoch_loss)
+            print(f"Epoch {epoch}, Cross entropy loss: {current_loss: .4f}, Time: {time.time() - st: .4f} s")
+            if current_loss < best_loss:
+                best_loss = current_loss
+                print(f"...Test Node Classification Task in Best Loss...")
+                acc, pre, rec, f1, roc_auc, cm = self.evaluate_classifier(task="node")
+                if acc > best_acc:
+                    best_acc = acc
+                    best_pre = pre
+                    best_rec = rec
+                    best_f1 = f1
+                    best_roc_auc = roc_auc
+                    best_cm = cm
+            else:
+                if epoch % 5 == 0:
+                    print(f"...Test Node Classification Task in Epoch={epoch}...")
+                    acc, pre, rec, f1, roc_auc, cm = self.evaluate_classifier(task="node")
+                    if acc > best_acc:
+                        best_acc = acc
+                        best_pre = pre
+                        best_rec = rec
+                        best_f1 = f1
+                        best_roc_auc = roc_auc
+                        best_cm = cm
+        print(f"Best Test Metrics: \n"
+              f"ACC: {best_acc:.4f}, Precision: {best_pre:.4f}, "
+              f"Recall: {best_rec:.4f}, F1-Score: {best_f1:.4f}, "
+              f"ROC-AUC: {best_roc_auc:.4f}, Confusion Matrix: {best_cm.tolist()}")
 
-        all_h = torch.concat(all_h, dim=0)
-        all_class = torch.concat(all_class, dim=0)
-        visualization_fig_save(input_embedding=all_h.numpy(), input_class=all_class.numpy(),
-                               save_path=os.path.join(self.eval_dict["pic_path"], fig_name))
 
     def evaluate_labelled_subgraph_predict(self):
         if not self.eval_dict["is_supervised"]:
@@ -388,7 +410,7 @@ class UinGangsModelTuning:
                 best_test_cm = test_cm
         return best_test_acc, best_test_pre, best_test_rec, best_test_f1, best_test_roc_auc, best_test_cm
 
-    def evaluate_classifier(self):
+    def evaluate_classifier(self, task="subgraph"):
         self.classifier.eval()
         true_y_list = []
         pred_y_list = []
@@ -413,10 +435,16 @@ class UinGangsModelTuning:
                     if self.eval_dict["is_weighted_subgraph"]:
                         exp_score = torch.exp(batch['uin'].score)
                         batch_h = batch_h * exp_score
-                    batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                    batch_y = batch['uin'].gang_label
-                    prob_y = self.classifier(batch_h_g)[:, 1]
-                    pred_y = self.classifier(batch_h_g).argmax(dim=1)
+                    if task == "subgraph":
+                        batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                        batch_y = batch['uin'].gang_label
+                        prob_y = self.classifier(batch_h_g)[:, 1]
+                        pred_y = self.classifier(batch_h_g).argmax(dim=1)
+                    else:
+                        node_h = batch_h[batch['uin'].ptr[:-1]]
+                        batch_y = batch['uin'].y
+                        prob_y = self.classifier(node_h)[:, 1]
+                        pred_y = self.classifier(node_h).argmax(dim=1)
                     true_y = batch_y.detach().cpu()
                     prob_y = prob_y.detach().cpu()
                     pred_y = pred_y.detach().cpu()
@@ -465,10 +493,6 @@ class UinGangsModelTuning:
                 expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
                 prompt_batch_h = torch.concat(
                     [batch_h, expand_batch_h_g * prompt.repeat(batch_h.shape[0], 1)], dim=1)
-            elif self.prompt_type == 'weighted_addition_concat_prompt':
-                expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                weighted_batch_h = self.local_weight * batch_h + self.global_weight * expand_batch_h_g
-                prompt_batch_h = torch.concat([weighted_batch_h, prompt.repeat(batch_h.shape[0], 1)], dim=1)
             elif self.prompt_type == 'linear_concat_subgraph_concat_prompt':
                 expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
                 weighted_batch_h = self.combine_func(torch.concat([batch_h, expand_batch_h_g], dim=1))
@@ -557,7 +581,8 @@ class UinGangsModelTuning:
             else:
                 test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm, test_jac = self.evaluate_prompt_classifier()
             if self.prompt_type == 'weighted_addition_concat_prompt':
-                print(f"Current Weight: {self.local_weight.detach().cpu().item()}, {self.global_weight.detach().cpu().item()}")
+                print(
+                    f"Current Weight: {self.local_weight.detach().cpu().item()}, {self.global_weight.detach().cpu().item()}")
             if test_acc > best_test_acc:
                 print(f"Current Best Test ACC: {test_acc: .4f}, "
                       f"Precision: {test_pre: .4f}, "
