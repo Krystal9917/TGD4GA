@@ -18,10 +18,14 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "valid", "processed",
                          "uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt")))
-        parser.add_argument('--eval_data_path', type=str, default=os.path.abspath(
+        parser.add_argument('--node_train_data_path', type=str, default=os.path.abspath(
+            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
+                         "uin_gangs_full_graph_dataset", "train", "raw",
+                         "uin_gangs_full_graph_dataset_train_241201_20241119.txt")))
+        parser.add_argument('--node_test_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "valid", "raw",
-                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211.txt")))
+                         "uin_gangs_full_graph_dataset_train_241202_20241119.txt")))
         parser.add_argument('--prompt_initial_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "valid", "raw",
@@ -73,6 +77,7 @@ class ArgsUinGangs:
         parser.add_argument('--input_dim', type=int, default=846)
         parser.add_argument('--hidden_dim', type=int, default=1024)
         parser.add_argument('--output_dim', type=int, default=846)
+        parser.add_argument('--node_types', type=int, default=19)
         parser.add_argument('--num_relations', type=int, default=10)
         parser.add_argument('--num_heads', type=int, default=2)
         parser.add_argument('--filter_node_num', type=int, default=3)
@@ -83,7 +88,7 @@ class ArgsUinGangs:
         parser.add_argument('--device_tag', type=str, default='', choices=['', '_GPU2'])
         parser.add_argument('--eval_epoch', type=int, default=10)
         parser.add_argument('--evaluate_task', type=str, default='subgraph',
-                            choices=['subgraph', 'subgraph_embedding', 'subgraph_prompt_tuning'])
+                            choices=['subgraph', 'node_classification', 'subgraph_prompt_tuning'])
         parser.add_argument('--conv_type', type=str, default='HGT', choices=['RGCN', 'HGT'])
         parser.add_argument('--is_supervised', type=bool, default=False)
         parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
@@ -91,7 +96,7 @@ class ArgsUinGangs:
                             choices=[None, 'add_prompt', 'add_subgraph', 'concat_prompt', 'concat_subgraph',
                                      'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
                                      'concat_subgraph_proj_prompt', 'linear_concat_subgraph_concat_prompt',
-                                     'weighted_addition_concat_prompt', 'node_subtract_subgraph'])
+                                     'node_subtract_subgraph'])
         parser.add_argument('--test_times', type=int, default=5)
 
         args = parser.parse_args()
@@ -129,10 +134,10 @@ if __name__ == '__main__':
               f"ROC-AUC: {ave_roc_auc / len(times_list): .4f}, "
               f"Confusion Matrix: {ave_cfm / len(times_list)}, "
               )
-    elif args.args_dict["evaluate_task"] == 'subgraph_embedding':
+    elif args.args_dict["evaluate_task"] == 'node_classification':
         tuning_model = UinGangsModelTuning(args.args_dict)
         print("======Labelled Subgraph Embedding Evaluation======")
-        tuning_model.evaluate_labelled_subgraph_embedding()
+        tuning_model.evaluate_node_classification()
     elif args.args_dict["evaluate_task"] == 'subgraph_prompt_tuning':
         print("======Labelled Subgraph Prompt Tuning======")
         times_list = ['1st', '2nd', '3rd', '4th', '5th']
