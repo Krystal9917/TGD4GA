@@ -94,11 +94,11 @@ class UinGangsModelTuning:
                                                 batch_size=self.eval_dict["batch_size"],
                                                 num_workers=self.eval_dict["num_workers"],
                                                 collate_fn=self.train_data.collate_fn)
-            self.test_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["node_test_data_path"])
-            self.test_loader = Data.DataLoader(self.test_data,
+            self.eval_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["node_test_data_path"])
+            self.eval_loader = Data.DataLoader(self.eval_data,
                                                batch_size=self.eval_dict["batch_size"],
                                                num_workers=self.eval_dict["num_workers"],
-                                               collate_fn=self.test_data.collate_fn)
+                                               collate_fn=self.eval_data.collate_fn)
             self.classifier = torch.nn.Sequential(torch.nn.Linear(args_dict['output_dim'], args_dict['hidden_dim']),
                                                   torch.nn.ReLU(),
                                                   torch.nn.Linear(args_dict['hidden_dim'], args_dict['node_types']),
