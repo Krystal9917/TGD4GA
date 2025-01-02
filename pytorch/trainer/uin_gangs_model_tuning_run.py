@@ -87,16 +87,16 @@ class ArgsUinGangs:
         parser.add_argument('--data_tag', type=str, default='1930_', choices=['', '1921_', '1930_', 'order_1930_'])
         parser.add_argument('--device_tag', type=str, default='', choices=['', '_GPU2'])
         parser.add_argument('--eval_epoch', type=int, default=10)
-        parser.add_argument('--evaluate_task', type=str, default='subgraph',
-                            choices=['subgraph', 'node_classification', 'subgraph_prompt_tuning'])
+        parser.add_argument('--evaluate_task', type=str, default='node_classification',
+                            choices=['node_classification', 'subgraph', 'subgraph_prompt_tuning'])
         parser.add_argument('--conv_type', type=str, default='HGT', choices=['RGCN', 'HGT'])
         parser.add_argument('--is_supervised', type=bool, default=False)
         parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
         parser.add_argument('--prompt_insertion_type', type=str, default=None,
                             choices=[None, 'add_prompt', 'add_subgraph', 'concat_prompt', 'concat_subgraph',
                                      'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
-                                     'concat_subgraph_proj_prompt', 'linear_concat_subgraph_concat_prompt',
-                                     'node_subtract_subgraph'])
+                                     'concat_subgraph_proj_prompt', 'node_subtract_subgraph',
+                                     'linear_concat_subgraph_concat_prompt'])
         parser.add_argument('--test_times', type=int, default=5)
 
         args = parser.parse_args()
@@ -107,7 +107,11 @@ class ArgsUinGangs:
 if __name__ == '__main__':
     args = ArgsUinGangs()
     print(f"Tuning Parameters: {args.args_dict}")
-    if args.args_dict["evaluate_task"] == 'subgraph':
+    if args.args_dict["evaluate_task"] == 'node_classification':
+        tuning_model = UinGangsModelTuning(args.args_dict)
+        print("======Labelled Node Classification Evaluation======")
+        tuning_model.evaluate_node_classification()
+    elif args.args_dict["evaluate_task"] == 'subgraph':
         print("======Labelled Subgraph Label Evaluation======")
         times_list = ['1st', '2nd', '3rd', '4th', '5th']
         ave_acc = 0
@@ -134,10 +138,6 @@ if __name__ == '__main__':
               f"ROC-AUC: {ave_roc_auc / len(times_list): .4f}, "
               f"Confusion Matrix: {ave_cfm / len(times_list)}, "
               )
-    elif args.args_dict["evaluate_task"] == 'node_classification':
-        tuning_model = UinGangsModelTuning(args.args_dict)
-        print("======Labelled Subgraph Embedding Evaluation======")
-        tuning_model.evaluate_node_classification()
     elif args.args_dict["evaluate_task"] == 'subgraph_prompt_tuning':
         print("======Labelled Subgraph Prompt Tuning======")
         times_list = ['1st', '2nd', '3rd', '4th', '5th']
