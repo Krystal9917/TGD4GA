@@ -189,7 +189,7 @@ class UinGangsModelTuning:
                                                                             args_dict['output_dim'])).to(self.device)
                     params.append({'params': self.combine_func.parameters(), 'lr': 5e-4})
             elif self.prompt_type == 'concat_adj':
-                cls_input = args_dict['output_dim'] + args_dict['hidden_dim'] / 16
+                cls_input = args_dict['output_dim'] + int(args_dict['hidden_dim'] / 16)
             elif self.prompt_type == 'concat_subgraph_prompt':
                 cls_input = args_dict['output_dim'] * 3
             else:
@@ -445,7 +445,7 @@ class UinGangsModelTuning:
                         node_h = batch_h[batch['uin'].ptr[:-1]]
                         batch_y = batch['uin'].y
                         prob_y = self.classifier(node_h)
-                        pred_y = pred_y.argmax(dim=1)
+                        pred_y = prob_y.argmax(dim=1)
                     true_y = batch_y.detach().cpu()
                     prob_y = prob_y.detach().cpu()
                     pred_y = pred_y.detach().cpu()
@@ -579,7 +579,7 @@ class UinGangsModelTuning:
                             batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
                         elif self.prompt_type == 'concat_adj':
                             batch_adj = self.construct_full_adj(batch)
-                            batch_mlp = torch.nn.Linear(batch_adj.shape[1], self.eval_dict['hidden_dim'] / 16, bias=False)
+                            batch_mlp = torch.nn.Linear(batch_adj.shape[1], int(self.eval_dict['hidden_dim'] / 16), bias=False).to(self.device)
                             mlp_adj = batch_mlp(batch_adj)
                             batch_h = torch.concat([batch_h, mlp_adj], dim=1)
                         elif self.prompt_type == 'node_subtract_subgraph':
@@ -697,7 +697,7 @@ class UinGangsModelTuning:
                             batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
                         elif self.prompt_type == 'concat_adj':
                             batch_adj = self.construct_full_adj(batch)
-                            batch_mlp = torch.nn.Linear(batch_adj.shape[1], self.eval_dict['hidden_dim'] / 16, bias=False)
+                            batch_mlp = torch.nn.Linear(batch_adj.shape[1], int(self.eval_dict['hidden_dim'] / 16), bias=False).to(self.device)
                             mlp_adj = batch_mlp(batch_adj)
                             batch_h = torch.concat([batch_h, mlp_adj], dim=1)
                         elif self.prompt_type == 'node_subtract_subgraph':
