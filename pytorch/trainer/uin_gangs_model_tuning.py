@@ -284,7 +284,6 @@ class UinGangsModelTuning:
         best_rec = 0
         best_f1 = 0
         best_roc_auc = 0
-        best_cm = 0
         for epoch in range(self.eval_dict["n_epochs"]):
             epoch_loss = []
             st = time.time()
@@ -316,29 +315,27 @@ class UinGangsModelTuning:
             if current_loss < best_loss:
                 best_loss = current_loss
                 print(f"...Test Node Classification Task in Best Loss...")
-                acc, pre, rec, f1, roc_auc, cm = self.evaluate_classifier(task="node")
+                acc, pre, rec, f1, roc_auc = self.evaluate_classifier(task="node")
                 if acc > best_acc:
                     best_acc = acc
                     best_pre = pre
                     best_rec = rec
                     best_f1 = f1
                     best_roc_auc = roc_auc
-                    best_cm = cm
             else:
                 if epoch % 5 == 0:
                     print(f"...Test Node Classification Task in Epoch={epoch}...")
-                    acc, pre, rec, f1, roc_auc, cm = self.evaluate_classifier(task="node")
+                    acc, pre, rec, f1, roc_auc = self.evaluate_classifier(task="node")
                     if acc > best_acc:
                         best_acc = acc
                         best_pre = pre
                         best_rec = rec
                         best_f1 = f1
                         best_roc_auc = roc_auc
-                        best_cm = cm
         print(f"Best Test Metrics: \n"
               f"ACC: {best_acc:.4f}, Precision: {best_pre:.4f}, "
               f"Recall: {best_rec:.4f}, F1-Score: {best_f1:.4f}, "
-              f"ROC-AUC: {best_roc_auc:.4f}, Confusion Matrix: {best_cm.tolist()}")
+              f"ROC-AUC: {best_roc_auc:.4f}")
 
 
     def evaluate_labelled_subgraph_predict(self):
@@ -454,20 +451,35 @@ class UinGangsModelTuning:
             true_y_list = torch.concat(true_y_list, dim=0).numpy()
             prob_y_list = torch.concat(prob_y_list, dim=0).numpy()
             pred_y_list = torch.concat(pred_y_list, dim=0).numpy()
-            acc = accuracy_score(true_y_list, pred_y_list)
-            f1 = f1_score(true_y_list, pred_y_list)
-            pre = precision_score(true_y_list, pred_y_list)
-            rec = recall_score(true_y_list, pred_y_list)
-            roc_auc = roc_auc_score(true_y_list, prob_y_list)
-            cm = confusion_matrix(true_y_list, pred_y_list)
-            print(f"Test ACC: {acc: .4f}, "
-                  f"Precision: {pre: .4f}, "
-                  f"Recall: {rec: .4f}, "
-                  f"F1: {f1: .4f}, "
-                  f"ROC-AUC: {roc_auc: .4f}, "
-                  f"Confusion Matrix: {cm.tolist()}"
-                  )
-            return acc, pre, rec, f1, roc_auc, cm
+            if task == "subgraph":
+                acc = accuracy_score(true_y_list, pred_y_list)
+                f1 = f1_score(true_y_list, pred_y_list)
+                pre = precision_score(true_y_list, pred_y_list)
+                rec = recall_score(true_y_list, pred_y_list)
+                roc_auc = roc_auc_score(true_y_list, prob_y_list)
+                cm = confusion_matrix(true_y_list, pred_y_list)
+                print(f"Test ACC: {acc: .4f}, "
+                      f"Precision: {pre: .4f}, "
+                      f"Recall: {rec: .4f}, "
+                      f"F1: {f1: .4f}, "
+                      f"ROC-AUC: {roc_auc: .4f}, "
+                      f"Confusion Matrix: {cm.tolist()}"
+                      )
+                return acc, pre, rec, f1, roc_auc, cm
+            else:
+                average = "micro"
+                multi_class = "ovr"
+                acc = accuracy_score(true_y_list, pred_y_list)
+                f1 = f1_score(true_y_list, pred_y_list, average=average)
+                pre = precision_score(true_y_list, pred_y_list, average=average)
+                rec = recall_score(true_y_list, pred_y_list, average=average)
+                roc_auc = roc_auc_score(true_y_list, prob_y_list, average=average, multi_class=multi_class)
+                print(f"Test ACC: {acc: .4f}, "
+                      f"Precision: {pre: .4f}, "
+                      f"Recall: {rec: .4f}, "
+                      f"F1: {f1: .4f}, "
+                      f"ROC-AUC: {roc_auc: .4f}")
+                return acc, pre, rec, f1, roc_auc
 
     def insert_prompt(self, batch_h, batch, prompt):
         if self.prompt_type == 'add_prompt':
