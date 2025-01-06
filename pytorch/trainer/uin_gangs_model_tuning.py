@@ -13,11 +13,10 @@ import torch.utils.data as Data
 from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
 from transformers import BertModel
-from mmgog_long_term_sequence_model.utils.utils import visualization_fig_save
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix, multilabel_confusion_matrix
 
 
 class UinGangsModelTuning:
@@ -284,6 +283,7 @@ class UinGangsModelTuning:
         best_rec = 0
         best_f1 = 0
         best_roc_auc = 0
+        best_cm = 0
         for epoch in range(self.eval_dict["n_epochs"]):
             epoch_loss = []
             st = time.time()
@@ -315,27 +315,29 @@ class UinGangsModelTuning:
             if current_loss < best_loss:
                 best_loss = current_loss
                 print(f"...Test Node Classification Task in Best Loss...")
-                acc, pre, rec, f1, roc_auc = self.evaluate_classifier(task="node")
+                acc, pre, rec, f1, roc_auc, cm = self.evaluate_classifier(task="node")
                 if acc > best_acc:
                     best_acc = acc
                     best_pre = pre
                     best_rec = rec
                     best_f1 = f1
                     best_roc_auc = roc_auc
+                    best_cm = cm
             else:
                 if epoch % 5 == 0:
                     print(f"...Test Node Classification Task in Epoch={epoch}...")
-                    acc, pre, rec, f1, roc_auc = self.evaluate_classifier(task="node")
+                    acc, pre, rec, f1, roc_auc, cm = self.evaluate_classifier(task="node")
                     if acc > best_acc:
                         best_acc = acc
                         best_pre = pre
                         best_rec = rec
                         best_f1 = f1
                         best_roc_auc = roc_auc
+                        best_cm = cm
         print(f"Best Test Metrics: \n"
               f"ACC: {best_acc:.4f}, Precision: {best_pre:.4f}, "
               f"Recall: {best_rec:.4f}, F1-Score: {best_f1:.4f}, "
-              f"ROC-AUC: {best_roc_auc:.4f}")
+              f"ROC-AUC: {best_roc_auc:.4f}, Confusion Matrix: {best_cm.tolist()}")
 
 
     def evaluate_labelled_subgraph_predict(self):
@@ -473,13 +475,15 @@ class UinGangsModelTuning:
                 f1 = f1_score(true_y_list, pred_y_list, average=average)
                 pre = precision_score(true_y_list, pred_y_list, average=average)
                 rec = recall_score(true_y_list, pred_y_list, average=average)
-                roc_auc = roc_auc_score(true_y_list, prob_y_list, average=average, multi_class=multi_class)
+                roc_auc = roc_auc_score(true_y_list, prob_y_list, multi_class=multi_class)
+                cm = multilabel_confusion_matrix(true_y_list, pred_y_list)
                 print(f"Test ACC: {acc: .4f}, "
                       f"Precision: {pre: .4f}, "
                       f"Recall: {rec: .4f}, "
                       f"F1: {f1: .4f}, "
-                      f"ROC-AUC: {roc_auc: .4f}")
-                return acc, pre, rec, f1, roc_auc
+                      f"ROC-AUC: {roc_auc: .4f}, "
+                      f"Confusion Matrix: {cm.tolist()}")
+                return acc, pre, rec, f1, roc_auc, cm
 
     def insert_prompt(self, batch_h, batch, prompt):
         if self.prompt_type == 'add_prompt':
