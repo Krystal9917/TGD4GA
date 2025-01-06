@@ -2,10 +2,12 @@ import os
 import sys
 import logging
 import argparse
+
 logger = logging.getLogger("my_logger")
 sys.path.append(os.path.abspath(
     os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir)))
 from mmgog_long_term_sequence_model.pytorch.trainer.uin_gangs_model_pretrain import UinGangsModelPreTrain
+
 
 class ArgsUinGangs:
     def __init__(self):
@@ -56,19 +58,19 @@ class ArgsUinGangs:
         parser.add_argument('--temperature', type=int, default=1)
         parser.add_argument('--input_dim', type=int, default=846)
         parser.add_argument('--hidden_dim', type=int, default=1024)
-        parser.add_argument('--output_dim', type=int, default=846)
+        parser.add_argument('--output_dim', type=int, default=1024)
         parser.add_argument('--filter_node_num', type=int, default=3)
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
-        parser.add_argument('--re_train', type=bool, default=True)
+        parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--is_debug', type=bool, default=False)
-        parser.add_argument('--start_epoch', type=int, default=10)
+        parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--conv_type', type=str, default='HGT', choices=['RGCN', 'HAN',
-                                                                              'Score_based_HAN', 'GT', 'HGT'])
+                                                                             'Score_based_HAN', 'GT', 'HGT'])
         # RGCN
         parser.add_argument('--num_relations', type=int, default=10)
         # HAN/GT/HGT
-        parser.add_argument('--num_heads', type=int, default=2)
+        parser.add_argument('--num_heads', type=int, default=4)
         parser.add_argument('--data_tag', type=str, default='1930_', choices=['', '1921_', '1930_', 'order_1930_'])
         args = parser.parse_args()
         args_dict = vars(args)
