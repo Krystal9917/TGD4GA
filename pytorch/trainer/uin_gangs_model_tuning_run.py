@@ -96,8 +96,9 @@ class ArgsUinGangs:
                             choices=[None, 'add_prompt', 'add_subgraph', 'concat_prompt', 'concat_subgraph',
                                      'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
                                      'concat_subgraph_proj_prompt', 'node_subtract_subgraph',
-                                     'linear_concat_subgraph_concat_prompt', 'concat_adj'])
+                                     'linear_concat_subgraph_concat_prompt', 'concat_adj', 'multiply_adj'])
         parser.add_argument('--test_times', type=int, default=5)
+        parser.add_argument('--upgrade_adj', type=bool, default=True)
 
         args = parser.parse_args()
         args_dict = vars(args)

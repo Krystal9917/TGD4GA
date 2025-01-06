@@ -145,7 +145,7 @@ class UinGangsModelTuning:
                                                num_workers=self.eval_dict["num_workers"],
                                                collate_fn=self.eval_data.collate_fn)
             self.prompt_type = self.eval_dict["prompt_insertion_type"]
-            self.is_prompt = True if self.prompt_type not in [None, 'concat_subgraph', 'concat_adj',
+            self.is_prompt = True if self.prompt_type not in [None, 'concat_subgraph', 'concat_adj', 'multiply_adj',
                                                               'node_subtract_subgraph'] else False
             params = []
             # Initialize Prompt
@@ -523,7 +523,14 @@ class UinGangsModelTuning:
             edge_index.append(batch[edge_type].edge_index)
         edge_index = torch.concat(edge_index, dim=1)
         adj = to_dense_adj(edge_index, max_num_nodes=batch['uin'].ptr[-1])
-        return adj
+        return adj.squeeze()
+
+    def upgrade_adj(self, adj):
+        tilde_adj = adj + torch.eye(adj.shape[0]).to(self.device)
+        degree_matrix_row = torch.eye(adj.shape[0]).to(self.device) * adj.sum(dim=1)
+        degree_matrix_column = torch.eye(adj.shape[1]).to(self.device) * adj.sum(dim=0)
+        fused_adj = torch.mul(torch.mul(degree_matrix_row ** 0.5, tilde_adj), degree_matrix_column ** 0.5)
+        return fused_adj
 
     def evaluate_labelled_subgraph_prompt_tuning(self):
         self.model.eval()
@@ -579,9 +586,14 @@ class UinGangsModelTuning:
                             batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
                         elif self.prompt_type == 'concat_adj':
                             batch_adj = self.construct_full_adj(batch)
+                            if self.eval_dict['upgrade_adj']:
+                                batch_adj = self.upgrade_adj(batch_adj)
                             batch_mlp = torch.nn.Linear(batch_adj.shape[1], int(self.eval_dict['hidden_dim'] / 16), bias=False).to(self.device)
                             mlp_adj = batch_mlp(batch_adj)
                             batch_h = torch.concat([batch_h, mlp_adj], dim=1)
+                        elif self.prompt_type == 'multiply_adj':
+                            batch_adj = self.construct_full_adj(batch)
+                            batch_h = torch.mul(batch_adj, batch_h)
                         elif self.prompt_type == 'node_subtract_subgraph':
                             if self.eval_dict["is_weighted_subgraph"]:
                                 exp_score = torch.exp(batch['uin'].score)
@@ -697,9 +709,14 @@ class UinGangsModelTuning:
                             batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
                         elif self.prompt_type == 'concat_adj':
                             batch_adj = self.construct_full_adj(batch)
+                            if self.eval_dict['upgrade_adj']:
+                                batch_adj = self.upgrade_adj(batch_adj)
                             batch_mlp = torch.nn.Linear(batch_adj.shape[1], int(self.eval_dict['hidden_dim'] / 16), bias=False).to(self.device)
                             mlp_adj = batch_mlp(batch_adj)
                             batch_h = torch.concat([batch_h, mlp_adj], dim=1)
+                        elif self.prompt_type == 'multiply_adj':
+                            batch_adj = self.construct_full_adj(batch)
+                            batch_h = torch.mul(batch_adj, batch_h)
                         elif self.prompt_type == 'node_subtract_subgraph':
                             if self.eval_dict["is_weighted_subgraph"]:
                                 exp_score = torch.exp(batch['uin'].score)
