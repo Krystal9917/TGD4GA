@@ -94,7 +94,7 @@ class UinGangsModelPreTrainDDP:
             self.start_epoch = 1
             self.end_epoch = self.train_dict["n_epochs"]
         self.model.to(self.device)
-        self.model = DDP(self.model, device_ids=[self.rank])
+        self.model = DDP(self.model, device_ids=[self.rank], find_unused_parameters=True)
 
         self.train_data = UinGangsDataIterablePyGDDP(self.train_dict, self.train_dict["train_data_path"],
                                                      self.rank, self.world_size)
