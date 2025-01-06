@@ -442,8 +442,8 @@ class UinGangsModelTuning:
                     else:
                         node_h = batch_h[batch['uin'].ptr[:-1]]
                         batch_y = batch['uin'].y
-                        prob_y = self.classifier(node_h)[:, 1]
-                        pred_y = self.classifier(node_h).argmax(dim=1)
+                        prob_y = self.classifier(node_h)
+                        pred_y = pred_y.argmax(dim=1)
                     true_y = batch_y.detach().cpu()
                     prob_y = prob_y.detach().cpu()
                     pred_y = pred_y.detach().cpu()

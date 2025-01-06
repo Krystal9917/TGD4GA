@@ -7,7 +7,7 @@
     <list default="true" id="690ce246-b023-4a0a-8442-769ce35af91d" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_ddp.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_pretrain_ddp.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning_run.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning_run.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -209,7 +209,7 @@
       <workItem from="1734407523367" duration="28610000" />
       <workItem from="1734505032003" duration="38426000" />
       <workItem from="1734600716126" duration="44000" />
-      <workItem from="1734600762496" duration="166929000" />
+      <workItem from="1734600762496" duration="169886000" />
     </task>
     <servers />
   </component>
