@@ -252,8 +252,13 @@ class UinGangsModelPreTrainDDP:
         self.writer.close()
 
     def hetero_fit(self, x_dict, edge_index_dict):
-        out = self.model(x_dict, edge_index_dict)
-        return out
+        try:
+            out = self.model(x_dict, edge_index_dict)
+        except Exception as e:
+            print(f"{self.conv_type} Get Edge Information Error: <{e}>")
+            return None
+        else:
+            return out
 
     def rgcn_fit(self, pos_batch, batch_x):
         try:

@@ -10,7 +10,7 @@ os.environ['DGLBACKEND'] = 'pytorch'
 import numpy as np
 from collections import OrderedDict
 import torch.utils.data as Data
-from torch_geometric.utils import subgraph
+from torch_geometric.utils import subgraph, to_dense_adj
 from torch_scatter import scatter_mean
 from transformers import BertModel
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
@@ -145,7 +145,7 @@ class UinGangsModelTuning:
                                                num_workers=self.eval_dict["num_workers"],
                                                collate_fn=self.eval_data.collate_fn)
             self.prompt_type = self.eval_dict["prompt_insertion_type"]
-            self.is_prompt = True if self.prompt_type not in [None, 'concat_subgraph',
+            self.is_prompt = True if self.prompt_type not in [None, 'concat_subgraph', 'concat_adj',
                                                               'node_subtract_subgraph'] else False
             params = []
             # Initialize Prompt
@@ -188,6 +188,8 @@ class UinGangsModelTuning:
                                                             torch.nn.Linear(args_dict['hidden_dim'],
                                                                             args_dict['output_dim'])).to(self.device)
                     params.append({'params': self.combine_func.parameters(), 'lr': 5e-4})
+            elif self.prompt_type == 'concat_adj':
+                cls_input = args_dict['output_dim'] + args_dict['hidden_dim'] / 16
             elif self.prompt_type == 'concat_subgraph_prompt':
                 cls_input = args_dict['output_dim'] * 3
             else:
@@ -515,6 +517,14 @@ class UinGangsModelTuning:
                 prompt_batch_h = torch.concat([weighted_batch_h, prompt.repeat(batch_h.shape[0], 1)], dim=1)
         return prompt_batch_h
 
+    def construct_full_adj(self, batch):
+        edge_index = []
+        for edge_type in batch.edge_types:
+            edge_index.append(batch[edge_type].edge_index)
+        edge_index = torch.concat(edge_index, dim=1)
+        adj = to_dense_adj(edge_index, max_num_nodes=batch['uin'].ptr[-1])
+        return adj
+
     def evaluate_labelled_subgraph_prompt_tuning(self):
         self.model.eval()
         for param in self.model.parameters():
@@ -567,6 +577,11 @@ class UinGangsModelTuning:
                                 batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
                             batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
+                        elif self.prompt_type == 'concat_adj':
+                            batch_adj = self.construct_full_adj(batch)
+                            batch_mlp = torch.nn.Linear(batch_adj.shape[1], self.eval_dict['hidden_dim'] / 16, bias=False)
+                            mlp_adj = batch_mlp(batch_adj)
+                            batch_h = torch.concat([batch_h, mlp_adj], dim=1)
                         elif self.prompt_type == 'node_subtract_subgraph':
                             if self.eval_dict["is_weighted_subgraph"]:
                                 exp_score = torch.exp(batch['uin'].score)
@@ -680,6 +695,11 @@ class UinGangsModelTuning:
                                 batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
                             batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
+                        elif self.prompt_type == 'concat_adj':
+                            batch_adj = self.construct_full_adj(batch)
+                            batch_mlp = torch.nn.Linear(batch_adj.shape[1], self.eval_dict['hidden_dim'] / 16, bias=False)
+                            mlp_adj = batch_mlp(batch_adj)
+                            batch_h = torch.concat([batch_h, mlp_adj], dim=1)
                         elif self.prompt_type == 'node_subtract_subgraph':
                             if self.eval_dict["is_weighted_subgraph"]:
                                 exp_score = torch.exp(batch['uin'].score)
