@@ -71,7 +71,7 @@ class ArgsUinGangs:
         parser.add_argument('--num_relations', type=int, default=10)
         # HAN/GT/HGT
         parser.add_argument('--num_heads', type=int, default=4)
-        parser.add_argument('--data_tag', type=str, default='1930_', choices=['', '1921_', '1930_', 'order_1930_'])
+        parser.add_argument('--data_tag', type=str, default='order_1930_', choices=['', '1921_', '1930_', 'order_1930_'])
         args = parser.parse_args()
         args_dict = vars(args)
         self.args_dict = args_dict
