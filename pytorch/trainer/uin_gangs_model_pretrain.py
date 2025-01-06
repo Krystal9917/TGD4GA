@@ -288,7 +288,7 @@ class UinGangsModelPreTrain:
         try:
             out = self.model(x_dict, edge_index_dict)
         except Exception as e:
-            print(f"{self.conv_type} Get Edge Information Error: <{e}>")
+            print(f"{self.conv_type} Error: <{e}>")
             return None
         else:
             return out
