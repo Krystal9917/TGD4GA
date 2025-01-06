@@ -305,7 +305,7 @@ class UinGangsModelPreTrainDDP:
                     fraudar_batch = self.extract_batch_subgraphs(pos_batch)
                     fraudar_batch = fraudar_batch.to(self.device)
 
-                    if self.conv_type == 'HAN':
+                    if self.conv_type in ['HAN', 'HGT']:
                         fraudar_batch_h = self.hetero_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
                     elif self.conv_type == 'RGCN':
                         fraudar_batch_h = self.rgcn_fit(fraudar_batch, fraudar_batch['uin'].x)
