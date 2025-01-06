@@ -17,6 +17,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
 from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
+from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg_ddp import UinGangsDataIterablePyGDDP
 
 
@@ -49,15 +50,22 @@ class UinGangsModelPreTrainDDP:
                                ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
                                ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
                                ('uin', 'download_app', 'uin'): 9}
-        elif self.conv_type == 'HAN':
+        elif self.conv_type in ['HAN', 'HGT']:
             self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
                                        ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
                                        ('uin', 'payee', 'uin'), ('uin', 'payer', 'uin'), ('uin', 'bankcard', 'uin'),
                                        ('uin', 'download_app', 'uin')])
-            self.model = HAN(in_channels=args_dict['input_dim'],
-                             out_channels=args_dict['output_dim'],
-                             metadata=self.metadata,
-                             heads=args_dict['num_heads'])
+            if self.conv_type == 'HAN':
+                self.model = HAN(in_channels=args_dict['input_dim'],
+                                 out_channels=args_dict['output_dim'],
+                                 metadata=self.metadata,
+                                 heads=args_dict['num_heads'])
+            else:
+                self.model = HeteroGraphTransformer(in_channels=args_dict['input_dim'],
+                                                    hidden_channels=args_dict['hidden_dim'],
+                                                    out_channels=args_dict['output_dim'],
+                                                    metadata=self.metadata,
+                                                    heads=args_dict['num_heads'])
         lr = self.train_dict["lr"]
         control_node_num = self.train_dict["filter_node_num"]
         sampling_type = self.train_dict["sampling"]
@@ -243,7 +251,7 @@ class UinGangsModelPreTrainDDP:
                 print(f"Save model to {file_name}")
         self.writer.close()
 
-    def han_fit(self, x_dict, edge_index_dict):
+    def hetero_fit(self, x_dict, edge_index_dict):
         out = self.model(x_dict, edge_index_dict)
         return out
 
@@ -276,8 +284,8 @@ class UinGangsModelPreTrainDDP:
                 batch_x = torch.concat([pos_batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 pos_batch['uin'].x = batch_x.to(self.device)
-                if self.conv_type == 'HAN':
-                    batch_h = self.han_fit(pos_batch.x_dict, pos_batch.edge_index_dict)
+                if self.conv_type in ['HAN', 'HGT']:
+                    batch_h = self.hetero_fit(pos_batch.x_dict, pos_batch.edge_index_dict)
                 elif self.conv_type == 'RGCN':
                     batch_h = self.rgcn_fit(pos_batch, batch_x)
                 batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
@@ -298,7 +306,7 @@ class UinGangsModelPreTrainDDP:
                     fraudar_batch = fraudar_batch.to(self.device)
 
                     if self.conv_type == 'HAN':
-                        fraudar_batch_h = self.han_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
+                        fraudar_batch_h = self.hetero_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
                     elif self.conv_type == 'RGCN':
                         fraudar_batch_h = self.rgcn_fit(fraudar_batch, fraudar_batch['uin'].x)
 
@@ -324,12 +332,13 @@ class UinGangsModelPreTrainDDP:
                         self.optimizer.step()
                         loss_value = loss.detach().cpu().item()
                         epoch_loss.append(loss_value)
-                        print(
-                            "Rank: {}, Batch: {}, Loss: {:.6f}, Time: {:.4f} s".format(
-                                self.rank,
-                                i + 1,
-                                loss_value,
-                                time.time() - start_time))
+                        if (i + 1) % 50 == 0:
+                            print(
+                                "Rank: {}, Batch: {}, Loss: {:.6f}, Time: {:.4f} s".format(
+                                    self.rank,
+                                    i + 1,
+                                    loss_value,
+                                    time.time() - start_time))
 
                     torch.cuda.empty_cache()
             epoch_loss = sum(epoch_loss) / len(epoch_loss)
@@ -341,10 +350,11 @@ class UinGangsModelPreTrainDDP:
                 self.best_loss = epoch_loss
                 file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
-                epoch_file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
+                epoch_file_name = os.path.join(self.save_model_path,
+                                               f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
-            if epoch % 10 == 0 and self.rank == 0:
+            if epoch % 5 == 0 and self.rank == 0:
                 file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), file_name)
                 print(f"Save model to {file_name}")
