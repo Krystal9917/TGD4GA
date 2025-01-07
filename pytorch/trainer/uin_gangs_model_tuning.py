@@ -104,7 +104,7 @@ class UinGangsModelTuning:
                                                   torch.nn.Softmax(dim=1))
             self.classifier.to(self.device)
             self.criterion = torch.nn.CrossEntropyLoss()
-            self.cls_optimizer = torch.optim.Adam(self.classifier.parameters(), lr=args_dict['lr'])
+            self.cls_optimizer = torch.optim.Adam(self.classifier.parameters(), lr=5e-3)
         elif self.eval_dict["evaluate_task"] == 'subgraph':
             self.train_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["train_data_path"])
             self.eval_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["test_data_path"])
@@ -289,6 +289,7 @@ class UinGangsModelTuning:
         for epoch in range(self.eval_dict["n_epochs"]):
             epoch_loss = []
             st = time.time()
+            self.classifier.train()
             for batch in self.train_loader:
                 batch = batch.to(self.device)
                 batch_uin_acs_text_feat_input_ids = batch['uin'].text_feat_input_ids.to(self.device)

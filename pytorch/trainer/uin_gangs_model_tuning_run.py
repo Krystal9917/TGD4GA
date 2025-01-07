@@ -87,12 +87,12 @@ class ArgsUinGangs:
         parser.add_argument('--data_tag', type=str, default='order_1930_', choices=['', '1921_', '1930_', 'order_1930_'])
         parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2'])
         parser.add_argument('--eval_epoch', type=int, default=20)
-        parser.add_argument('--evaluate_task', type=str, default='subgraph_prompt_tuning',
+        parser.add_argument('--evaluate_task', type=str, default='node_classification',
                             choices=['node_classification', 'subgraph', 'subgraph_prompt_tuning'])
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT'])
         parser.add_argument('--is_supervised', type=bool, default=False)
         parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
-        parser.add_argument('--prompt_insertion_type', type=str, default='multiply_adj',
+        parser.add_argument('--prompt_insertion_type', type=str, default=None,
                             choices=[None, 'add_prompt', 'add_subgraph', 'concat_prompt', 'concat_subgraph',
                                      'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
                                      'concat_subgraph_proj_prompt', 'node_subtract_subgraph',
