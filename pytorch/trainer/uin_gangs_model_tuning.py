@@ -593,7 +593,8 @@ class UinGangsModelTuning:
                             batch_h = torch.concat([batch_h, mlp_adj], dim=1)
                         elif self.prompt_type == 'multiply_adj':
                             batch_adj = self.construct_full_adj(batch)
-                            batch_h = torch.mul(batch_adj, batch_h)
+                            batch_adj = torch.nn.functional.normalize(batch_adj, dim=0)
+                            batch_h = torch.mm(batch_adj, batch_h)
                         elif self.prompt_type == 'node_subtract_subgraph':
                             if self.eval_dict["is_weighted_subgraph"]:
                                 exp_score = torch.exp(batch['uin'].score)
@@ -716,7 +717,8 @@ class UinGangsModelTuning:
                             batch_h = torch.concat([batch_h, mlp_adj], dim=1)
                         elif self.prompt_type == 'multiply_adj':
                             batch_adj = self.construct_full_adj(batch)
-                            batch_h = torch.mul(batch_adj, batch_h)
+                            batch_adj = torch.nn.functional.normalize(batch_adj, dim=0)
+                            batch_h = torch.mm(batch_adj, batch_h)
                         elif self.prompt_type == 'node_subtract_subgraph':
                             if self.eval_dict["is_weighted_subgraph"]:
                                 exp_score = torch.exp(batch['uin'].score)
