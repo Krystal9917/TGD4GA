@@ -92,13 +92,13 @@ class ArgsUinGangs:
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT'])
         parser.add_argument('--is_supervised', type=bool, default=False)
         parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
-        parser.add_argument('--prompt_insertion_type', type=str, default='concat_adj',
+        parser.add_argument('--prompt_insertion_type', type=str, default='multiply_adj',
                             choices=[None, 'add_prompt', 'add_subgraph', 'concat_prompt', 'concat_subgraph',
                                      'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
                                      'concat_subgraph_proj_prompt', 'node_subtract_subgraph',
                                      'linear_concat_subgraph_concat_prompt', 'concat_adj', 'multiply_adj'])
         parser.add_argument('--test_times', type=int, default=5)
-        parser.add_argument('--upgrade_adj', type=bool, default=True)
+        parser.add_argument('--upgrade_adj', type=bool, default=False)
 
         args = parser.parse_args()
         args_dict = vars(args)
