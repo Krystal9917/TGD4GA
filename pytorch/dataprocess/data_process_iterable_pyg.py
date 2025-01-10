@@ -239,6 +239,8 @@ class UinGangsDataIterablePyG(IterableDataset):
                             continue
                         else:
                             graph_data['uin'].gang_mem[nodeid] = 1
+                uin_map = dict(sorted(graph_schema['nodeid2uin_map'].items(), key=lambda x: int(x[0])))
+                graph_data['uin'].nodeid2uin_map = list(uin_map.values())
             else:
                 graph_data = None
         else:

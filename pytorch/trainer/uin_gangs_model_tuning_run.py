@@ -2,10 +2,12 @@ import os
 import sys
 import logging
 import argparse
+
 logger = logging.getLogger("my_logger")
 sys.path.append(os.path.abspath(
     os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir)))
 from mmgog_long_term_sequence_model.pytorch.trainer.uin_gangs_model_tuning import UinGangsModelTuning
+
 
 class ArgsUinGangs:
     def __init__(self):
@@ -60,7 +62,7 @@ class ArgsUinGangs:
         parser.add_argument('--batch_size', type=int, default=40)
         parser.add_argument('--data_buffer_size', type=int, default=40)
         parser.add_argument('--lr', type=float, default=0.001)
-        parser.add_argument('--n_epochs', type=int, default=30)
+        parser.add_argument('--n_epochs', type=int, default=50)
         parser.add_argument('--uin_in_size', type=int, default=846)
         parser.add_argument('--uin_acs_numberical_feat_dim', type=int, default=290)
         parser.add_argument('--uin_acs_text_feat_dim', type=int, default=256)
@@ -84,21 +86,25 @@ class ArgsUinGangs:
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--is_debug', type=bool, default=False)
-        parser.add_argument('--data_tag', type=str, default='order_1930_', choices=['', '1921_', '1930_', 'order_1930_'])
+        parser.add_argument('--data_tag', type=str, default='order_1930_',
+                            choices=['', '1921_', '1930_', 'order_1930_'])
         parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2'])
         parser.add_argument('--eval_epoch', type=int, default=20)
-        parser.add_argument('--evaluate_task', type=str, default='node_classification',
-                            choices=['node_classification', 'subgraph', 'subgraph_prompt_tuning'])
+        parser.add_argument('--evaluate_task', type=str, default='subgraph_gang_detection',
+                            choices=['node_classification', 'subgraph',
+                                     'subgraph_gang_detection', 'subgraph_prompt_tuning',
+                                     'inference_gang_members'])
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT'])
         parser.add_argument('--is_supervised', type=bool, default=False)
         parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
         parser.add_argument('--prompt_insertion_type', type=str, default=None,
-                            choices=[None, 'add_prompt', 'add_subgraph', 'concat_prompt', 'concat_subgraph',
-                                     'concat_subgraph_prompt', 'concat_subgraph_plus_prompt',
-                                     'concat_subgraph_proj_prompt', 'node_subtract_subgraph',
-                                     'linear_concat_subgraph_concat_prompt', 'concat_adj', 'multiply_adj'])
+                            choices=[None, 'add_subgraph', 'concat_subgraph', 'concat_prompt',
+                                     'concat_subgraph_prompt'])
+        parser.add_argument('--info_insertion_type', type=str, default='subgraph_attn',
+                            choices=[None, 'concat_subgraph', 'diff_subgraph', 'concat_prompt',
+                                     'node_attn', 'subgraph_attn'])
+        parser.add_argument('--threshold', type=float, default=0.5)
         parser.add_argument('--test_times', type=int, default=5)
-        parser.add_argument('--upgrade_adj', type=bool, default=False)
 
         args = parser.parse_args()
         args_dict = vars(args)
@@ -112,8 +118,8 @@ if __name__ == '__main__':
         tuning_model = UinGangsModelTuning(args.args_dict)
         print("======Labelled Node Classification Evaluation======")
         tuning_model.evaluate_node_classification()
-    elif args.args_dict["evaluate_task"] == 'subgraph':
-        print("======Labelled Subgraph Label Evaluation======")
+    elif args.args_dict["evaluate_task"] in ['subgraph', 'subgraph_gang_detection']:
+        print(f"======Labelled {args.args_dict['evaluate_task']} Evaluation======")
         times_list = ['1st', '2nd', '3rd', '4th', '5th']
         ave_acc = 0
         ave_pre = 0
@@ -124,7 +130,10 @@ if __name__ == '__main__':
         for i in range(args.args_dict["test_times"]):
             tuning_model = UinGangsModelTuning(args.args_dict)
             print(f"*****Start {times_list[i]} Time Testing*****")
-            test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm = tuning_model.evaluate_labelled_subgraph_predict()
+            if args.args_dict["evaluate_task"] == 'subgraph':
+                test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm = tuning_model.evaluate_labelled_subgraph_predict()
+            else:
+                test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm = tuning_model.detect_subgraph_gang_members()
             ave_acc += test_acc
             ave_pre += test_pre
             ave_rec += test_rec
@@ -169,3 +178,7 @@ if __name__ == '__main__':
               f"Confusion Matrix: {ave_cfm / len(times_list)}, "
               f"Jaccard Coefficient: {ave_jac / len(times_list): .4f}"
               )
+    elif args.args_dict["evaluate_task"] == 'inference_gang_members':
+        print(f"*****Start Inference*****")
+        tuning_model = UinGangsModelTuning(args.args_dict)
+        tuning_model.inference_gang_members()
