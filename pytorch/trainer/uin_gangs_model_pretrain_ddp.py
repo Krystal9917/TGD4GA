@@ -41,6 +41,7 @@ class UinGangsModelPreTrainDDP:
         self.minirbt_model.to(self.device)
 
         self.conv_type = args_dict["conv_type"]
+        self.task_type = args_dict["task_type"]
         if self.conv_type == 'RGCN':
             self.model = RGCN(input_dim=args_dict['input_dim'],
                               hidden_dim=args_dict['hidden_dim'],
@@ -152,6 +153,23 @@ class UinGangsModelPreTrainDDP:
         else:
             loss = pos_sim / (sim_matrix.sum(dim=1) + 1e-4)
             loss = -torch.log(loss).mean()
+        return loss
+
+    def node_contrastive_loss(self, h1, h2):
+        t = self.train_dict["temperature"]
+        if len(h1.shape) == 1:
+            h1 = h1.unsqueeze(0)
+        if len(h2.shape) == 1:
+            h2 = h2.unsqueeze(0)
+        h1_abs = h1.norm(dim=1)
+        h2_abs = h2.norm(dim=1)
+        pos_matrix = torch.einsum('ij,jk->ik', h1, h1.T) / torch.einsum('i,j->ij', h1_abs, h1_abs)
+        pos_matrix = pos_matrix - torch.eye(pos_matrix.shape[0], device=self.device)
+        pos_matrix = torch.exp(pos_matrix / t)
+        neg_matrix = torch.einsum('ij,jk->ik', h1, h2.T) / torch.einsum('i,j->ij', h1_abs, h2_abs)
+        neg_matrix = torch.exp(neg_matrix / t)
+        loss = pos_matrix.sum(dim=1) / (pos_matrix.sum(dim=1) + neg_matrix.sum(dim=1) + 1e-4)
+        loss = -torch.log(loss).mean()
         return loss
 
     def get_edge_info(self, batch):
@@ -307,6 +325,13 @@ class UinGangsModelPreTrainDDP:
                 int_flag = type(pos_batch_idx) is int
                 # subgraph generated from fraudar (the index of initial graphs)
                 if list_flag or int_flag:
+                    # node-level contrastive learning (only labelled nodes)
+                    normal_node_idx = (pos_batch['uin'].y < 2).nonzero().squeeze().detach().cpu().tolist()
+                    abnormal_node_idx = (pos_batch['uin'].y >= 2).nonzero().squeeze().detach().cpu().tolist()
+                    normal_h = batch_h[normal_node_idx]
+                    abnormal_h = batch_h[abnormal_node_idx]
+                    node_loss = self.node_contrastive_loss(abnormal_h, normal_h)
+
                     fraudar_batch = self.extract_batch_subgraphs(pos_batch)
                     fraudar_batch = fraudar_batch.to(self.device)
 
@@ -329,9 +354,10 @@ class UinGangsModelPreTrainDDP:
                             neg_batch_h_g = batch_h_g
 
                         # subgraph-level contrastive learning
-                        loss = self.preference_contrastive_loss(fraudar_batch_h_g, pos_batch_h_g, neg_batch_h_g)
+                        subgraph_loss = self.preference_contrastive_loss(fraudar_batch_h_g, pos_batch_h_g, neg_batch_h_g)
                     else:
-                        loss = torch.tensor(torch.nan).to(self.device)
+                        subgraph_loss = torch.tensor(torch.nan).to(self.device)
+                    loss = node_loss + subgraph_loss
                     if not torch.isnan(loss):
                         loss.backward()
                         self.optimizer.step()
@@ -339,28 +365,31 @@ class UinGangsModelPreTrainDDP:
                         epoch_loss.append(loss_value)
                         if (i + 1) % 50 == 0:
                             print(
-                                "Rank: {}, Batch: {}, Loss: {:.6f}, Time: {:.4f} s".format(
+                                "Rank: {}, Batch: {}, Loss: {:.6f}, "
+                                "Node Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
                                     self.rank,
                                     i + 1,
                                     loss_value,
+                                    node_loss.detach().cpu().item(),
+                                    subgraph_loss.detach().cpu().item(),
                                     time.time() - start_time))
 
                     torch.cuda.empty_cache()
             epoch_loss = sum(epoch_loss) / len(epoch_loss)
             if self.rank == 0:
-                self.writer.add_scalar(f'{self.conv_type}_pretraining_loss', epoch_loss, epoch)
+                self.writer.add_scalar(f'{self.conv_type}_{self.task_type}_pretraining_loss', epoch_loss, epoch)
             print("Rank Id: {}, Epoch: {}, Loss: {:.4f}, Time: {:.4f} s".format(self.rank, epoch, epoch_loss,
                                                                                 time.time() - epoch_start_time))
             if epoch_loss < self.best_loss and self.rank == 0:
                 self.best_loss = epoch_loss
-                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
+                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
                 epoch_file_name = os.path.join(self.save_model_path,
-                                               f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
+                                               f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
             if epoch % 5 == 0 and self.rank == 0:
-                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
+                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), file_name)
                 print(f"Save model to {file_name}")
         if self.rank == 0:

@@ -61,13 +61,14 @@ class ArgsUinGangs:
         parser.add_argument('--temperature', type=int, default=1)
         parser.add_argument('--input_dim', type=int, default=846)
         parser.add_argument('--hidden_dim', type=int, default=1024)
-        parser.add_argument('--output_dim', type=int, default=1024)
-        parser.add_argument('--filter_node_num', type=int, default=3)
+        parser.add_argument('--output_dim', type=int, default=846)
+        parser.add_argument('--filter_node_num', type=int, default=5)
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--conv_type', type=str, default='HGT', choices=['RGCN', 'HAN', 'HGT'])
+        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN', 'HGT'])
+        parser.add_argument('--task_type', type=str, default='node_subgraph', choices=['subgraph', 'node_subgraph'])
         # RGCN
         parser.add_argument('--num_relations', type=int, default=10)
         # HAN/HGT
