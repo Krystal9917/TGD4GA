@@ -373,9 +373,11 @@ class UinGangsModelPreTrainDDP:
                         loss = node_loss + subgraph_loss
                     elif self.task_type == 'batch_subgraph':
                         # batch-level contrastive learning (high possibility subgraphs inside)
-                        batch_pos_neg_samples_idx = torch.concat(
-                            [(pos_batch['uin'].batch == i).nonzero().squeeze().detach().cpu() for i in pos_batch_idx],
-                            dim=0).tolist()
+                        if list_flag:
+                            batch_pos_neg_samples_idx = torch.concat(
+                                [(pos_batch['uin'].batch == i).nonzero().squeeze().detach().cpu() for i in pos_batch_idx], dim=0).tolist()
+                        else:
+                            batch_pos_neg_samples_idx = (pos_batch['uin'].batch == pos_batch_idx).nonzero().squeeze().detach().cpu().tolist()
                         pos_samples_idx = (pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()
                         batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
                         batch_pos_samples_idx_batch = pos_batch['uin'].batch[batch_pos_samples_idx]
