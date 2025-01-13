@@ -68,15 +68,23 @@ class UinGangsModelTuning:
         sampling_type = self.eval_dict["sampling"]
         self.data_tag = self.eval_dict["data_tag"]
         self.device_tag = self.eval_dict["device_tag"]
+        self.task_type = self.eval_dict["task_type"]
         self.save_model_path = os.path.join(self.eval_dict["model_states_path"],
                                             f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}{self.device_tag}")
         if not self.eval_dict["is_supervised"]:
             if self.eval_dict["eval_epoch"] != 0:
                 epoch_num = self.eval_dict["eval_epoch"]
-                file_name = os.path.join(self.save_model_path,
-                                         f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
+                if self.task_type == 'subgraph':
+                    file_name = os.path.join(self.save_model_path,
+                                             f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
+                else:
+                    file_name = os.path.join(self.save_model_path,
+                                             f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch_num}.pth")
             else:
-                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
+                if self.task_type == 'subgraph':
+                    file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
+                else:
+                    file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
             model_weight = torch.load(file_name, map_location=self.device)
             if self.device_tag == '_GPU2':
                 rename_key_model_weight = OrderedDict()
@@ -121,7 +129,8 @@ class UinGangsModelTuning:
                                                collate_fn=self.eval_data.collate_fn)
             self.info_type = self.eval_dict["info_insertion_type"]
             params = []
-            self.is_prompt = True if self.eval_dict["info_insertion_type"] in ['concat_prompt', 'concat_diff_prompt'] else False
+            self.is_prompt = True if self.eval_dict["info_insertion_type"] in ['concat_prompt',
+                                                                               'concat_diff_prompt'] else False
             if self.is_prompt:
                 self.initial_data = UinGangsDataIterablePyG(self.eval_dict,
                                                             self.eval_dict["prompt_initial_data_path"],
@@ -472,7 +481,8 @@ class UinGangsModelTuning:
         a = w.sum(dim=1)
         alpha = torch.zeros_like(a, device=self.device)
         for i in range(len(index_ptr) - 1):
-            alpha[index_ptr[i]: index_ptr[i + 1]] = torch.nn.functional.normalize(a[index_ptr[i]: index_ptr[i + 1]], dim=0).softmax(dim=-1)
+            alpha[index_ptr[i]: index_ptr[i + 1]] = torch.nn.functional.normalize(a[index_ptr[i]: index_ptr[i + 1]],
+                                                                                  dim=0).softmax(dim=-1)
         return alpha
 
     def detect_subgraph_gang_members(self):
@@ -529,7 +539,8 @@ class UinGangsModelTuning:
                     elif self.info_type == 'diff_subgraph':
                         batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                         expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                        batch_h = torch.exp(-(expand_batch_h_g - batch_h).abs() / torch.sqrt(torch.tensor(batch_h.shape[1], device=self.device)))
+                        batch_h = torch.exp(-(expand_batch_h_g - batch_h).abs() / torch.sqrt(
+                            torch.tensor(batch_h.shape[1], device=self.device)))
                     elif self.info_type == 'concat_prompt':
                         batch_h = torch.concat([batch_h, self.prompt.repeat(batch_h.shape[0], 1)], dim=1)
                     pred_y = self.classifier(batch_h)
@@ -596,7 +607,8 @@ class UinGangsModelTuning:
                         elif self.info_type == 'subgraph_attn':
                             batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                            subgraph_attn = self.compute_subgraph_cross_attn(batch_h, expand_batch_h_g, batch['uin'].ptr)
+                            subgraph_attn = self.compute_subgraph_cross_attn(batch_h, expand_batch_h_g,
+                                                                             batch['uin'].ptr)
                             weighted_subgraph = torch.mul(subgraph_attn.unsqueeze(1), expand_batch_h_g)
                             batch_h = torch.concat([batch_h, weighted_subgraph], dim=1)
                         elif self.info_type == 'concat_subgraph':
@@ -606,7 +618,8 @@ class UinGangsModelTuning:
                         elif self.info_type == 'diff_subgraph':
                             batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                            batch_h = torch.exp(-(expand_batch_h_g - batch_h).abs() / torch.sqrt(torch.tensor(batch_h.shape[1], device=self.device)))
+                            batch_h = torch.exp(-(expand_batch_h_g - batch_h).abs() / torch.sqrt(
+                                torch.tensor(batch_h.shape[1], device=self.device)))
                         elif self.info_type == 'concat_prompt':
                             batch_h = torch.concat([batch_h, self.prompt.repeat(batch_h.shape[0], 1)], dim=1)
                         pred_gang_member = self.classifier(batch_h).argmax(dim=1)
@@ -909,7 +922,8 @@ class UinGangsModelTuning:
                     batch_y = batch['uin'].gang_mem
                     true_y = batch_y.detach().cpu()
                     pred_y = pred_y.detach().cpu()
-                    jaccard_coefficient, true_idx, pred_idx = self.jaccard_batch(true_y.int(), pred_y, batch['uin'].batch)
+                    jaccard_coefficient, true_idx, pred_idx = self.jaccard_batch(true_y.int(), pred_y,
+                                                                                 batch['uin'].batch)
                     jaccard_list.extend(jaccard_coefficient)
                     true_idx_list.extend(true_idx)
                     pred_idx_list.extend(pred_idx)
