@@ -335,33 +335,6 @@ class UinGangsModelPreTrainDDP:
                 int_flag = type(pos_batch_idx) is int
                 # subgraph generated from fraudar (the index of initial graphs)
                 if list_flag or int_flag:
-                    # node-level contrastive learning (only labelled nodes)
-                    if self.task_type == 'node_subgraph':
-                        normal_node_graph_idx = (pos_batch['uin'].y < 2).nonzero().squeeze().detach().cpu().tolist()
-                        abnormal_node_graph_idx = (pos_batch['uin'].y >= 2).nonzero().squeeze().detach().cpu().tolist()
-                        normal_node_idx = pos_batch['uin'].ptr[:-1][normal_node_graph_idx].detach().cpu().tolist()
-                        abnormal_node_idx = pos_batch['uin'].ptr[:-1][abnormal_node_graph_idx].detach().cpu().tolist()
-                        normal_h = batch_h[normal_node_idx]
-                        abnormal_h = batch_h[abnormal_node_idx]
-                        node_loss = self.node_contrastive_loss(abnormal_h, normal_h)
-                    elif self.task_type == 'batch_subgraph':
-                        # batch-level contrastive learning (high possibility subgraphs inside)
-                        batch_pos_neg_samples_idx = torch.concat(
-                            [(pos_batch['uin'].batch == i).nonzero().squeeze().detach().cpu() for i in pos_batch_idx],
-                            dim=0).tolist()
-                        pos_samples_idx = (pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()
-                        batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
-                        batch_pos_samples_idx_batch = pos_batch['uin'].batch[batch_pos_samples_idx]
-
-                        batch_neg_samples_idx = list(set(batch_pos_neg_samples_idx) - set(pos_samples_idx))
-                        batch_neg_samples_idx_batch = pos_batch['uin'].batch[batch_neg_samples_idx]
-
-                        batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
-                                                                 batch_h[batch_neg_samples_idx],
-                                                                 batch_pos_samples_idx_batch,
-                                                                 batch_neg_samples_idx_batch)
-
-
                     fraudar_batch = self.extract_batch_subgraphs(pos_batch)
                     fraudar_batch = fraudar_batch.to(self.device)
 
@@ -384,28 +357,73 @@ class UinGangsModelPreTrainDDP:
                             neg_batch_h_g = batch_h_g
 
                         # subgraph-level contrastive learning
-                        subgraph_loss = self.preference_contrastive_loss(fraudar_batch_h_g, pos_batch_h_g, neg_batch_h_g)
+                        subgraph_loss = self.preference_contrastive_loss(fraudar_batch_h_g, pos_batch_h_g,
+                                                                         neg_batch_h_g)
                     else:
                         subgraph_loss = torch.tensor(torch.nan).to(self.device)
                     if self.task_type == 'node_subgraph':
+                        # node-level contrastive learning (only labelled nodes)
+                        normal_node_graph_idx = (pos_batch['uin'].y < 2).nonzero().squeeze().detach().cpu().tolist()
+                        abnormal_node_graph_idx = (pos_batch['uin'].y >= 2).nonzero().squeeze().detach().cpu().tolist()
+                        normal_node_idx = pos_batch['uin'].ptr[:-1][normal_node_graph_idx].detach().cpu().tolist()
+                        abnormal_node_idx = pos_batch['uin'].ptr[:-1][abnormal_node_graph_idx].detach().cpu().tolist()
+                        normal_h = batch_h[normal_node_idx]
+                        abnormal_h = batch_h[abnormal_node_idx]
+                        node_loss = self.node_contrastive_loss(abnormal_h, normal_h)
                         loss = node_loss + subgraph_loss
                     elif self.task_type == 'batch_subgraph':
+                        # batch-level contrastive learning (high possibility subgraphs inside)
+                        batch_pos_neg_samples_idx = torch.concat(
+                            [(pos_batch['uin'].batch == i).nonzero().squeeze().detach().cpu() for i in pos_batch_idx],
+                            dim=0).tolist()
+                        pos_samples_idx = (pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()
+                        batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
+                        batch_pos_samples_idx_batch = pos_batch['uin'].batch[batch_pos_samples_idx]
+
+                        batch_neg_samples_idx = list(set(batch_pos_neg_samples_idx) - set(pos_samples_idx))
+                        batch_neg_samples_idx_batch = pos_batch['uin'].batch[batch_neg_samples_idx]
+
+                        batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
+                                                                 batch_h[batch_neg_samples_idx],
+                                                                 batch_pos_samples_idx_batch,
+                                                                 batch_neg_samples_idx_batch)
                         loss = batch_loss + subgraph_loss
+                    else:
+                        loss = subgraph_loss
                     if not torch.isnan(loss):
                         loss.backward()
                         self.optimizer.step()
                         loss_value = loss.detach().cpu().item()
                         epoch_loss.append(loss_value)
                         if (i + 1) % 50 == 0:
-                            print(
-                                "Rank: {}, Batch: {}, Loss: {:.6f}, "
-                                "Node Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
-                                    self.rank,
-                                    i + 1,
-                                    loss_value,
-                                    node_loss.detach().cpu().item(),
-                                    subgraph_loss.detach().cpu().item(),
-                                    time.time() - start_time))
+                            if self.task_type == 'node_subgraph':
+                                print(
+                                    "Rank: {}, Batch: {}, Loss: {:.6f}, "
+                                    "Node Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
+                                        self.rank,
+                                        i + 1,
+                                        loss_value,
+                                        node_loss.detach().cpu().item(),
+                                        subgraph_loss.detach().cpu().item(),
+                                        time.time() - start_time))
+                            elif self.task_type == 'batch_subgraph':
+                                print(
+                                    "Rank: {}, Batch: {}, Loss: {:.6f}, "
+                                    "Batch Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
+                                        self.rank,
+                                        i + 1,
+                                        loss_value,
+                                        batch_loss.detach().cpu().item(),
+                                        subgraph_loss.detach().cpu().item(),
+                                        time.time() - start_time))
+                            else:
+                                print(
+                                    "Rank: {}, Batch: {}, Loss: {:.6f}, "
+                                    "Time: {:.4f} s".format(
+                                        self.rank,
+                                        i + 1,
+                                        loss_value,
+                                        time.time() - start_time))
 
                     torch.cuda.empty_cache()
             epoch_loss = sum(epoch_loss) / len(epoch_loss)
@@ -415,14 +433,16 @@ class UinGangsModelPreTrainDDP:
                                                                                 time.time() - epoch_start_time))
             if epoch_loss < self.best_loss and self.rank == 0:
                 self.best_loss = epoch_loss
-                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
+                file_name = os.path.join(self.save_model_path,
+                                         f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
                 epoch_file_name = os.path.join(self.save_model_path,
                                                f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
             if epoch % 5 == 0 and self.rank == 0:
-                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch}.pth")
+                file_name = os.path.join(self.save_model_path,
+                                         f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), file_name)
                 print(f"Save model to {file_name}")
         if self.rank == 0:
