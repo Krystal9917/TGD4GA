@@ -73,9 +73,9 @@ class ArgsUinGangs:
         parser.add_argument('--num_relations', type=int, default=10)
         # HAN/HGT
         parser.add_argument('--num_heads', type=int, default=4)
-        parser.add_argument('--world_size', type=int, default=2)
+        parser.add_argument('--world_size', type=int, default=4)
         parser.add_argument('--data_tag', type=str, default='order_1930_', choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2'])
+        parser.add_argument('--device_tag', type=str, default='_GPU4', choices=['', '_GPU4'])
 
         args = parser.parse_args()
         args_dict = vars(args)

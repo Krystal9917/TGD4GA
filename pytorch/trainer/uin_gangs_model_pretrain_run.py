@@ -67,6 +67,7 @@ class ArgsUinGangs:
         parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN',
                                                                              'Score_based_HAN', 'GT', 'HGT'])
+        parser.add_argument('--task_type', type=str, default='batch_subgraph', choices=['subgraph', 'node_subgraph', 'batch_subgraph'])
         # RGCN
         parser.add_argument('--num_relations', type=int, default=10)
         # HAN/GT/HGT
