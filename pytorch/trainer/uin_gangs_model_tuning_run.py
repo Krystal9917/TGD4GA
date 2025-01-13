@@ -95,12 +95,13 @@ class ArgsUinGangs:
                                      'subgraph_gang_detection', 'subgraph_prompt_tuning',
                                      'inference_gang_members'])
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT'])
+        parser.add_argument('--task_type', type=str, default='node_subgraph', choices=['subgraph', 'node_subgraph'])
         parser.add_argument('--is_supervised', type=bool, default=False)
         parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
         parser.add_argument('--prompt_insertion_type', type=str, default=None,
                             choices=[None, 'add_subgraph', 'concat_subgraph', 'concat_prompt',
                                      'concat_subgraph_prompt'])
-        parser.add_argument('--info_insertion_type', type=str, default='subgraph_attn',
+        parser.add_argument('--info_insertion_type', type=str, default=None,
                             choices=[None, 'concat_subgraph', 'diff_subgraph', 'concat_prompt',
                                      'node_attn', 'subgraph_attn'])
         parser.add_argument('--threshold', type=float, default=0.5)
