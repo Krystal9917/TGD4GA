@@ -39,6 +39,7 @@ class UinGangsModelPreTrain:
         self.minirbt_model.to(self.device)
         # Initialize GNN Model for Graph
         self.conv_type = args_dict["conv_type"]
+        self.task_type = args_dict["task_type"]
         if self.conv_type == 'RGCN':
             self.model = RGCN(input_dim=args_dict['input_dim'],
                               hidden_dim=args_dict['hidden_dim'],
@@ -408,6 +409,23 @@ class UinGangsModelPreTrain:
                         fraudar_batch_h = self.homo_fit(fraudar_batch, fraudar_batch['uin'].x)
 
                     if fraudar_batch_h is not None:
+                        fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
+                        fraudar_batch_h_g = fraudar_batch_h_g[pos_batch_idx]
+
+                        # readout for subgraph
+                        pos_batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
+                        pos_batch_h_g = pos_batch_h_g[pos_batch_idx]
+
+                        if (type(neg_batch_idx) is list and len(neg_batch_idx) != 0) or type(neg_batch_idx) is int:
+                            neg_batch_h_g = batch_h_g[neg_batch_idx]
+                        else:
+                            neg_batch_h_g = batch_h_g
+
+                        # subgraph-level contrastive learning
+                        subgraph_loss = self.preference_contrastive_loss(fraudar_batch_h_g, pos_batch_h_g, neg_batch_h_g)
+                    else:
+                        subgraph_loss = torch.tensor(torch.nan).to(self.device)
+                    if self.task_type == 'node_subgraph':
                         # node-level contrastive learning (only labelled nodes)
                         normal_node_graph_idx = (pos_batch['uin'].y < 2).nonzero().squeeze().detach().cpu().tolist()
                         abnormal_node_graph_idx = (pos_batch['uin'].y >= 2).nonzero().squeeze().detach().cpu().tolist()
@@ -416,9 +434,12 @@ class UinGangsModelPreTrain:
                         normal_h = batch_h[normal_node_idx]
                         abnormal_h = batch_h[abnormal_node_idx]
                         node_loss = self.node_contrastive_loss(abnormal_h, normal_h)
-
+                        loss = node_loss + subgraph_loss
+                    elif self.task_type == 'batch_subgraph':
                         # batch-level contrastive learning (high possibility subgraphs inside)
-                        batch_pos_neg_samples_idx = torch.concat([(pos_batch['uin'].batch == i).nonzero().squeeze().detach().cpu() for i in pos_batch_idx], dim=0).tolist()
+                        batch_pos_neg_samples_idx = torch.concat(
+                            [(pos_batch['uin'].batch == i).nonzero().squeeze().detach().cpu() for i in pos_batch_idx],
+                            dim=0).tolist()
                         pos_samples_idx = (pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()
                         batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
                         batch_pos_samples_idx_batch = pos_batch['uin'].batch[batch_pos_samples_idx]
@@ -426,66 +447,13 @@ class UinGangsModelPreTrain:
                         batch_neg_samples_idx = list(set(batch_pos_neg_samples_idx) - set(pos_samples_idx))
                         batch_neg_samples_idx_batch = pos_batch['uin'].batch[batch_neg_samples_idx]
 
-                        self.batch_contrastive_loss(batch_h[batch_pos_samples_idx], batch_h[batch_neg_samples_idx],
-                                                    batch_pos_samples_idx_batch, batch_neg_samples_idx_batch)
-
-
-                        fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
-                        fraudar_batch_h_g = fraudar_batch_h_g[pos_batch_idx]
-
-                        # pos_batch_node_idx = (pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()
-                        # pos_batch_h = batch_h[pos_batch_node_idx]
-                        # pos_batch_h_mask = pos_batch['uin'].batch[pos_batch_node_idx]
-
-                        # readout for subgraph
-                        pos_batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
-                        # pos_batch_h_g = scatter_mean(pos_batch_h, pos_batch_h_mask, dim=0)
-                        pos_batch_h_g = pos_batch_h_g[pos_batch_idx]
-
-                        if (type(neg_batch_idx) is list and len(neg_batch_idx) != 0) or type(neg_batch_idx) is int:
-                            neg_batch_h_g = batch_h_g[neg_batch_idx]
-                        # if epoch == 1:
-                        #     node_idx_list = []
-                        #     for idx in neg_batch_idx:
-                        #         node_idx = (pos_batch['uin'].batch == idx).nonzero().squeeze().detach().cpu().tolist()
-                        #         node_idx_list.extend(node_idx)
-                        #     num_low_malicious_nodes += len(node_idx_list)
-                        #     normal_batch = self.extract_batch_subgraphs(pos_batch,
-                        #                                                 torch.tensor(node_idx_list).to(self.device))
-                        #     num_low_malicious_edges += normal_batch.num_edges
-                        #     num_low_malicious_graphs += len(neg_batch_idx)
-                        else:
-                            neg_batch_h_g = batch_h_g
-                        # if epoch == 1:
-                        #     num_low_malicious_nodes += pos_batch.num_nodes
-                        #     num_low_malicious_edges += pos_batch.num_edges
-                        #     num_low_malicious_graphs += pos_batch.num_graphs
-
-                        # subgraph-level contrastive learning
-                        loss = self.preference_contrastive_loss(fraudar_batch_h_g, pos_batch_h_g, neg_batch_h_g)
+                        batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
+                                                                 batch_h[batch_neg_samples_idx],
+                                                                 batch_pos_samples_idx_batch,
+                                                                 batch_neg_samples_idx_batch)
+                        loss = batch_loss + subgraph_loss
                     else:
-                        loss = torch.tensor(torch.nan).to(self.device)
-                    # node-level contrastive learning
-                    # fraudar_batch_idx = (pos_batch['uin'].idx == 1).nonzero().squeeze()
-                    # fraudar_batch_mask = pos_batch['uin'].batch[fraudar_batch_idx]
-                    # mask_fraudar_batch_x = pos_batch['uin'].x.clone().requires_grad_(False)
-                    # mask掉被认为是异常的节点，即节点属性被置为全0，边的信息也需要mask
-                    # mask_fraudar_batch_x[fraudar_batch_idx] = 0.0
-                    # mask_fraudar_batch_x.requires_grad_(True)
-                    # exclude_batch_idx = (pos_batch['uin'].idx == 0).nonzero().squeeze()
-                    # 同时边也需要mask掉边
-                    # mask_fraudar_batch = self.extract_batch_subgraphs(pos_batch, exclude_batch_idx)
-                    # mask_fraudar_batch_edge_index, mask_fraudar_batch_edge_types = self.get_edge_info(
-                    #     mask_fraudar_batch)
-                    # mask_fraudar_batch_h = self.model(mask_fraudar_batch_x, mask_fraudar_batch_edge_index,
-                    #                                   mask_fraudar_batch_edge_types)
-                    # exclude_batch_h = mask_fraudar_batch_h[exclude_batch_idx]
-                    # exclude_batch_mask = pos_batch['uin'].batch[exclude_batch_idx]
-                    # fraudar_batch_h = fraudar_batch_h[fraudar_batch_idx]
-                    # compute node-level loss
-                    # node_loss = self.node_level_contrastive_loss(fraudar_batch_h, exclude_batch_h,
-                    #                                              fraudar_batch_mask, exclude_batch_mask)
-                    # loss = self.alpha * subgraph_loss + self.beta * node_loss
+                        loss = subgraph_loss
                     if not torch.isnan(loss):
                         loss.backward()
                         self.optimizer.step()
