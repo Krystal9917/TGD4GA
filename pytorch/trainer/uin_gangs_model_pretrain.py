@@ -167,27 +167,32 @@ class UinGangsModelPreTrain:
             loss = -torch.log(loss).mean()
         return loss
 
-    def node_level_contrastive_loss(self, high_malicious_h, low_malicious_h, high_mask, low_mask):
-        loop_idx = sorted(set(high_mask.tolist()))
-        batch_node_loss = torch.tensor(0.0, requires_grad=True).to(high_malicious_h.device)
+    def node_contrastive_loss(self, h1, h2):
         t = self.train_dict["temperature"]
-        for i in loop_idx:
-            high_h = high_malicious_h[high_mask == i]
-            low_h = low_malicious_h[low_mask == i]
-            # low_h 采样
-            indices = list(range(low_h.shape[0]))
-            random.shuffle(indices)
-            indices = indices[:high_h.shape[0]]
-            low_h = low_h[indices]
-            high_h_norm = high_h.norm(dim=1)
-            low_h_norm = low_h.norm(dim=1)
-            pos_sim = torch.einsum('ik,jk->ij', high_h, high_h) / torch.einsum('i,j->ij', high_h_norm, high_h_norm)
-            pos_loss = torch.exp(pos_sim / t)
-            neg_sim = torch.einsum('ik,jk->ij', high_h, low_h) / torch.einsum('i,j->ij', high_h_norm, low_h_norm)
-            neg_loss = torch.exp(neg_sim / t)
-            node_loss = -torch.log(pos_loss.sum(dim=1) / (pos_loss.sum(dim=1) + neg_loss.sum(dim=1) + 1e-4)).mean()
-            batch_node_loss = batch_node_loss + node_loss
-        return batch_node_loss / len(loop_idx)
+        if len(h1.shape) == 1:
+            h1 = h1.unsqueeze(0)
+        if len(h2.shape) == 1:
+            h2 = h2.unsqueeze(0)
+        h1_abs = h1.norm(dim=1)
+        h2_abs = h2.norm(dim=1)
+        pos_matrix = torch.einsum('ij,jk->ik', h1, h1.T) / torch.einsum('i,j->ij', h1_abs, h1_abs)
+        pos_matrix = pos_matrix - torch.eye(pos_matrix.shape[0], device=self.device)
+        pos_matrix = torch.exp(pos_matrix / t)
+        neg_matrix = torch.einsum('ij,jk->ik', h1, h2.T) / torch.einsum('i,j->ij', h1_abs, h2_abs)
+        neg_matrix = torch.exp(neg_matrix / t)
+        loss = pos_matrix.sum(dim=1) / (pos_matrix.sum(dim=1) + neg_matrix.sum(dim=1) + 1e-4)
+        loss = -torch.log(loss).mean()
+        return loss
+
+    def batch_contrastive_loss(self, pos_h, neg_h, pos_batch, neg_batch):
+        idx_list = pos_batch.unique().detach().cpu().tolist()
+        batch_loss_list = []
+        for i in idx_list:
+            subgraph_pos_h = pos_h[pos_batch == i]
+            subgraph_neg_h = neg_h[neg_batch == i]
+            batch_loss = self.node_contrastive_loss(subgraph_pos_h, subgraph_neg_h)
+            batch_loss_list.append(batch_loss)
+        return torch.stack([item for item in batch_loss_list if not torch.isnan(item)])
 
     def get_edge_info(self, batch):
         edge_index = [batch[edge_type].edge_index for edge_type in list(self.edge_types.keys()) if
@@ -403,6 +408,28 @@ class UinGangsModelPreTrain:
                         fraudar_batch_h = self.homo_fit(fraudar_batch, fraudar_batch['uin'].x)
 
                     if fraudar_batch_h is not None:
+                        # node-level contrastive learning (only labelled nodes)
+                        normal_node_graph_idx = (pos_batch['uin'].y < 2).nonzero().squeeze().detach().cpu().tolist()
+                        abnormal_node_graph_idx = (pos_batch['uin'].y >= 2).nonzero().squeeze().detach().cpu().tolist()
+                        normal_node_idx = pos_batch['uin'].ptr[:-1][normal_node_graph_idx].detach().cpu().tolist()
+                        abnormal_node_idx = pos_batch['uin'].ptr[:-1][abnormal_node_graph_idx].detach().cpu().tolist()
+                        normal_h = batch_h[normal_node_idx]
+                        abnormal_h = batch_h[abnormal_node_idx]
+                        node_loss = self.node_contrastive_loss(abnormal_h, normal_h)
+
+                        # batch-level contrastive learning (high possibility subgraphs inside)
+                        batch_pos_neg_samples_idx = torch.concat([(pos_batch['uin'].batch == i).nonzero().squeeze().detach().cpu() for i in pos_batch_idx], dim=0).tolist()
+                        pos_samples_idx = (pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()
+                        batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
+                        batch_pos_samples_idx_batch = pos_batch['uin'].batch[batch_pos_samples_idx]
+
+                        batch_neg_samples_idx = list(set(batch_pos_neg_samples_idx) - set(pos_samples_idx))
+                        batch_neg_samples_idx_batch = pos_batch['uin'].batch[batch_neg_samples_idx]
+
+                        self.batch_contrastive_loss(batch_h[batch_pos_samples_idx], batch_h[batch_neg_samples_idx],
+                                                    batch_pos_samples_idx_batch, batch_neg_samples_idx_batch)
+
+
                         fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
                         fraudar_batch_h_g = fraudar_batch_h_g[pos_batch_idx]
 
