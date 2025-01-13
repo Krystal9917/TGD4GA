@@ -180,7 +180,7 @@ class UinGangsModelPreTrainDDP:
             subgraph_neg_h = neg_h[neg_batch == i]
             batch_loss = self.node_contrastive_loss(subgraph_pos_h, subgraph_neg_h)
             batch_loss_list.append(batch_loss)
-        return torch.stack([item for item in batch_loss_list if not torch.isnan(item)])
+        return torch.stack([item for item in batch_loss_list if not torch.isnan(item)]).mean()
 
     def get_edge_info(self, batch):
         edge_index = [batch[edge_type].edge_index for edge_type in list(self.edge_types.keys()) if
