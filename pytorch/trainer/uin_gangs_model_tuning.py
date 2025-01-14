@@ -177,9 +177,11 @@ class UinGangsModelTuning:
                                                   torch.nn.Linear(args_dict['hidden_dim'], 2),
                                                   torch.nn.Softmax(dim=1))
             self.classifier.to(self.device)
-            params.append({'params': self.classifier.parameters(), 'lr': 1e-3})
+            params.append({'params': self.classifier.parameters(), 'lr': 1e-4})
             self.cls_optimizer = torch.optim.Adam(params)
-            self.criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor([0.3, 0.7], device=self.device))
+            self.loss_weight = self.eval_dict['loss_weight'].split(' ')
+            self.loss_weight = [float(item) for item in self.loss_weight]
+            self.criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor(self.loss_weight, device=self.device))
         elif self.eval_dict["evaluate_task"] in ['subgraph_prompt_tuning', 'inference_gang_members']:
             self.initial_data = UinGangsDataIterablePyG(self.eval_dict,
                                                         self.eval_dict["prompt_initial_data_path"],
@@ -248,7 +250,9 @@ class UinGangsModelTuning:
             self.classifier.to(self.device)
             params.append({'params': self.classifier.parameters(), 'lr': 1e-3})
             self.cls_optimizer = torch.optim.Adam(params)
-            self.criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor([0.2, 0.6]).to(self.device))
+            self.loss_weight = self.eval_dict['loss_weight'].split(' ')
+            self.loss_weight = [float(item) for item in self.loss_weight]
+            self.criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor(self.loss_weight).to(self.device))
         # Set seed for whole environment
         self.setup_seed()
 
