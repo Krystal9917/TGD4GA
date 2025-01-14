@@ -89,20 +89,20 @@ class ArgsUinGangs:
         parser.add_argument('--data_tag', type=str, default='order_1930_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
         parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2'])
-        parser.add_argument('--eval_epoch', type=int, default=20)
+        parser.add_argument('--eval_epoch', type=int, default=7)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_gang_detection',
                             choices=['node_classification', 'subgraph',
                                      'subgraph_gang_detection', 'subgraph_prompt_tuning',
                                      'inference_gang_members'])
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT'])
-        parser.add_argument('--task_type', type=str, default='subgraph',
+        parser.add_argument('--task_type', type=str, default='batch_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph'])
         parser.add_argument('--is_supervised', type=bool, default=False)
         parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
         parser.add_argument('--prompt_insertion_type', type=str, default=None,
                             choices=[None, 'add_subgraph', 'concat_subgraph', 'concat_prompt',
                                      'concat_subgraph_prompt'])
-        parser.add_argument('--info_insertion_type', type=str, default=None,
+        parser.add_argument('--info_insertion_type', type=str, default='concat_subgraph',
                             choices=[None, 'concat_subgraph', 'diff_subgraph', 'concat_prompt',
                                      'node_attn', 'subgraph_attn'])
         parser.add_argument('--threshold', type=float, default=0.5)
