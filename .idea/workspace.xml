@@ -6,7 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="690ce246-b023-4a0a-8442-769ce35af91d" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning_run.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning_run.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -214,7 +213,7 @@
       <workItem from="1736337985413" duration="14084000" />
       <workItem from="1736405793926" duration="11000" />
       <workItem from="1736405806886" duration="30968000" />
-      <workItem from="1736733787464" duration="37660000" />
+      <workItem from="1736733787464" duration="38203000" />
     </task>
     <servers />
   </component>
