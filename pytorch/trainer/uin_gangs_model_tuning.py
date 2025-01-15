@@ -115,7 +115,7 @@ class UinGangsModelTuning:
                                                   torch.nn.Softmax(dim=1))
             self.classifier.to(self.device)
             self.criterion = torch.nn.CrossEntropyLoss()
-            self.cls_optimizer = torch.optim.Adam(self.classifier.parameters(), lr=5e-3)
+            self.cls_optimizer = torch.optim.Adam(self.classifier.parameters(), lr=self.eval_dict['cls_lr'])
         elif self.eval_dict["evaluate_task"] in ['subgraph', 'subgraph_gang_detection']:
             self.train_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["train_data_path"])
             self.eval_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["test_data_path"])
@@ -129,8 +129,7 @@ class UinGangsModelTuning:
                                                collate_fn=self.eval_data.collate_fn)
             self.info_type = self.eval_dict["info_insertion_type"]
             params = []
-            self.is_prompt = True if self.eval_dict["info_insertion_type"] in ['concat_prompt',
-                                                                               'concat_diff_prompt'] else False
+            self.is_prompt = True if self.eval_dict["info_insertion_type"] in ['concat_prompt'] else False
             if self.is_prompt:
                 self.initial_data = UinGangsDataIterablePyG(self.eval_dict,
                                                             self.eval_dict["prompt_initial_data_path"],
@@ -167,8 +166,8 @@ class UinGangsModelTuning:
                         gang_subgraphs.append(scatter_mean(gang_h, batch_batch, dim=0))
                 gang_subgraph_mean = torch.concat(gang_subgraphs, dim=0).mean(dim=0)
                 self.prompt = torch.nn.Parameter(gang_subgraph_mean, requires_grad=True).to(self.device)
-                params.append({'params': self.prompt, 'lr': 1e-4})
-            if self.info_type in ['concat_subgraph', 'concat_prompt', 'subgraph_attn']:
+                params.append({'params': self.prompt, 'lr': self.eval_dict['prompt_lr']})
+            if self.info_type in ['combine_subgraph']:
                 cls_input = args_dict['output_dim'] * 2
             else:
                 cls_input = args_dict['output_dim']
@@ -177,7 +176,7 @@ class UinGangsModelTuning:
                                                   torch.nn.Linear(args_dict['hidden_dim'], 2),
                                                   torch.nn.Softmax(dim=1))
             self.classifier.to(self.device)
-            params.append({'params': self.classifier.parameters(), 'lr': 1e-4})
+            params.append({'params': self.classifier.parameters(), 'lr': self.eval_dict['cls_lr']})
             self.cls_optimizer = torch.optim.Adam(params)
             self.loss_weight = self.eval_dict['loss_weight'].split(' ')
             self.loss_weight = [float(item) for item in self.loss_weight]
@@ -196,8 +195,8 @@ class UinGangsModelTuning:
                                                   num_workers=2,
                                                   collate_fn=self.initial_data.collate_fn)
             self.tune_loader = Data.DataLoader(self.tune_data,
-                                               batch_size=20,
-                                               num_workers=2,
+                                               batch_size=self.eval_dict["batch_size"],
+                                               num_workers=self.eval_dict["num_workers"],
                                                collate_fn=self.tune_data.collate_fn)
             self.eval_loader = Data.DataLoader(self.eval_data,
                                                batch_size=self.eval_dict["batch_size"],
@@ -236,8 +235,8 @@ class UinGangsModelTuning:
                         gang_subgraphs.append(scatter_mean(gang_h, batch_batch, dim=0))
                 gang_subgraph_mean = torch.concat(gang_subgraphs, dim=0).mean(dim=0)
                 self.prompt = torch.nn.Parameter(gang_subgraph_mean, requires_grad=True).to(self.device)
-                params.append({'params': self.prompt, 'lr': 1e-4})
-            if self.prompt_type in ['concat_prompt', 'concat_subgraph']:
+                params.append({'params': self.prompt, 'lr': self.eval_dict['prompt_lr']})
+            if self.prompt_type in ['concat_subgraph', 'concat_prompt']:
                 cls_input = args_dict['output_dim'] * 2
             elif self.prompt_type == 'concat_subgraph_prompt':
                 cls_input = args_dict['output_dim'] * 3
@@ -248,7 +247,7 @@ class UinGangsModelTuning:
                                                   torch.nn.Linear(args_dict['hidden_dim'], 2),
                                                   torch.nn.Softmax(dim=1))
             self.classifier.to(self.device)
-            params.append({'params': self.classifier.parameters(), 'lr': 1e-3})
+            params.append({'params': self.classifier.parameters(), 'lr': self.eval_dict['cls_lr']})
             self.cls_optimizer = torch.optim.Adam(params)
             self.loss_weight = self.eval_dict['loss_weight'].split(' ')
             self.loss_weight = [float(item) for item in self.loss_weight]
@@ -432,7 +431,7 @@ class UinGangsModelTuning:
                 batch['uin'].x = batch_x
                 if self.conv_type == 'RGCN':
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
-                elif self.conv_type == 'HGT':
+                else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 # get edge information
                 if batch_h is not None:
@@ -521,31 +520,16 @@ class UinGangsModelTuning:
                 batch['uin'].x = batch_x
                 if self.conv_type == 'RGCN':
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
-                elif self.conv_type == 'HGT':
+                else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 # get edge information
                 if batch_h is not None:
                     batch_y = batch['uin'].gang_mem.long()
-                    if self.info_type == 'node_attn':
-                        node_attn = self.compute_attention_weight(batch_h, batch_h, batch['uin'].ptr)
-                        batch_h = batch_h + torch.mm(node_attn, batch_h)
-                    elif self.info_type == 'subgraph_attn':
+                    if self.info_type == 'combine_subgraph':
                         batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                         expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                        subgraph_attn = self.compute_subgraph_cross_attn(batch_h, expand_batch_h_g, batch['uin'].ptr)
-                        weighted_subgraph = torch.mul(subgraph_attn.unsqueeze(1), expand_batch_h_g)
-                        batch_h = torch.concat([batch_h, weighted_subgraph], dim=1)
-                    elif self.info_type == 'concat_subgraph':
-                        batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                        expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                        batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
-                    elif self.info_type == 'diff_subgraph':
-                        batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                        expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                        batch_h = torch.exp(-(expand_batch_h_g - batch_h).abs() / torch.sqrt(
-                            torch.tensor(batch_h.shape[1], device=self.device)))
-                    elif self.info_type == 'concat_prompt':
-                        batch_h = torch.concat([batch_h, self.prompt.repeat(batch_h.shape[0], 1)], dim=1)
+                        diff_h = expand_batch_h_g - batch_h
+                        batch_h = torch.concat([batch_h_g, diff_h], dim=1)
                     pred_y = self.classifier(batch_h)
                     cls_loss = self.criterion(pred_y, batch_y)
                     cls_loss.backward()
@@ -588,7 +572,7 @@ class UinGangsModelTuning:
                 batch['uin'].x = batch_x
                 if self.conv_type == 'RGCN':
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
-                elif self.conv_type == 'HGT':
+                else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 if batch_h is not None:
                     if self.eval_dict["is_weighted_subgraph"]:
@@ -602,27 +586,11 @@ class UinGangsModelTuning:
                     elif task == "detect_gang":
                         batch_y = batch['uin'].gang_label.long()
                         true_gang_member = batch['uin'].gang_mem.int()
-                        if self.info_type == 'node_attn':
-                            node_attn = self.compute_attention_weight(batch_h, batch_h, batch['uin'].ptr)
-                            batch_h = batch_h + torch.mm(node_attn, batch_h)
-                        elif self.info_type == 'subgraph_attn':
+                        if self.info_type == 'combine_subgraph':
                             batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                            subgraph_attn = self.compute_subgraph_cross_attn(batch_h, expand_batch_h_g,
-                                                                             batch['uin'].ptr)
-                            weighted_subgraph = torch.mul(subgraph_attn.unsqueeze(1), expand_batch_h_g)
-                            batch_h = torch.concat([batch_h, weighted_subgraph], dim=1)
-                        elif self.info_type == 'concat_subgraph':
-                            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                            batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
-                        elif self.info_type == 'diff_subgraph':
-                            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                            batch_h = torch.exp(-(expand_batch_h_g - batch_h).abs() / torch.sqrt(
-                                torch.tensor(batch_h.shape[1], device=self.device)))
-                        elif self.info_type == 'concat_prompt':
-                            batch_h = torch.concat([batch_h, self.prompt.repeat(batch_h.shape[0], 1)], dim=1)
+                            diff_h = expand_batch_h_g - batch_h
+                            batch_h = torch.concat([batch_h_g, diff_h], dim=1)
                         pred_gang_member = self.classifier(batch_h).argmax(dim=1)
                         jaccard_coeff, _, _ = self.jaccard_batch(true_gang_member, pred_gang_member, batch['uin'].batch)
                         prob_y = torch.tensor(jaccard_coeff, device=self.device)
@@ -727,7 +695,7 @@ class UinGangsModelTuning:
                 batch['uin'].x = batch_x
                 if self.conv_type == 'RGCN':
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
-                elif self.conv_type == 'HGT':
+                else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 # get edge information
                 if batch_h is not None:
@@ -951,4 +919,4 @@ class UinGangsModelTuning:
                 output_file_dir = '/mnt/cephfs'
             else:
                 output_file_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common'
-            df.to_csv(output_file_dir + '/jiujiuchen/projects/mmgog_long_term_sequence_model/data/batch_subgraph_y.csv', index=False)
+            df.to_csv(output_file_dir + f'/jiujiuchen/projects/mmgog_long_term_sequence_model/data/{self.task_type}_y.csv', index=False)
