@@ -109,6 +109,7 @@ class ArgsUinGangs:
         parser.add_argument('--test_times', type=int, default=5)
         parser.add_argument('--loss_weight', type=str, default='1.0 2.0',
                             choices=['1.0 2.0', '1.0 3.0'])
+        parser.add_argument('--best_test_acc', type=float, default=0.8)
 
         args = parser.parse_args()
         args_dict = vars(args)
