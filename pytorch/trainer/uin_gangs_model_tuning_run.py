@@ -103,13 +103,13 @@ class ArgsUinGangs:
                             choices=[None, 'add_subgraph', 'concat_subgraph', 'concat_prompt',
                                      'concat_subgraph_prompt'])
         parser.add_argument('--prompt_lr', type=float, default=1e-4)
-        parser.add_argument('--info_insertion_type', type=str, default='combine_difference',
-                            choices=[None, 'combine_subgraph', 'combine_difference'])
+        parser.add_argument('--info_insertion_type', type=str, default='add_prompt',
+                            choices=[None, 'combine_subgraph', 'combine_difference', 'add_prompt', 'add_subgraph'])
         parser.add_argument('--threshold', type=float, default=0.5)
         parser.add_argument('--test_times', type=int, default=5)
         parser.add_argument('--loss_weight', type=str, default='1.0 2.0',
                             choices=['1.0 2.0', '1.0 3.0', '1.0 4.0'])
-        parser.add_argument('--cls_lr', type=float, default=3e-4)
+        parser.add_argument('--cls_lr', type=float, default=1e-4)
         parser.add_argument('--best_test_acc', type=float, default=0.8)
 
         args = parser.parse_args()
@@ -132,7 +132,7 @@ if __name__ == '__main__':
         ave_rec = 0
         ave_f1 = 0
         ave_roc_auc = 0
-        ave_cfm = 0
+        ave_cfm = []
         for i in range(args.args_dict["test_times"]):
             tuning_model = UinGangsModelTuning(args.args_dict)
             print(f"*****Start {times_list[i]} Time Testing*****")
@@ -162,7 +162,7 @@ if __name__ == '__main__':
         ave_rec = 0
         ave_f1 = 0
         ave_roc_auc = 0
-        ave_cfm = 0
+        ave_cfm = []
         ave_jac = 0
         for i in range(args.args_dict["test_times"]):
             print(f"*****Start {times_list[i]} Time Tuning*****")
