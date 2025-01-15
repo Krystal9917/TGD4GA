@@ -6,6 +6,8 @@
   <component name="ChangeListManager">
     <list default="true" id="690ce246-b023-4a0a-8442-769ce35af91d" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/new_y.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning_run.py" beforeDir="false" afterPath="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning_run.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -70,7 +72,7 @@
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
+    "settings.editor.selected.configurable": "terminal",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
@@ -123,7 +125,7 @@
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/pytorch/trainer/uin_gangs_model_tuning_run.py" />
-      <option name="PARAMETERS" value="--batch_size 16 --data_buffer 16 --num_workers 4 --evaluate_task subgraph_gang_detection --prompt_tuning_data_path /chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/valid/processed/uin_gangs_supervise_full_graph_dataset_train_241204_20241204.txt --prompt_evaluating_data_path /chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/valid/processed/uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt --task_type batch_subgraph --eval_epoch 7" />
+      <option name="PARAMETERS" value="--batch_size 16 --data_buffer 16 --num_workers 4 --evaluate_task inference_gang_members --prompt_tuning_data_path /chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/valid/processed/uin_gangs_supervise_full_graph_dataset_train_241204_20241204.txt --prompt_evaluating_data_path /chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/valid/processed/uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt --task_type batch_subgraph --eval_epoch 15" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
       <option name="MODULE_MODE" value="false" />
@@ -213,7 +215,7 @@
       <workItem from="1736337985413" duration="14084000" />
       <workItem from="1736405793926" duration="11000" />
       <workItem from="1736405806886" duration="30968000" />
-      <workItem from="1736733787464" duration="43826000" />
+      <workItem from="1736733787464" duration="48769000" />
     </task>
     <servers />
   </component>
@@ -258,7 +260,7 @@
     <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$uin_gangs_model_pretrain.coverage" NAME="uin_gangs_model_pretrain Coverage Results" MODIFIED="1733884672698" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/trainer" />
     <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$test.coverage" NAME="test Coverage Results" MODIFIED="1730966125399" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/models" />
     <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$combine_file__1_.coverage" NAME="combine_file (1) Coverage Results" MODIFIED="1733719859445" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/dataprocess" />
-    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$uin_gangs_model_tuning_run.coverage" NAME="uin_gangs_model_tuning_run Coverage Results" MODIFIED="1736837766373" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/trainer" />
+    <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$uin_gangs_model_tuning_run.coverage" NAME="uin_gangs_model_tuning_run Coverage Results" MODIFIED="1736908193974" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/trainer" />
     <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$heterogeneous_graph_model.coverage" NAME="heterogeneous_graph_model Coverage Results" MODIFIED="1730202563494" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/models" />
     <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$han_model.coverage" NAME="han_model Coverage Results" MODIFIED="1733818080624" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/models" />
     <SUITE FILE_PATH="coverage/mmgog_long_term_sequence_model$test_cora.coverage" NAME="test_cora Coverage Results" MODIFIED="1733318303496" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/pytorch/dataprocess" />

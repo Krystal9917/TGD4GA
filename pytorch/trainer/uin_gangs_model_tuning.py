@@ -553,15 +553,13 @@ class UinGangsModelTuning:
                     self.cls_optimizer.step()
                     epoch_loss.append(cls_loss.detach().cpu().item())
             current_loss = sum(epoch_loss) / len(epoch_loss)
-            if current_loss < best_loss:
-                best_loss = current_loss
-                file_name = self.eval_dict["cls_model_states_path"] + f"{self.info_type}_{self.conv_type}_best_loss.pth" \
-                    if self.info_type is not None else f"{self.conv_type}_best_loss.pth"
-                torch.save(self.classifier.state_dict(), file_name)
-                print(f"Now best loss: {best_loss:.4f}, save model to {file_name}")
             print(f"Epoch {epoch}, Cross entropy loss: {current_loss: .4f}, Time: {time.time() - st: .4f} s")
             test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm = self.evaluate_classifier(task="detect_gang")
             if test_acc > best_test_acc:
+                file_name = f"{self.info_type}_{self.conv_type}_best_acc.pth" if self.info_type is not None else f"{self.conv_type}_best_acc.pth"
+                file_name = self.eval_dict["cls_model_states_path"] + file_name
+                torch.save(self.classifier.state_dict(), file_name)
+                print(f"Now best acc: {test_acc:.4f}, save model to {file_name}")
                 best_test_acc = test_acc
                 best_test_pre = test_pre
                 best_test_rec = test_rec
@@ -894,7 +892,7 @@ class UinGangsModelTuning:
             return acc, pre, rec, f1, roc_auc, cm, jaccard
 
     def inference_gang_members(self):
-        file_name = f"no_prompt_{self.conv_type}_best_loss.pth"
+        file_name = f"{self.conv_type}_best_acc.pth"
         model_weight = torch.load(self.eval_dict['cls_model_states_path'] + file_name, map_location=self.device)
         self.classifier.load_state_dict(model_weight)
         self.classifier.eval()
@@ -954,4 +952,4 @@ class UinGangsModelTuning:
                 output_file_dir = '/mnt/cephfs'
             else:
                 output_file_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common'
-            df.to_csv(output_file_dir + '/jiujiuchen/projects/mmgog_long_term_sequence_model/data/y.csv', index=False)
+            df.to_csv(output_file_dir + '/jiujiuchen/projects/mmgog_long_term_sequence_model/data/batch_subgraph_y.csv', index=False)
