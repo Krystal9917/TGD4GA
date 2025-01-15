@@ -167,7 +167,7 @@ class UinGangsModelTuning:
                 gang_subgraph_mean = torch.concat(gang_subgraphs, dim=0).mean(dim=0)
                 self.prompt = torch.nn.Parameter(gang_subgraph_mean, requires_grad=True).to(self.device)
                 params.append({'params': self.prompt, 'lr': self.eval_dict['prompt_lr']})
-            if self.info_type in ['combine_subgraph']:
+            if self.info_type in ['combine_subgraph', 'combine_difference']:
                 cls_input = args_dict['output_dim'] * 2
             else:
                 cls_input = args_dict['output_dim']
@@ -529,7 +529,12 @@ class UinGangsModelTuning:
                         batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                         expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
                         diff_h = expand_batch_h_g - batch_h
-                        batch_h = torch.concat([batch_h_g, diff_h], dim=1)
+                        batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
+                    elif self.info_type == 'combine_difference':
+                        batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                        expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                        diff_h = expand_batch_h_g - batch_h
+                        batch_h = torch.concat([batch_h, diff_h], dim=1)
                     pred_y = self.classifier(batch_h)
                     cls_loss = self.criterion(pred_y, batch_y)
                     cls_loss.backward()
@@ -590,7 +595,12 @@ class UinGangsModelTuning:
                             batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
                             diff_h = expand_batch_h_g - batch_h
-                            batch_h = torch.concat([batch_h_g, diff_h], dim=1)
+                            batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
+                        elif self.info_type == 'combine_difference':
+                            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                            diff_h = expand_batch_h_g - batch_h
+                            batch_h = torch.concat([batch_h, diff_h], dim=1)
                         pred_gang_member = self.classifier(batch_h).argmax(dim=1)
                         jaccard_coeff, _, _ = self.jaccard_batch(true_gang_member, pred_gang_member, batch['uin'].batch)
                         prob_y = torch.tensor(jaccard_coeff, device=self.device)
@@ -766,8 +776,8 @@ class UinGangsModelTuning:
             y_pred_i_idx = y_pred[subgraph_i_idx]
             y_true_idx = (y_true_i_idx == 1).nonzero().squeeze().detach().cpu().tolist()
             y_pred_idx = (y_pred_i_idx == 1).nonzero().squeeze().detach().cpu().tolist()
-            true_idx_list.append(y_true_idx)
-            pred_idx_list.append(y_pred_idx)
+            true_idx_list.append(str(y_true_idx))
+            pred_idx_list.append(str(y_pred_idx))
             if torch.sum(y_true_i_idx) == 0:
                 y_true_i_idx[:] = 1
                 y_pred_i_idx[y_pred_i_idx == 1] = -1
@@ -859,7 +869,7 @@ class UinGangsModelTuning:
             return acc, pre, rec, f1, roc_auc, cm, jaccard
 
     def inference_gang_members(self):
-        file_name = f"{self.conv_type}_best_acc.pth"
+        file_name = f"{self.prompt_type}_{self.conv_type}_best_acc.pth" if self.prompt_type is not None else f"{self.conv_type}_best_acc.pth"
         model_weight = torch.load(self.eval_dict['cls_model_states_path'] + file_name, map_location=self.device)
         self.classifier.load_state_dict(model_weight)
         self.classifier.eval()
@@ -903,11 +913,11 @@ class UinGangsModelTuning:
                 pred_uin_idx = pred_idx_list[i][1:-1].split(',')
                 uin_map_list = subgraph_uin_list[i]
                 if true_uin_idx != ['']:
-                    true_uin_list.append([uin_map_list[item] for item in true_uin_idx])
+                    true_uin_list.append([uin_map_list[int(item)] for item in true_uin_idx])
                 else:
                     true_uin_list.append([])
                 if pred_uin_idx != ['']:
-                    pred_uin_list.append([uin_map_list[item] for item in pred_uin_idx])
+                    pred_uin_list.append([uin_map_list[int(item)] for item in pred_uin_idx])
                 else:
                     pred_uin_list.append([])
             df = pd.DataFrame(data={'label_gang_mem_list': true_uin_list,
@@ -919,4 +929,4 @@ class UinGangsModelTuning:
                 output_file_dir = '/mnt/cephfs'
             else:
                 output_file_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common'
-            df.to_csv(output_file_dir + f'/jiujiuchen/projects/mmgog_long_term_sequence_model/data/{self.task_type}_y.csv', index=False)
+            df.to_csv(output_file_dir + f'/jiujiuchen/projects/mmgog_long_term_sequence_model/data/{self.conv_type}_y.csv', index=False)
