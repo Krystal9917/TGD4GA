@@ -129,7 +129,7 @@ class UinGangsModelTuning:
                                                collate_fn=self.eval_data.collate_fn)
             self.info_type = self.eval_dict["info_insertion_type"]
             params = []
-            self.is_prompt = True if self.eval_dict["info_insertion_type"] in ['concat_prompt'] else False
+            self.is_prompt = True if self.eval_dict["info_insertion_type"] in ['add_prompt'] else False
             if self.is_prompt:
                 self.initial_data = UinGangsDataIterablePyG(self.eval_dict,
                                                             self.eval_dict["prompt_initial_data_path"],
@@ -152,18 +152,9 @@ class UinGangsModelTuning:
                     gang_batch = self.extract_batch_subgraphs(batch, subgraph_node_indices=gang_mems)
                     # normalized
                     gang_batch['uin'].x = torch.nn.functional.normalize(gang_batch['uin'].x, dim=1)
-                    if self.conv_type == 'RGCN':
-                        batch_h = self.rgcn_fit(gang_batch, gang_batch['uin'].x)
-                    elif self.conv_type == 'HGT':
-                        batch_h = self.hetero_fit(gang_batch.x_dict, gang_batch.edge_index_dict)
-                    try:
-                        gang_h = batch_h[gang_mems]
-                    except Exception as e:
-                        print(f"Prompt Initialized Error : <{e}>")
-                        continue
-                    else:
-                        batch_batch = batch['uin'].batch[gang_mems]
-                        gang_subgraphs.append(scatter_mean(gang_h, batch_batch, dim=0))
+                    gang_x = gang_batch['uin'].x[gang_mems]
+                    batch_batch = batch['uin'].batch[gang_mems]
+                    gang_subgraphs.append(scatter_mean(gang_x, batch_batch, dim=0))
                 gang_subgraph_mean = torch.concat(gang_subgraphs, dim=0).mean(dim=0)
                 self.prompt = torch.nn.Parameter(gang_subgraph_mean, requires_grad=True).to(self.device)
                 params.append({'params': self.prompt, 'lr': self.eval_dict['prompt_lr']})
@@ -519,6 +510,12 @@ class UinGangsModelTuning:
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 batch['uin'].x = batch_x
                 if self.conv_type == 'RGCN':
+                    if self.info_type == 'add_prompt':
+                        batch['uin'].x = (batch['uin'].x + self.prompt.repeat(batch_x.shape[0], 1)) / 2
+                    elif self.info_type == 'add_subgraph':
+                        batch_x_g = scatter_mean(batch_x, batch['uin'].batch, dim=0)
+                        expand_batch_x_g = self.subgraph_embedding_expand(batch_x_g, batch['uin'].ptr)
+                        batch['uin'].x = (batch['uin'].x + expand_batch_x_g) / 2
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
                 else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
@@ -576,6 +573,12 @@ class UinGangsModelTuning:
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 batch['uin'].x = batch_x
                 if self.conv_type == 'RGCN':
+                    if self.info_type == 'add_prompt':
+                        batch['uin'].x = (batch['uin'].x + self.prompt.repeat(batch_x.shape[0], 1)) / 2
+                    elif self.info_type == 'add_subgraph':
+                        batch_x_g = scatter_mean(batch_x, batch['uin'].batch, dim=0)
+                        expand_batch_x_g = self.subgraph_embedding_expand(batch_x_g, batch['uin'].ptr)
+                        batch['uin'].x = (batch['uin'].x + expand_batch_x_g) / 2
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
                 else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
