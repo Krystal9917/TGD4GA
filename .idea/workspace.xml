@@ -5,8 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="690ce246-b023-4a0a-8442-769ce35af91d" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+<<<<<<< HEAD
       <change beforePath="$PROJECT_DIR$/data/batch_subgraph_y.csv" beforeDir="false" afterPath="$PROJECT_DIR$/data/batch_subgraph_y.csv" afterDir="false" />
+=======
+>>>>>>> origin
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -32,6 +36,7 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
+<<<<<<< HEAD
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
     &quot;Python.GNNModel.executor&quot;: &quot;Debug&quot;,
@@ -72,6 +77,48 @@
     &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
     &quot;settings.editor.selected.configurable&quot;: &quot;terminal&quot;,
     &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+=======
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python.GNNModel.executor": "Debug",
+    "Python.RGCN.executor": "Debug",
+    "Python.attn_gnn_model.executor": "Debug",
+    "Python.combine_file (1).executor": "Debug",
+    "Python.combine_file.executor": "Debug",
+    "Python.data_example_test.executor": "Run",
+    "Python.data_process_iterable_pyg.executor": "Debug",
+    "Python.fraudar.executor": "Debug",
+    "Python.gat_model.executor": "Debug",
+    "Python.get_url_data.executor": "Debug",
+    "Python.han_model.executor": "Debug",
+    "Python.heterogeneous_graph_model.executor": "Debug",
+    "Python.pyg_format.executor": "Debug",
+    "Python.test.executor": "Debug",
+    "Python.test_copy.executor": "Debug",
+    "Python.test_cora.executor": "Debug",
+    "Python.test_downstream_datasets.executor": "Debug",
+    "Python.uin_gangs_model_pretrain.executor": "Debug",
+    "Python.uin_gangs_model_pretrain_run.executor": "Debug",
+    "Python.uin_gangs_model_train.executor": "Debug",
+    "Python.uin_gangs_model_train_run.executor": "Debug",
+    "Python.uin_gangs_model_tuning.executor": "Debug",
+    "Python.uin_gangs_model_tuning_run.executor": "Debug",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "WebServerToolWindowPanel.toolwindow.highlight.mappings": "true",
+    "WebServerToolWindowPanel.toolwindow.highlight.symlinks": "true",
+    "WebServerToolWindowPanel.toolwindow.show.date": "false",
+    "WebServerToolWindowPanel.toolwindow.show.permissions": "false",
+    "WebServerToolWindowPanel.toolwindow.show.size": "false",
+    "git-widget-placeholder": "master",
+    "last_opened_file_path": "D:/Projects/mmgog_long_term_sequence_model",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "reference.settings.deploy.options",
+    "vue.rearranger.settings.migration": "true"
+>>>>>>> origin
   }
 }</component>
   <component name="RecentsManager">
@@ -145,8 +192,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-1d06a55b98c1-0b3e54e931b4-JavaScript-PY-241.17890.14" />
-        <option value="bundled-python-sdk-5b207ade9991-7e9c3bbb6e34-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-241.17890.14" />
+        <option value="bundled-js-predefined-1d06a55b98c1-91d5c284f522-JavaScript-PY-241.15989.155" />
+        <option value="bundled-python-sdk-babbdf50b680-7c6932dee5e4-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-241.15989.155" />
       </set>
     </attachedChunks>
   </component>
@@ -213,7 +260,12 @@
       <workItem from="1736337985413" duration="14084000" />
       <workItem from="1736405793926" duration="11000" />
       <workItem from="1736405806886" duration="30968000" />
+<<<<<<< HEAD
       <workItem from="1736733787464" duration="50325000" />
+=======
+      <workItem from="1736733787464" duration="43826000" />
+      <workItem from="1736855931245" duration="46000" />
+>>>>>>> origin
     </task>
     <servers />
   </component>
