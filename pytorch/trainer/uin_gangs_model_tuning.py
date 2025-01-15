@@ -495,8 +495,7 @@ class UinGangsModelTuning:
             param.requires_grad = False
         for param in self.classifier.parameters():
             param.requires_grad = True
-        best_loss = self.eval_dict["best_loss"]
-        best_test_acc = 0
+        best_test_acc = self.eval_dict['best_test_acc']
         best_test_pre = 0
         best_test_rec = 0
         best_test_f1 = 0
@@ -799,8 +798,8 @@ class UinGangsModelTuning:
             y_pred_i_idx = y_pred[subgraph_i_idx]
             y_true_idx = (y_true_i_idx == 1).nonzero().squeeze().detach().cpu().tolist()
             y_pred_idx = (y_pred_i_idx == 1).nonzero().squeeze().detach().cpu().tolist()
-            true_idx_list.append(str(y_true_idx))
-            pred_idx_list.append(str(y_pred_idx))
+            true_idx_list.append(y_true_idx)
+            pred_idx_list.append(y_pred_idx)
             if torch.sum(y_true_i_idx) == 0:
                 y_true_i_idx[:] = 1
                 y_pred_i_idx[y_pred_i_idx == 1] = -1
@@ -936,11 +935,11 @@ class UinGangsModelTuning:
                 pred_uin_idx = pred_idx_list[i][1:-1].split(',')
                 uin_map_list = subgraph_uin_list[i]
                 if true_uin_idx != ['']:
-                    true_uin_list.append([uin_map_list[int(item)] for item in true_uin_idx])
+                    true_uin_list.append([uin_map_list[item] for item in true_uin_idx])
                 else:
                     true_uin_list.append([])
                 if pred_uin_idx != ['']:
-                    pred_uin_list.append([uin_map_list[int(item)] for item in pred_uin_idx])
+                    pred_uin_list.append([uin_map_list[item] for item in pred_uin_idx])
                 else:
                     pred_uin_list.append([])
             df = pd.DataFrame(data={'label_gang_mem_list': true_uin_list,
