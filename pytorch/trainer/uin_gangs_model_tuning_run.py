@@ -103,7 +103,7 @@ class ArgsUinGangs:
                             choices=[None, 'add_subgraph', 'concat_subgraph', 'concat_prompt',
                                      'concat_subgraph_prompt'])
         parser.add_argument('--prompt_lr', type=float, default=1e-4)
-        parser.add_argument('--info_insertion_type', type=str, default='add_prompt',
+        parser.add_argument('--info_insertion_type', type=str, default='add_subgraph',
                             choices=[None, 'combine_subgraph', 'combine_difference', 'add_prompt', 'add_subgraph'])
         parser.add_argument('--threshold', type=float, default=0.5)
         parser.add_argument('--test_times', type=int, default=5)
