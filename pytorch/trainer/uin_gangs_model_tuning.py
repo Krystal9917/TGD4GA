@@ -99,6 +99,7 @@ class UinGangsModelTuning:
         self.model.to(self.device)
 
         if self.eval_dict["evaluate_task"] == 'node_classification':
+            self.is_prompt = False
             self.train_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["node_train_data_path"])
             self.train_loader = Data.DataLoader(self.train_data,
                                                 batch_size=self.eval_dict["batch_size"],
@@ -243,6 +244,13 @@ class UinGangsModelTuning:
             self.loss_weight = self.eval_dict['loss_weight'].split(' ')
             self.loss_weight = [float(item) for item in self.loss_weight]
             self.criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor(self.loss_weight).to(self.device))
+        elif self.eval_dict["evaluate_task"] in ['inference_gang_members_by_fraudar']:
+            self.eval_data = UinGangsDataIterablePyG(self.eval_dict,
+                                                     self.eval_dict["prompt_evaluating_data_path"])
+            self.eval_loader = Data.DataLoader(self.eval_data,
+                                               batch_size=self.eval_dict["batch_size"],
+                                               num_workers=self.eval_dict["num_workers"],
+                                               collate_fn=self.eval_data.pos_collate_fn_for_fraudar)
         # Set seed for whole environment
         self.setup_seed()
 
@@ -326,7 +334,7 @@ class UinGangsModelTuning:
         best_rec = 0
         best_f1 = 0
         best_roc_auc = 0
-        best_cm = 0
+        best_cm = np.array([])
         for epoch in range(self.eval_dict["n_epochs"]):
             epoch_loss = []
             st = time.time()
@@ -871,6 +879,78 @@ class UinGangsModelTuning:
                   )
             return acc, pre, rec, f1, roc_auc, cm, jaccard
 
+    def inference_gang_members_by_fraudar(self):
+        jaccard_list = []
+        true_idx_list = []
+        pred_idx_list = []
+        true_uin_list = []
+        pred_uin_list = []
+        subgraph_y_list = []
+        subgraph_uin_list = []
+        true_y_list = []
+        pred_y_list = []
+        prob_y_list = []
+        with torch.no_grad():
+            for i, pos_batch in enumerate(self.eval_loader):
+                true_y = pos_batch['uin'].gang_mem.int().detach().cpu()
+                pred_y = pos_batch['uin'].idx.detach().cpu()
+                jaccard_coefficient, true_idx, pred_idx = self.jaccard_batch(true_y, pred_y,
+                                                                             pos_batch['uin'].batch)
+                true_subgraph_y = pos_batch['uin'].gang_label.int().detach().cpu()
+                prob_subgraph_y = torch.tensor(jaccard_coefficient, device=self.device)
+                pred_subgraph_y = torch.zeros(prob_subgraph_y.shape[0], device=self.device)
+                pred_subgraph_y[prob_subgraph_y >= self.eval_dict["threshold"]] = 1
+                true_y_list.append(true_subgraph_y)
+                pred_y_list.append(pred_subgraph_y)
+                prob_y_list.append(prob_subgraph_y)
+                jaccard_list.extend(jaccard_coefficient)
+                true_idx_list.extend(true_idx)
+                pred_idx_list.extend(pred_idx)
+                subgraph_y_list.extend(pos_batch['uin'].y.detach().cpu().tolist())
+                subgraph_uin_list.extend(pos_batch['uin'].nodeid2uin_map)
+            # compute metrics
+            true_y_list = torch.concat(true_y_list, dim=0).numpy()
+            prob_y_list = torch.concat(prob_y_list, dim=0).numpy()
+            pred_y_list = torch.concat(pred_y_list, dim=0).numpy()
+            acc = accuracy_score(true_y_list, pred_y_list)
+            f1 = f1_score(true_y_list, pred_y_list)
+            pre = precision_score(true_y_list, pred_y_list)
+            rec = recall_score(true_y_list, pred_y_list)
+            roc_auc = roc_auc_score(true_y_list, prob_y_list)
+            cm = confusion_matrix(true_y_list, pred_y_list)
+            print(f"Fraudar ACC: {acc: .4f}, "
+                  f"Precision: {pre: .4f}, "
+                  f"Recall: {rec: .4f}, "
+                  f"F1: {f1: .4f}, "
+                  f"ROC-AUC: {roc_auc: .4f}, "
+                  f"Confusion Matrix: {cm.tolist()}"
+                  )
+        # save inference results
+            for i in range(len(true_idx_list)):
+                true_uin_idx = true_idx_list[i][1:-1].split(',')
+                pred_uin_idx = pred_idx_list[i][1:-1].split(',')
+                uin_map_list = subgraph_uin_list[i]
+                if true_uin_idx != ['']:
+                    true_uin_list.append([uin_map_list[int(item)] for item in true_uin_idx])
+                else:
+                    true_uin_list.append([])
+                if pred_uin_idx != ['']:
+                    pred_uin_list.append([uin_map_list[int(item)] for item in pred_uin_idx])
+                else:
+                    pred_uin_list.append([])
+            df = pd.DataFrame(data={'label_gang_mem_list': true_uin_list,
+                                    'pred_gang_mem_list': pred_uin_list,
+                                    'jaccard': jaccard_list,
+                                    'subgraph_gang_label': subgraph_y_list,
+                                    'subgraph_node_map': subgraph_uin_list})
+            if torch.cuda.is_available():
+                output_file_dir = '/mnt/cephfs'
+            else:
+                output_file_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common'
+            file_name = '/jiujiuchen/projects/mmgog_long_term_sequence_model/data/fraudar_y.csv'
+            df.to_csv(output_file_dir + file_name, index=False)
+            print(f"Save to file: {output_file_dir + file_name}")
+
     def inference_gang_members(self):
         file_name = f"{self.prompt_type}_{self.conv_type}_best_acc.pth" if self.prompt_type is not None else f"{self.conv_type}_best_acc.pth"
         model_weight = torch.load(self.eval_dict['cls_model_states_path'] + file_name, map_location=self.device)
@@ -901,10 +981,10 @@ class UinGangsModelTuning:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 if batch_h is not None:
                     pred_y = self.classifier(batch_h).argmax(dim=1)
-                    batch_y = batch['uin'].gang_mem
+                    batch_y = batch['uin'].gang_mem.int()
                     true_y = batch_y.detach().cpu()
                     pred_y = pred_y.detach().cpu()
-                    jaccard_coefficient, true_idx, pred_idx = self.jaccard_batch(true_y.int(), pred_y,
+                    jaccard_coefficient, true_idx, pred_idx = self.jaccard_batch(true_y, pred_y,
                                                                                  batch['uin'].batch)
                     jaccard_list.extend(jaccard_coefficient)
                     true_idx_list.extend(true_idx)
@@ -932,4 +1012,6 @@ class UinGangsModelTuning:
                 output_file_dir = '/mnt/cephfs'
             else:
                 output_file_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common'
-            df.to_csv(output_file_dir + f'/jiujiuchen/projects/mmgog_long_term_sequence_model/data/{self.conv_type}_y.csv', index=False)
+            file_name = f'/jiujiuchen/projects/mmgog_long_term_sequence_model/data/{self.task_type}_{self.conv_type}_y.csv'
+            df.to_csv(output_file_dir + file_name, index=False)
+            print(f"Save to file: {output_file_dir + file_name}")
