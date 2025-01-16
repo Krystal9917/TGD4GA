@@ -100,6 +100,7 @@ class UinGangsModelTuning:
 
         if self.eval_dict["evaluate_task"] == 'node_classification':
             self.is_prompt = False
+            self.info_type = None
             self.train_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["node_train_data_path"])
             self.train_loader = Data.DataLoader(self.train_data,
                                                 batch_size=self.eval_dict["batch_size"],
@@ -116,7 +117,17 @@ class UinGangsModelTuning:
                                                   torch.nn.Softmax(dim=1))
             self.classifier.to(self.device)
             self.criterion = torch.nn.CrossEntropyLoss()
-            self.cls_optimizer = torch.optim.Adam(self.classifier.parameters(), lr=self.eval_dict['cls_lr'])
+            params = [{'params': self.classifier.parameters(), 'lr': self.eval_dict['cls_lr']}]
+            if self.eval_dict['evaluate_task_tuning']:
+                self.model.train()
+                for param in self.model.parameters():
+                    param.requires_grad = True
+                params.append({'params': self.model.parameters(), 'lr': self.eval_dict['lr']})
+            else:
+                self.model.eval()
+                for param in self.model.parameters():
+                    param.requires_grad = False
+            self.cls_optimizer = torch.optim.Adam(params)
         elif self.eval_dict["evaluate_task"] in ['subgraph', 'subgraph_gang_detection']:
             self.train_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["train_data_path"])
             self.eval_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["test_data_path"])
@@ -325,9 +336,6 @@ class UinGangsModelTuning:
         return out
 
     def evaluate_node_classification(self):
-        self.model.eval()
-        for param in self.model.parameters():
-            param.requires_grad = False
         best_loss = self.eval_dict["best_loss"]
         best_acc = 0
         best_pre = 0
@@ -339,6 +347,8 @@ class UinGangsModelTuning:
             epoch_loss = []
             st = time.time()
             self.classifier.train()
+            if self.eval_dict['evaluate_task_tuning']:
+                self.model.train()
             for batch in self.train_loader:
                 self.cls_optimizer.zero_grad()
                 batch = batch.to(self.device)
@@ -354,7 +364,7 @@ class UinGangsModelTuning:
                 batch['uin'].x = batch_x.to(self.device)
                 if self.conv_type == 'RGCN':
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
-                elif self.conv_type == 'HGT':
+                else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 node_h = batch_h[batch['uin'].ptr[:-1]]
                 y_prob = self.classifier(node_h)
@@ -563,6 +573,7 @@ class UinGangsModelTuning:
 
     def evaluate_classifier(self, task="subgraph"):
         self.classifier.eval()
+        self.model.eval()
         if self.is_prompt:
             self.prompt.requires_grad = False
         true_y_list = []

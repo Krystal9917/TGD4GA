@@ -182,6 +182,17 @@ class UinGangsModelPreTrainDDP:
             batch_loss_list.append(batch_loss)
         return torch.stack([item for item in batch_loss_list if not torch.isnan(item)]).mean()
 
+    def cross_contrastive_loss(self, fraudar_pos_h, subgraph_pos_h, subgraph_neg_h, pos_batch, neg_batch):
+        idx_list = pos_batch.unique().detach().cpu().tolist()
+        batch_loss_list = []
+        for i in idx_list:
+            i_fraudar_pos_h = fraudar_pos_h[pos_batch == i]
+            i_subgraph_pos_h = subgraph_pos_h[pos_batch == i]
+            i_subgraph_neg_h = subgraph_neg_h[neg_batch == i]
+            cross_loss = self.preference_contrastive_loss(i_subgraph_pos_h, i_fraudar_pos_h, i_subgraph_neg_h)
+            batch_loss_list.append(cross_loss)
+        return torch.stack([item for item in batch_loss_list if not torch.isnan(item)]).mean()
+
     def get_edge_info(self, batch):
         edge_index = [batch[edge_type].edge_index for edge_type in list(self.edge_types.keys()) if
                       edge_type in batch.edge_types]
@@ -338,10 +349,10 @@ class UinGangsModelPreTrainDDP:
                     fraudar_batch = self.extract_batch_subgraphs(pos_batch)
                     fraudar_batch = fraudar_batch.to(self.device)
 
-                    if self.conv_type in ['HAN', 'HGT']:
-                        fraudar_batch_h = self.hetero_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
-                    elif self.conv_type == 'RGCN':
+                    if self.conv_type == 'RGCN':
                         fraudar_batch_h = self.rgcn_fit(fraudar_batch, fraudar_batch['uin'].x)
+                    else:
+                        fraudar_batch_h = self.hetero_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
 
                     if fraudar_batch_h is not None:
                         fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
@@ -371,25 +382,34 @@ class UinGangsModelPreTrainDDP:
                         abnormal_h = batch_h[abnormal_node_idx]
                         node_loss = self.node_contrastive_loss(abnormal_h, normal_h)
                         loss = node_loss + subgraph_loss
-                    elif self.task_type == 'batch_subgraph':
+                    elif self.task_type in ['batch_subgraph', 'cross_subgraph']:
                         # batch-level contrastive learning (high possibility subgraphs inside)
                         if list_flag:
                             batch_pos_neg_samples_idx = torch.concat(
-                                [(pos_batch['uin'].batch == i).nonzero().squeeze().detach().cpu() for i in pos_batch_idx], dim=0).tolist()
+                                [(pos_batch['uin'].batch == i).nonzero().squeeze().detach().cpu() for i in
+                                 pos_batch_idx], dim=0).tolist()
                         else:
-                            batch_pos_neg_samples_idx = (pos_batch['uin'].batch == pos_batch_idx).nonzero().squeeze().detach().cpu().tolist()
+                            batch_pos_neg_samples_idx = (pos_batch[
+                                                             'uin'].batch == pos_batch_idx).nonzero().squeeze().detach().cpu().tolist()
                         pos_samples_idx = (pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()
                         batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
                         batch_pos_samples_idx_batch = pos_batch['uin'].batch[batch_pos_samples_idx]
 
                         batch_neg_samples_idx = list(set(batch_pos_neg_samples_idx) - set(pos_samples_idx))
                         batch_neg_samples_idx_batch = pos_batch['uin'].batch[batch_neg_samples_idx]
-
-                        batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
-                                                                 batch_h[batch_neg_samples_idx],
-                                                                 batch_pos_samples_idx_batch,
-                                                                 batch_neg_samples_idx_batch)
-                        loss = batch_loss + subgraph_loss
+                        if self.task_type == 'batch_subgraph':
+                            batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
+                                                                     batch_h[batch_neg_samples_idx],
+                                                                     batch_pos_samples_idx_batch,
+                                                                     batch_neg_samples_idx_batch)
+                            loss = batch_loss + subgraph_loss
+                        else:
+                            cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                                                     batch_h[batch_pos_samples_idx],
+                                                                     batch_h[batch_neg_samples_idx],
+                                                                     batch_pos_samples_idx_batch,
+                                                                     batch_neg_samples_idx_batch)
+                            loss = cross_loss + subgraph_loss
                     else:
                         loss = subgraph_loss
                     if not torch.isnan(loss):
@@ -416,6 +436,16 @@ class UinGangsModelPreTrainDDP:
                                         i + 1,
                                         loss_value,
                                         batch_loss.detach().cpu().item(),
+                                        subgraph_loss.detach().cpu().item(),
+                                        time.time() - start_time))
+                            elif self.task_type == 'cross_subgraph':
+                                print(
+                                    "Rank: {}, Batch: {}, Loss: {:.6f}, "
+                                    "Cross Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
+                                        self.rank,
+                                        i + 1,
+                                        loss_value,
+                                        cross_loss.detach().cpu().item(),
                                         subgraph_loss.detach().cpu().item(),
                                         time.time() - start_time))
                             else:
