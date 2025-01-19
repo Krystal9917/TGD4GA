@@ -404,12 +404,15 @@ class UinGangsModelPreTrainDDP:
                                                                      batch_neg_samples_idx_batch)
                             loss = batch_loss + subgraph_loss
                         else:
-                            cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
-                                                                     batch_h[batch_pos_samples_idx],
-                                                                     batch_h[batch_neg_samples_idx],
-                                                                     batch_pos_samples_idx_batch,
-                                                                     batch_neg_samples_idx_batch)
-                            loss = cross_loss + subgraph_loss
+                            if fraudar_batch_h is not None:
+                                cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                                                         batch_h[batch_pos_samples_idx],
+                                                                         batch_h[batch_neg_samples_idx],
+                                                                         batch_pos_samples_idx_batch,
+                                                                         batch_neg_samples_idx_batch)
+                                loss = cross_loss + subgraph_loss
+                            else:
+                                loss = subgraph_loss
                     else:
                         loss = subgraph_loss
                     if not torch.isnan(loss):
