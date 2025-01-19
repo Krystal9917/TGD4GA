@@ -193,6 +193,36 @@ class UinGangsModelPreTrainDDP:
             batch_loss_list.append(cross_loss)
         return torch.stack([item for item in batch_loss_list if not torch.isnan(item)]).mean()
 
+    def compute_anomalous_subgraph_anchor(self, raw_feature_x, batch):
+        idx_list = batch.unique().detach().cpu().tolist()
+        anchor_list = []
+        for i in idx_list:
+            anomalous_subgraph_i = raw_feature_x[batch == i]
+            average_node_embedding_i = anomalous_subgraph_i.mean(dim=0)
+            anchor_list.append(average_node_embedding_i)
+        return torch.stack(anchor_list)
+
+    def exclude_anomalous_nodes_from_normals(self, normal_x, anomalous_anchors, batch):
+        idx_list = batch.unique().detach().cpu().tolist()
+        exclude_list = []
+        for i in range(len(idx_list)):
+            normal_batch_i = normal_x[batch == idx_list[i]]
+            anomalous_anchor_i = anomalous_anchors[i]
+            average_normal_i = normal_batch_i.mean(dim=0)
+            similarity_diff = (torch.cosine_similarity(normal_batch_i, anomalous_anchor_i) -
+                               torch.cosine_similarity(normal_batch_i, average_normal_i))
+            exclude_idx = (similarity_diff >= self.train_dict['similarity_diff']).nonzero().squeeze().detach().cpu()
+            prefix_node_idx = (batch < idx_list[i]).nonzero().squeeze()
+            if prefix_node_idx.shape != torch.Size([]):
+                exclude_idx = exclude_idx + prefix_node_idx.shape[0]
+            else:
+                exclude_idx = exclude_idx + torch.tensor(1, device=self.device)
+            if exclude_idx.shape != torch.Size([]):
+                exclude_list.extend(exclude_idx.tolist())
+            else:
+                exclude_list.extend([exclude_idx.detach().cpu().item()])
+        return exclude_list
+
     def get_edge_info(self, batch):
         edge_index = [batch[edge_type].edge_index for edge_type in list(self.edge_types.keys()) if
                       edge_type in batch.edge_types]
@@ -382,7 +412,7 @@ class UinGangsModelPreTrainDDP:
                         abnormal_h = batch_h[abnormal_node_idx]
                         node_loss = self.node_contrastive_loss(abnormal_h, normal_h)
                         loss = node_loss + subgraph_loss
-                    elif self.task_type in ['batch_subgraph', 'cross_subgraph']:
+                    elif self.task_type in ['batch_subgraph', 'cross_subgraph', 'fine_grained_cross_subgraph']:
                         # batch-level contrastive learning (high possibility subgraphs inside)
                         if list_flag:
                             batch_pos_neg_samples_idx = torch.concat(
@@ -405,11 +435,29 @@ class UinGangsModelPreTrainDDP:
                             loss = batch_loss + subgraph_loss
                         else:
                             if fraudar_batch_h is not None:
-                                cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
-                                                                         batch_h[batch_pos_samples_idx],
-                                                                         batch_h[batch_neg_samples_idx],
-                                                                         batch_pos_samples_idx_batch,
-                                                                         batch_neg_samples_idx_batch)
+                                if self.task_type == 'fine_grained_cross_subgraph':
+                                    batch_anomalous_anchors = self.compute_anomalous_subgraph_anchor(
+                                        pos_batch['uin'].x[batch_pos_samples_idx],
+                                        batch_pos_samples_idx_batch)
+                                    batch_exclude_normal_idx = self.exclude_anomalous_nodes_from_normals(
+                                        pos_batch['uin'].x[batch_neg_samples_idx],
+                                        batch_anomalous_anchors,
+                                        batch_neg_samples_idx_batch)
+                                    upgrade_batch_neg_samples_idx = list(
+                                        set(batch_neg_samples_idx) - set(batch_exclude_normal_idx))
+                                    upgrade_batch_neg_samples_idx_batch = pos_batch['uin'].batch[
+                                        upgrade_batch_neg_samples_idx]
+                                    cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                                                             batch_h[batch_pos_samples_idx],
+                                                                             batch_h[upgrade_batch_neg_samples_idx],
+                                                                             batch_pos_samples_idx_batch,
+                                                                             upgrade_batch_neg_samples_idx_batch)
+                                else:
+                                    cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                                                             batch_h[batch_pos_samples_idx],
+                                                                             batch_h[batch_neg_samples_idx],
+                                                                             batch_pos_samples_idx_batch,
+                                                                             batch_neg_samples_idx_batch)
                                 loss = cross_loss + subgraph_loss
                             else:
                                 loss = subgraph_loss

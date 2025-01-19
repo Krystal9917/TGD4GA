@@ -68,8 +68,9 @@ class ArgsUinGangs:
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN', 'HGT'])
-        parser.add_argument('--task_type', type=str, default='cross_subgraph',
-                            choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph'])
+        parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
+                            choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
+                                     'fine_grained_cross_subgraph'])
         # RGCN
         parser.add_argument('--num_relations', type=int, default=10)
         # HAN/HGT
@@ -77,6 +78,7 @@ class ArgsUinGangs:
         parser.add_argument('--world_size', type=int, default=2)
         parser.add_argument('--data_tag', type=str, default='order_1930_', choices=['', '1921_', '1930_', 'order_1930_'])
         parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2', '_GPU4'])
+        parser.add_argument('--similarity_diff', type=float, default=0.15)
 
         args = parser.parse_args()
         args_dict = vars(args)
