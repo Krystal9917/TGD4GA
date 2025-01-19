@@ -68,8 +68,8 @@ class ArgsUinGangs:
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN', 'HGT'])
-        parser.add_argument('--task_type', type=str, default='batch_subgraph',
-                            choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_batch'])
+        parser.add_argument('--task_type', type=str, default='cross_subgraph',
+                            choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph'])
         # RGCN
         parser.add_argument('--num_relations', type=int, default=10)
         # HAN/HGT
