@@ -91,15 +91,16 @@ class ArgsUinGangs:
         parser.add_argument('--data_tag', type=str, default='order_1930_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
         parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2'])
-        parser.add_argument('--eval_epoch', type=int, default=20)
+        parser.add_argument('--eval_epoch', type=int, default=10)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_gang_detection',
                             choices=['node_classification', 'subgraph',
                                      'subgraph_gang_detection', 'subgraph_prompt_tuning',
                                      'inference_gang_members', 'inference_gang_members_by_fraudar'])
         parser.add_argument('--evaluate_task_tuning', type=bool, default=False)
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT'])
-        parser.add_argument('--task_type', type=str, default='cross_subgraph',
-                            choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph'])
+        parser.add_argument('--task_type', type=str, default='batch_subgraph',
+                            choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
+                                     'fine_grained_cross_subgraph'])
         parser.add_argument('--is_supervised', type=bool, default=False)
         parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
         parser.add_argument('--prompt_insertion_type', type=str, default=None,
@@ -113,7 +114,7 @@ class ArgsUinGangs:
         parser.add_argument('--loss_weight', type=str, default='1.0 2.0',
                             choices=['1.0 2.0', '1.0 3.0', '1.0 4.0'])
         parser.add_argument('--cls_lr', type=float, default=1e-4)
-        parser.add_argument('--best_test_acc', type=float, default=0.6)
+        parser.add_argument('--best_test_f1', type=float, default=0.6)
 
         args = parser.parse_args()
         args_dict = vars(args)

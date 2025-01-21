@@ -216,7 +216,7 @@ class UinGangsModelPreTrainDDP:
             if prefix_node_idx.shape != torch.Size([]):
                 exclude_idx = exclude_idx + prefix_node_idx.shape[0]
             else:
-                exclude_idx = exclude_idx + torch.tensor(1, device=self.device)
+                exclude_idx = exclude_idx + torch.tensor(1)
             if exclude_idx.shape != torch.Size([]):
                 exclude_list.extend(exclude_idx.tolist())
             else:
@@ -427,8 +427,25 @@ class UinGangsModelPreTrainDDP:
 
                         batch_neg_samples_idx = list(set(batch_pos_neg_samples_idx) - set(pos_samples_idx))
                         batch_neg_samples_idx_batch = pos_batch['uin'].batch[batch_neg_samples_idx]
-                        if self.task_type == 'batch_subgraph':
-                            batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
+                        if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
+                            if self.task_type == 'fine_grained_batch_subgraph':
+                                batch_anomalous_anchors = self.compute_anomalous_subgraph_anchor(
+                                    pos_batch['uin'].x[batch_pos_samples_idx],
+                                    batch_pos_samples_idx_batch)
+                                batch_exclude_normal_idx = self.exclude_anomalous_nodes_from_normals(
+                                    pos_batch['uin'].x[batch_neg_samples_idx],
+                                    batch_anomalous_anchors,
+                                    batch_neg_samples_idx_batch)
+                                upgrade_batch_neg_samples_idx = list(
+                                    set(batch_neg_samples_idx) - set(batch_exclude_normal_idx))
+                                upgrade_batch_neg_samples_idx_batch = pos_batch['uin'].batch[
+                                    upgrade_batch_neg_samples_idx]
+                                batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
+                                                                         batch_h[upgrade_batch_neg_samples_idx],
+                                                                         batch_pos_samples_idx_batch,
+                                                                         upgrade_batch_neg_samples_idx_batch)
+                            else:
+                                batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
                                                                      batch_h[batch_neg_samples_idx],
                                                                      batch_pos_samples_idx_batch,
                                                                      batch_neg_samples_idx_batch)

@@ -489,10 +489,10 @@ class UinGangsModelTuning:
             param.requires_grad = False
         for param in self.classifier.parameters():
             param.requires_grad = True
-        best_test_acc = self.eval_dict['best_test_acc']
+        best_test_acc = 0
         best_test_pre = 0
         best_test_rec = 0
-        best_test_f1 = 0
+        best_test_f1 = self.eval_dict['best_test_f1']
         best_test_roc_auc = 0
         best_test_cm = np.array([[0, 0], [0, 0]])
         for epoch in range(1, self.eval_dict["n_epochs"] + 1):
@@ -549,11 +549,13 @@ class UinGangsModelTuning:
             current_loss = sum(epoch_loss) / len(epoch_loss)
             print(f"Epoch {epoch}, Loss: {current_loss: .4f}, Time: {time.time() - st: .4f} s")
             test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm = self.evaluate_classifier(task="detect_gang")
-            if test_acc > best_test_acc:
-                file_name = f"{self.info_type}_{self.conv_type}_best_acc.pth" if self.info_type is not None else f"{self.conv_type}_best_acc.pth"
+            if test_f1 > best_test_f1:
+                prefix = f'{self.conv_type}_{self.task_type}_{self.eval_dict["eval_epoch"]}'
+                file_name = f"{self.info_type}_{prefix}_best_acc.pth" if self.info_type is not None \
+                    else f"{prefix}_best_f1.pth"
                 file_name = self.eval_dict["cls_model_states_path"] + file_name
                 torch.save(self.classifier.state_dict(), file_name)
-                print(f"Now best acc: {test_acc:.4f}, save model to {file_name}")
+                print(f"Now best f1: {test_f1:.4f}, save model to {file_name}")
                 best_test_acc = test_acc
                 best_test_pre = test_pre
                 best_test_rec = test_rec
@@ -962,7 +964,9 @@ class UinGangsModelTuning:
             print(f"Save to file: {output_file_dir + file_name}")
 
     def inference_gang_members(self):
-        file_name = f"{self.prompt_type}_{self.conv_type}_best_acc.pth" if self.prompt_type is not None else f"{self.conv_type}_best_acc.pth"
+        prefix = f'{self.conv_type}_{self.task_type}_{self.eval_dict["eval_epoch"]}'
+        file_name = f"{self.prompt_type}_{prefix}_best_acc.pth" if self.prompt_type is not None \
+            else f"{prefix}_best_f1.pth"
         model_weight = torch.load(self.eval_dict['cls_model_states_path'] + file_name, map_location=self.device)
         self.classifier.load_state_dict(model_weight)
         self.classifier.eval()
@@ -987,7 +991,7 @@ class UinGangsModelTuning:
                 batch['uin'].x = batch_x
                 if self.conv_type == 'RGCN':
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
-                elif self.conv_type == 'HGT':
+                else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 if batch_h is not None:
                     pred_y = self.classifier(batch_h).argmax(dim=1)
@@ -1022,6 +1026,6 @@ class UinGangsModelTuning:
                 output_file_dir = '/mnt/cephfs'
             else:
                 output_file_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common'
-            file_name = f'/jiujiuchen/projects/mmgog_long_term_sequence_model/data/{self.task_type}_{self.conv_type}_{self.eval_dict["filter_node_num"]}_y.csv'
+            file_name = f'/jiujiuchen/projects/mmgog_long_term_sequence_model/data/{prefix}_{self.eval_dict["filter_node_num"]}_y.csv'
             df.to_csv(output_file_dir + file_name, index=False)
             print(f"Save to file: {output_file_dir + file_name}")

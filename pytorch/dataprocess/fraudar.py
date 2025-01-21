@@ -1,11 +1,9 @@
 import json
 import math
-import time
 import torch
 import heapq
 
 import networkx as nx
-from torch_scatter import scatter_mean
 from torch_geometric.utils import to_dense_adj, subgraph
 from torch_geometric.data import HeteroData, Batch
 
