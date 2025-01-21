@@ -70,7 +70,7 @@ class ArgsUinGangs:
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN', 'HGT'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
-                                     'fine_grained_cross_subgraph'])
+                                     'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph'])
         # RGCN
         parser.add_argument('--num_relations', type=int, default=10)
         # HAN/HGT
