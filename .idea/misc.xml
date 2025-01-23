@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="Remote Python 3.9.19 (sftp://root@9.134.63.125:36000/data/home/jiujiuchen/miniconda3/envs/dgl/bin/python3)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.11" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="pyg (3)" project-jdk-type="Python SDK" />
 </project>

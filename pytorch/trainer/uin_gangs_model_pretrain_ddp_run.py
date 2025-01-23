@@ -29,9 +29,6 @@ class ArgsUinGangs:
         parser.add_argument('--model_states_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "saved_model", "GNN_models", "pretraining_filter_subgraph_cl")))
-        parser.add_argument('--cls_model_states_path', type=str, default=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "saved_model", "cls_models", "mlp_")))
         parser.add_argument('--export_requirements_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, "data", "config", "requirements" + ".txt")))
         parser.add_argument('--log_dir', type=str, default=os.path.abspath(
@@ -68,7 +65,7 @@ class ArgsUinGangs:
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN', 'HGT'])
-        parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
+        parser.add_argument('--task_type', type=str, default='fine_grained_batch_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph'])
         # RGCN

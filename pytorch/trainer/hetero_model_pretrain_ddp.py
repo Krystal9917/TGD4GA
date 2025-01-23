@@ -3,50 +3,47 @@ import time
 import torch
 import random
 import numpy as np
+import torch.distributed as dist
 from torch_scatter import scatter_mean
 from torch_geometric.data import Batch
 from torch_geometric.utils import subgraph
 from torch.utils.tensorboard import SummaryWriter
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
-from mmgog_long_term_sequence_model.pytorch.dataprocess.other_datasets import load_dataset, reset_edge_index_by_map, induced_subgraph
+from mmgog_long_term_sequence_model.pytorch.dataprocess.other_datasets import load_dataset, reset_edge_index_by_map, \
+    induced_subgraph
 
 
-class ModelPreTrain:
-    def __init__(self, args_dict):
+class ModelPreTrainDDP:
+    def __init__(self, rank, args_dict):
         self.train_dict = args_dict
         self.conv_type = args_dict["conv_type"]
-        self.data_dir = args_dict["train_data_path"]
+        self.dataset_dir = args_dict["dataset_dir"]
         self.dataset_name = args_dict["dataset_name"]
         self.batch_size = args_dict["batch_size"]
-        self.epoch_num = args_dict["n_epochs"]
+        self.epoch_num = args_dict["epoch_num"]
         self.task_type = args_dict["task_type"]
         self.print_batch = args_dict["print_batch_num"]
-        # device
-        if torch.cuda.is_available():
-            self.device = torch.device("cuda")
-        else:
-            self.device = torch.device("cpu")
+        self.world_size = args_dict["world_size"]
+        self.rank = rank
+        # distributed data parallel
+        dist.init_process_group("nccl", rank=self.rank, world_size=self.world_size)
+        torch.cuda.set_device(self.rank)
+        self.device = torch.device(f"cuda:{self.rank}")
         # dataset
         if self.dataset_name == "IMDB":
             self.target_node_name = "movie"
-            input_dim = 3489
-            num_relations = 3
         elif self.dataset_name == "DBLP":
             self.target_node_name = "author"
-            input_dim = 1024
-            num_relations = 1
         else:
             self.target_node_name = "paper"
-            input_dim = 1902
-            num_relations = 4
-        self.raw_dataset = load_dataset(os.path.join(self.data_dir, self.dataset_name), self.dataset_name)
+        self.raw_dataset = load_dataset(self.dataset_dir, self.dataset_name)
         self.metadata = self.raw_dataset.metadata()
         self.edge_types = {self.metadata[1][i]: i for i in range(len(self.metadata[1]))}
         # model
-        self.model = RGCN(input_dim=input_dim,
+        self.model = RGCN(input_dim=args_dict['input_dim'],
                           hidden_dim=args_dict['hidden_dim'],
-                          output_dim=args_dict["output_dim"],
-                          num_relations=num_relations)
+                          output_dim=args_dict['output_dim'],
+                          num_relations=args_dict['num_relations'])
         self.model = self.model.to(self.device)
         self.lr = args_dict["lr"]
         self.best_loss = args_dict["best_loss"]
@@ -56,19 +53,23 @@ class ModelPreTrain:
         loss_log_path = os.path.abspath(os.path.join(args_dict['log_dir'],
                                                      args_dict["model_states_path"].split('/')[-1],
                                                      self.log_file_path))
-        if not os.path.exists(loss_log_path):
+        if not os.path.exists(loss_log_path) and self.rank == 0:
             os.makedirs(loss_log_path)
-        self.writer = SummaryWriter(log_dir=loss_log_path)
+        if self.rank == 0:
+            self.writer = SummaryWriter(log_dir=loss_log_path)
         self.save_model_path = os.path.join(self.train_dict["model_states_path"],
                                             self.log_file_path)
-        if not os.path.exists(self.save_model_path):
+        if not os.path.exists(self.save_model_path) and self.rank == 0:
             os.makedirs(self.save_model_path)
-        self.set_seed()
         # dataloader
         self.pt_subgraph_idx = (self.raw_dataset[self.target_node_name].test_mask == 1).nonzero().squeeze().tolist()
+        # sampling according to rank
+        self.pt_subgraph_idx = list(range(self.rank, len(self.pt_subgraph_idx), self.world_size))
         random.shuffle(self.pt_subgraph_idx)
         pt_size = len(self.pt_subgraph_idx)
+        print(f"Rank Id: {self.rank}, File Length: {pt_size}")
         self.batch_num = pt_size // self.batch_size if pt_size % self.batch_size == 0 else pt_size // self.batch_size + 1
+        self.set_seed()
 
     def set_seed(self):
         torch.manual_seed(self.train_dict["seed"])
@@ -100,23 +101,14 @@ class ModelPreTrain:
         else:
             return batch_h
 
-    def reset_batch_node(self, batch):
-        batch_item = batch.unique().detach().cpu().tolist()
-        batch_map = {batch_item[i]: i for i in range(len(batch_item))}
-        upgrade_batch = torch.tensor([batch_map[item] for item in batch.detach().cpu().tolist()], device=self.device)
-        return upgrade_batch
-
     def extract_smaller_batch_subgraph(self, batch, subgraph_node_indices=None):
         if subgraph_node_indices is None:
             subgraph_node_indices = (batch[self.target_node_name].idx == 1).nonzero().squeeze().detach().cpu()
+        subgraph_node_batch_idxes = batch[self.target_node_name].batch[subgraph_node_indices]
         batch_copy = batch.clone()
         batch_copy[self.target_node_name].x = batch[self.target_node_name].x[subgraph_node_indices]
-        batch_copy[self.target_node_name].y = batch[self.target_node_name].y[subgraph_node_indices]
-        batch_copy[self.target_node_name].score = batch[self.target_node_name].score[subgraph_node_indices]
-        batch_copy[self.target_node_name].idx = batch[self.target_node_name].idx[subgraph_node_indices]
-        subgraph_node_batch_idxes = batch[self.target_node_name].batch[subgraph_node_indices]
-        batch_copy[self.target_node_name].batch = self.reset_batch_node(subgraph_node_batch_idxes)
-        node_map = {subgraph_node_indices[i].item(): i for i in range(subgraph_node_indices.shape[0])}
+        node_map = {subgraph_node_indices[i].item(): i for i in range(len(subgraph_node_indices.shape[0]))}
+        batch_copy[self.target_node_name].batch = subgraph_node_batch_idxes
         subgraph_max_node_idx = subgraph_node_indices.max()
         for edge_type in batch.edge_types:
             try:
@@ -350,8 +342,9 @@ class ModelPreTrain:
                     if (i + 1) % self.print_batch == 0:
                         if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
                             print(
-                                "Batch: {}, Loss: {:.6f}, "
+                                "Rank: {}, Batch: {}, Loss: {:.6f}, "
                                 "Batch Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
+                                    self.rank,
                                     i + 1,
                                     loss_value,
                                     batch_loss.detach().cpu().item(),
@@ -359,8 +352,9 @@ class ModelPreTrain:
                                     time.time() - batch_start_time))
                         elif self.task_type in ['cross_subgraph', 'fine_grained_cross_subgraph']:
                             print(
-                                "Batch: {}, Loss: {:.6f}, "
+                                "Rank: {}, Batch: {}, Loss: {:.6f}, "
                                 "Cross Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
+                                    self.rank,
                                     i + 1,
                                     loss_value,
                                     cross_loss.detach().cpu().item(),
@@ -368,8 +362,9 @@ class ModelPreTrain:
                                     time.time() - batch_start_time))
                         else:
                             print(
-                                "Batch: {}, Loss: {:.6f}, "
+                                "Rank: {}, Batch: {}, Loss: {:.6f}, "
                                 "Time: {:.4f} s".format(
+                                    self.rank,
                                     i + 1,
                                     loss_value,
                                     time.time() - batch_start_time))
@@ -377,10 +372,11 @@ class ModelPreTrain:
             torch.cuda.empty_cache()
             epoch_loss = sum(epoch_loss) / len(epoch_loss)
             save_prefix = f"{self.conv_type}_{self.task_type}_{self.lr}"
-            self.writer.add_scalar(f"{save_prefix}_pretraining_loss", epoch_loss, epoch)
-            print("Epoch: {}, Loss: {:.4f}, Time: {:.4f} s".format(epoch, epoch_loss,
-                                                                       time.time() - epoch_start_time))
-            if epoch_loss < self.best_loss:
+            if self.rank == 0:
+                self.writer.add_scalar(f"{save_prefix}_pretraining_loss", epoch_loss, epoch)
+            print("Rank Id: {}, Epoch: {}, Loss: {:.4f}, Time: {:.4f} s".format(self.rank, epoch, epoch_loss,
+                                                                                    time.time() - epoch_start_time))
+            if epoch_loss < self.best_loss and self.rank == 0:
                 self.best_loss = epoch_loss
                 file_name = os.path.join(self.save_model_path, f"{save_prefix}_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
@@ -389,4 +385,6 @@ class ModelPreTrain:
                     epoch_file_name = os.path.join(self.save_model_path, f"{save_prefix}_epoch_{epoch}.pth")
                     torch.save(self.model.state_dict(), epoch_file_name)
                     print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
-        self.writer.close()
+        if self.rank == 0:
+            self.writer.close()
+        dist.destroy_process_group()
