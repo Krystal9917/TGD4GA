@@ -20,7 +20,7 @@ class ModelPreTrainDDP:
         self.data_dir = args_dict["train_data_path"]
         self.dataset_name = args_dict["dataset_name"]
         self.batch_size = args_dict["batch_size"]
-        self.epoch_num = args_dict["epoch_num"]
+        self.epoch_num = args_dict["n_epochs"]
         self.task_type = args_dict["task_type"]
         self.print_batch = args_dict["print_batch_num"]
         self.world_size = args_dict["world_size"]
@@ -115,7 +115,7 @@ class ModelPreTrainDDP:
 
     def extract_smaller_batch_subgraph(self, batch, subgraph_node_indices=None):
         if subgraph_node_indices is None:
-            subgraph_node_indices = (batch[self.target_node_name].idx == 1).nonzero().squeeze().detach().cpu()
+            subgraph_node_indices = (batch[self.target_node_name].idx == 1).nonzero().squeeze()
         batch_copy = batch.clone()
         batch_copy[self.target_node_name].x = batch[self.target_node_name].x[subgraph_node_indices]
         batch_copy[self.target_node_name].y = batch[self.target_node_name].y[subgraph_node_indices]
@@ -123,11 +123,11 @@ class ModelPreTrainDDP:
         batch_copy[self.target_node_name].idx = batch[self.target_node_name].idx[subgraph_node_indices]
         subgraph_node_batch_idxes = batch[self.target_node_name].batch[subgraph_node_indices]
         batch_copy[self.target_node_name].batch = self.reset_batch_node(subgraph_node_batch_idxes)
-        node_map = {subgraph_node_indices[i].item(): i for i in range(subgraph_node_indices.shape[0])}
-        subgraph_max_node_idx = subgraph_node_indices.max()
+        node_map = {subgraph_node_indices[i].detach().cpu().item(): i for i in range(subgraph_node_indices.shape[0])}
+        subgraph_max_node_idx = subgraph_node_indices.max().detach().cpu().item()
         for edge_type in batch.edge_types:
             try:
-                current_max_node_idx = batch[edge_type].edge_index.max()
+                current_max_node_idx = batch[edge_type].edge_index.max().detach().cpu().item()
                 max_node_idx = min(subgraph_max_node_idx, current_max_node_idx)
                 if max_node_idx < subgraph_max_node_idx:
                     subgraph_node_indices = subgraph_node_indices[subgraph_node_indices <= max_node_idx]
