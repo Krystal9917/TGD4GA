@@ -91,7 +91,7 @@ def induced_subgraph(sampling_list, dataset, node_name, k_hop=2, lower_bound=3, 
                     max_dataset_edge_index = dataset[edge_type].edge_index.max().detach().cpu().item()
                     max_select_node_index = random_select_subset.max().detach().cpu().item()
                     if max_dataset_edge_index < max_select_node_index:
-                        random_select_subset = random_select_subset[random_select_subset < max_dataset_edge_index]
+                        random_select_subset = random_select_subset[random_select_subset <= max_dataset_edge_index]
                     edge_type_index, _ = subgraph(random_select_subset, dataset[edge_type].edge_index)
                     del induced_subgraph_i[edge_type]
                     if edge_type_index.shape[1] > 0:

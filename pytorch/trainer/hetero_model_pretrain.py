@@ -108,7 +108,7 @@ class ModelPreTrain:
 
     def extract_smaller_batch_subgraph(self, batch, subgraph_node_indices=None):
         if subgraph_node_indices is None:
-            subgraph_node_indices = (batch[self.target_node_name].idx == 1).nonzero().squeeze().detach().cpu()
+            subgraph_node_indices = (batch[self.target_node_name].idx == 1).nonzero().squeeze()
         batch_copy = batch.clone()
         batch_copy[self.target_node_name].x = batch[self.target_node_name].x[subgraph_node_indices]
         batch_copy[self.target_node_name].y = batch[self.target_node_name].y[subgraph_node_indices]
@@ -116,7 +116,7 @@ class ModelPreTrain:
         batch_copy[self.target_node_name].idx = batch[self.target_node_name].idx[subgraph_node_indices]
         subgraph_node_batch_idxes = batch[self.target_node_name].batch[subgraph_node_indices]
         batch_copy[self.target_node_name].batch = self.reset_batch_node(subgraph_node_batch_idxes)
-        node_map = {subgraph_node_indices[i].item(): i for i in range(subgraph_node_indices.shape[0])}
+        node_map = {subgraph_node_indices[i].detach().cpu().item(): i for i in range(subgraph_node_indices.shape[0])}
         subgraph_max_node_idx = subgraph_node_indices.max()
         for edge_type in batch.edge_types:
             try:
