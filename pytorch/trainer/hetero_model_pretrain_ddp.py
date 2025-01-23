@@ -17,7 +17,7 @@ class ModelPreTrainDDP:
     def __init__(self, rank, args_dict):
         self.train_dict = args_dict
         self.conv_type = args_dict["conv_type"]
-        self.dataset_dir = args_dict["dataset_dir"]
+        self.data_dir = args_dict["train_data_path"]
         self.dataset_name = args_dict["dataset_name"]
         self.batch_size = args_dict["batch_size"]
         self.epoch_num = args_dict["epoch_num"]
@@ -32,18 +32,24 @@ class ModelPreTrainDDP:
         # dataset
         if self.dataset_name == "IMDB":
             self.target_node_name = "movie"
+            input_dim = 3489
+            num_relations = 3
         elif self.dataset_name == "DBLP":
             self.target_node_name = "author"
+            input_dim = 1024
+            num_relations = 1
         else:
             self.target_node_name = "paper"
-        self.raw_dataset = load_dataset(self.dataset_dir, self.dataset_name)
+            input_dim = 1902
+            num_relations = 4
+        self.raw_dataset = load_dataset(os.path.join(self.data_dir, self.dataset_name), self.dataset_name)
         self.metadata = self.raw_dataset.metadata()
         self.edge_types = {self.metadata[1][i]: i for i in range(len(self.metadata[1]))}
         # model
-        self.model = RGCN(input_dim=args_dict['input_dim'],
+        self.model = RGCN(input_dim=input_dim,
                           hidden_dim=args_dict['hidden_dim'],
                           output_dim=args_dict['output_dim'],
-                          num_relations=args_dict['num_relations'])
+                          num_relations=num_relations)
         self.model = self.model.to(self.device)
         self.lr = args_dict["lr"]
         self.best_loss = args_dict["best_loss"]
@@ -61,6 +67,7 @@ class ModelPreTrainDDP:
                                             self.log_file_path)
         if not os.path.exists(self.save_model_path) and self.rank == 0:
             os.makedirs(self.save_model_path)
+        self.set_seed()
         # dataloader
         self.pt_subgraph_idx = (self.raw_dataset[self.target_node_name].test_mask == 1).nonzero().squeeze().tolist()
         # sampling according to rank
@@ -69,7 +76,6 @@ class ModelPreTrainDDP:
         pt_size = len(self.pt_subgraph_idx)
         print(f"Rank Id: {self.rank}, File Length: {pt_size}")
         self.batch_num = pt_size // self.batch_size if pt_size % self.batch_size == 0 else pt_size // self.batch_size + 1
-        self.set_seed()
 
     def set_seed(self):
         torch.manual_seed(self.train_dict["seed"])
@@ -101,14 +107,23 @@ class ModelPreTrainDDP:
         else:
             return batch_h
 
+    def reset_batch_node(self, batch):
+        batch_item = batch.unique().detach().cpu().tolist()
+        batch_map = {batch_item[i]: i for i in range(len(batch_item))}
+        upgrade_batch = torch.tensor([batch_map[item] for item in batch.detach().cpu().tolist()], device=self.device)
+        return upgrade_batch
+
     def extract_smaller_batch_subgraph(self, batch, subgraph_node_indices=None):
         if subgraph_node_indices is None:
             subgraph_node_indices = (batch[self.target_node_name].idx == 1).nonzero().squeeze().detach().cpu()
-        subgraph_node_batch_idxes = batch[self.target_node_name].batch[subgraph_node_indices]
         batch_copy = batch.clone()
         batch_copy[self.target_node_name].x = batch[self.target_node_name].x[subgraph_node_indices]
-        node_map = {subgraph_node_indices[i].item(): i for i in range(len(subgraph_node_indices.shape[0]))}
-        batch_copy[self.target_node_name].batch = subgraph_node_batch_idxes
+        batch_copy[self.target_node_name].y = batch[self.target_node_name].y[subgraph_node_indices]
+        batch_copy[self.target_node_name].score = batch[self.target_node_name].score[subgraph_node_indices]
+        batch_copy[self.target_node_name].idx = batch[self.target_node_name].idx[subgraph_node_indices]
+        subgraph_node_batch_idxes = batch[self.target_node_name].batch[subgraph_node_indices]
+        batch_copy[self.target_node_name].batch = self.reset_batch_node(subgraph_node_batch_idxes)
+        node_map = {subgraph_node_indices[i].item(): i for i in range(subgraph_node_indices.shape[0])}
         subgraph_max_node_idx = subgraph_node_indices.max()
         for edge_type in batch.edge_types:
             try:

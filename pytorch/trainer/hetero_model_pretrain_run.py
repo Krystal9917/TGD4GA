@@ -49,7 +49,7 @@ class ArgsHeteroGangs:
                             choices=['subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph'])
         # RGCN
-        parser.add_argument('--world_size', type=int, default=1)
+        parser.add_argument('--world_size', type=int, default=2)
 
         args = parser.parse_args()
         args_dict = vars(args)
