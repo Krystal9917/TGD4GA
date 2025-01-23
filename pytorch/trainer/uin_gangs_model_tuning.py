@@ -550,18 +550,19 @@ class UinGangsModelTuning:
             print(f"Epoch {epoch}, Loss: {current_loss: .4f}, Time: {time.time() - st: .4f} s")
             test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm = self.evaluate_classifier(task="detect_gang")
             if test_f1 > best_test_f1:
-                prefix = f'{self.conv_type}_{self.task_type}_{self.eval_dict["eval_epoch"]}'
-                file_name = f"{self.info_type}_{prefix}_best_acc.pth" if self.info_type is not None \
-                    else f"{prefix}_best_f1.pth"
-                file_name = self.eval_dict["cls_model_states_path"] + file_name
-                torch.save(self.classifier.state_dict(), file_name)
-                print(f"Now best f1: {test_f1:.4f}, save model to {file_name}")
                 best_test_acc = test_acc
                 best_test_pre = test_pre
                 best_test_rec = test_rec
                 best_test_f1 = test_f1
                 best_test_roc_auc = test_roc_auc
                 best_test_cm = test_cm
+                prefix = f'{self.conv_type}_{self.task_type}_{self.eval_dict["eval_epoch"]}'
+                tp_tf = f'tn_{str(best_test_cm[0, 0])}_tp_{str(best_test_cm[1, 1])}'
+                file_name = f"{self.info_type}_{prefix}_best_f1_{tp_tf}.pth" if self.info_type is not None \
+                    else f"{prefix}_best_f1_{tp_tf}.pth"
+                file_name = self.eval_dict["cls_model_states_path"] + file_name
+                torch.save(self.classifier.state_dict(), file_name)
+                print(f"Now best f1: {test_f1:.4f}, save model to {file_name}")
         return best_test_acc, best_test_pre, best_test_rec, best_test_f1, best_test_roc_auc, best_test_cm
 
     def evaluate_classifier(self, task="subgraph"):

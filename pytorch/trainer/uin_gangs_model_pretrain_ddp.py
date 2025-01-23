@@ -412,7 +412,7 @@ class UinGangsModelPreTrainDDP:
                         abnormal_h = batch_h[abnormal_node_idx]
                         node_loss = self.node_contrastive_loss(abnormal_h, normal_h)
                         loss = node_loss + subgraph_loss
-                    elif self.task_type in ['batch_subgraph', 'cross_subgraph', 'fine_grained_cross_subgraph']:
+                    elif self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph', 'cross_subgraph', 'fine_grained_cross_subgraph']:
                         # batch-level contrastive learning (high possibility subgraphs inside)
                         if list_flag:
                             batch_pos_neg_samples_idx = torch.concat(
@@ -496,7 +496,7 @@ class UinGangsModelPreTrainDDP:
                                         node_loss.detach().cpu().item(),
                                         subgraph_loss.detach().cpu().item(),
                                         time.time() - start_time))
-                            elif self.task_type == 'batch_subgraph':
+                            elif self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
                                 print(
                                     "Rank: {}, Batch: {}, Loss: {:.6f}, "
                                     "Batch Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
@@ -506,7 +506,7 @@ class UinGangsModelPreTrainDDP:
                                         batch_loss.detach().cpu().item(),
                                         subgraph_loss.detach().cpu().item(),
                                         time.time() - start_time))
-                            elif self.task_type == 'cross_subgraph':
+                            elif self.task_type in ['cross_subgraph', 'fine_grained_cross_subgraph']:
                                 print(
                                     "Rank: {}, Batch: {}, Loss: {:.6f}, "
                                     "Cross Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
