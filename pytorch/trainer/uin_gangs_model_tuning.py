@@ -966,8 +966,8 @@ class UinGangsModelTuning:
 
     def inference_gang_members(self):
         prefix = f'{self.conv_type}_{self.task_type}_{self.eval_dict["eval_epoch"]}'
-        file_name = f"{self.prompt_type}_{prefix}_best_acc.pth" if self.prompt_type is not None \
-            else f"{prefix}_best_f1.pth"
+        file_name = f"{self.prompt_type}_{prefix}_best_f1.pth" if self.prompt_type is not None \
+            else f"{prefix}_best_f1_tn_53_tp_43.pth"
         model_weight = torch.load(self.eval_dict['cls_model_states_path'] + file_name, map_location=self.device)
         self.classifier.load_state_dict(model_weight)
         self.classifier.eval()

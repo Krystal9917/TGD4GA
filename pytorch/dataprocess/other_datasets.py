@@ -91,8 +91,10 @@ def induced_subgraph(sampling_list, dataset, node_name, k_hop=2, lower_bound=3, 
                     max_dataset_edge_index = dataset[edge_type].edge_index.max().detach().cpu().item()
                     max_select_node_index = random_select_subset.max().detach().cpu().item()
                     if max_dataset_edge_index < max_select_node_index:
-                        random_select_subset = random_select_subset[random_select_subset <= max_dataset_edge_index]
-                    edge_type_index, _ = subgraph(random_select_subset, dataset[edge_type].edge_index)
+                        upgrade_random_select_subset = random_select_subset[random_select_subset < max_dataset_edge_index]
+                        edge_type_index, _ = subgraph(upgrade_random_select_subset, dataset[edge_type].edge_index)
+                    else:
+                        edge_type_index, _ = subgraph(random_select_subset, dataset[edge_type].edge_index)
                     del induced_subgraph_i[edge_type]
                     if edge_type_index.shape[1] > 0:
                         reset_edge_type_index = reset_edge_index_by_map(node_map, edge_type_index)
@@ -132,7 +134,11 @@ def generate_positive_subgraph_by_fraudar(graph_data, node_name, lower_bound=3, 
         for i in range(unique_edge_index.shape[1]):
             srt = unique_edge_index[0, i].item()
             dst = unique_edge_index[1, i].item()
-            G.add_edge(srt, dst, edge_type_cnt=adj[srt, dst].item())
+            try:
+                G.add_edge(srt, dst, edge_type_cnt=adj[srt, dst].item())
+            except Exception as e:
+                print(f"{e}")
+                print(adj.shape, srt, dst)
         # find the best solution
         best_graph, best_density, best_weight = fraudar(G)
         if return_nodes_num:
