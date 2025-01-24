@@ -365,8 +365,8 @@ class ModelPreTrainDDP:
                                     self.rank,
                                     i + 1,
                                     loss_value,
-                                    batch_loss.detach().cpu().item(),
-                                    subgraph_loss.detach().cpu().item(),
+                                    intra_loss.detach().cpu().item(),
+                                    inter_loss.detach().cpu().item(),
                                     time.time() - batch_start_time))
                         elif self.task_type in ['cross_subgraph', 'fine_grained_cross_subgraph']:
                             print(
@@ -375,8 +375,8 @@ class ModelPreTrainDDP:
                                     self.rank,
                                     i + 1,
                                     loss_value,
-                                    cross_loss.detach().cpu().item(),
-                                    subgraph_loss.detach().cpu().item(),
+                                    intra_loss.detach().cpu().item(),
+                                    inter_loss.detach().cpu().item(),
                                     time.time() - batch_start_time))
                         else:
                             print(
