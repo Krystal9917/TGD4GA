@@ -271,57 +271,36 @@ class ModelPreTrainDDP:
                     fraudar_batch_subgraph = fraudar_batch_subgraph.to(self.device)
 
                     fraudar_batch_h = self.rgcn_fit(fraudar_batch_subgraph)
-                    fraudar_batch_h_g = scatter_mean(fraudar_batch_h,
-                                                     fraudar_batch_subgraph[self.target_node_name].batch, dim=0)
+                    if fraudar_batch_h is not None:
+                        fraudar_batch_h_g = scatter_mean(fraudar_batch_h,
+                                                         fraudar_batch_subgraph[self.target_node_name].batch, dim=0)
+                        pos_batch_h_g = batch_h_g[pos_subgraph_idx]
+                        neg_batch_h_g = batch_h_g[neg_subgraph_idx]
 
-                    pos_batch_h_g = batch_h_g[pos_subgraph_idx]
-                    neg_batch_h_g = batch_h_g[neg_subgraph_idx]
-
-                    inter_loss = self.preference_contrastive_loss(pos_batch_h_g, fraudar_batch_h_g, neg_batch_h_g)
-                    # intra-subgraph contrastive learning (high possibility subgraphs inside)
-                    if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph',
-                                          'cross_subgraph', 'fine_grained_cross_subgraph']:
-                        if list_flag:
-                            batch_pos_neg_samples_idx = torch.concat(
-                                [(batch_subgraph[self.target_node_name].batch == i).nonzero().squeeze().detach().cpu()
-                                 for i in pos_subgraph_idx], dim=0).tolist()
-                        else:
-                            batch_pos_neg_samples_idx = (batch_subgraph[self.target_node_name].batch ==
-                                                         pos_subgraph_idx).nonzero().squeeze().detach().cpu().tolist()
-                        pos_samples_idx = (batch_subgraph[
-                                               self.target_node_name].idx == 1).nonzero().squeeze().detach().cpu().tolist()
-                        batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
-                        batch_pos_samples_idx_batch = batch_subgraph[self.target_node_name].batch[batch_pos_samples_idx]
-
-                        batch_neg_samples_idx = list(set(batch_pos_neg_samples_idx) - set(pos_samples_idx))
-                        batch_neg_samples_idx_batch = batch_subgraph[self.target_node_name].batch[batch_neg_samples_idx]
-
-                        if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
-                            if self.task_type == 'fine_grained_batch_subgraph':
-                                batch_anomalous_anchors = self.compute_anomalous_subgraph_anchor(
-                                    batch_subgraph[self.target_node_name].x[batch_pos_samples_idx],
-                                    batch_pos_samples_idx_batch)
-                                batch_exclude_normal_idx = self.exclude_anomalous_nodes_from_normals(
-                                    batch_subgraph[self.target_node_name].x[batch_neg_samples_idx],
-                                    batch_anomalous_anchors,
-                                    batch_neg_samples_idx_batch)
-                                upgrade_batch_neg_samples_idx = list(
-                                    set(batch_neg_samples_idx) - set(batch_exclude_normal_idx))
-                                upgrade_batch_neg_samples_idx_batch = batch_subgraph[self.target_node_name].batch[
-                                    upgrade_batch_neg_samples_idx]
-                                batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
-                                                                         batch_h[upgrade_batch_neg_samples_idx],
-                                                                         batch_pos_samples_idx_batch,
-                                                                         upgrade_batch_neg_samples_idx_batch)
+                        inter_loss = self.preference_contrastive_loss(pos_batch_h_g, fraudar_batch_h_g, neg_batch_h_g)
+                        # intra-subgraph contrastive learning (high possibility subgraphs inside)
+                        if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph',
+                                              'cross_subgraph', 'fine_grained_cross_subgraph']:
+                            if list_flag:
+                                batch_pos_neg_samples_idx = torch.concat(
+                                    [(batch_subgraph[
+                                          self.target_node_name].batch == i).nonzero().squeeze().detach().cpu()
+                                     for i in pos_subgraph_idx], dim=0).tolist()
                             else:
-                                batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
-                                                                         batch_h[batch_neg_samples_idx],
-                                                                         batch_pos_samples_idx_batch,
-                                                                         batch_neg_samples_idx_batch)
-                            intra_loss = batch_loss
-                        else:
-                            if fraudar_batch_h is not None:
-                                if self.task_type == 'fine_grained_cross_subgraph':
+                                batch_pos_neg_samples_idx = (batch_subgraph[self.target_node_name].batch ==
+                                                             pos_subgraph_idx).nonzero().squeeze().detach().cpu().tolist()
+                            pos_samples_idx = (batch_subgraph[
+                                                   self.target_node_name].idx == 1).nonzero().squeeze().detach().cpu().tolist()
+                            batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
+                            batch_pos_samples_idx_batch = batch_subgraph[self.target_node_name].batch[
+                                batch_pos_samples_idx]
+
+                            batch_neg_samples_idx = list(set(batch_pos_neg_samples_idx) - set(pos_samples_idx))
+                            batch_neg_samples_idx_batch = batch_subgraph[self.target_node_name].batch[
+                                batch_neg_samples_idx]
+
+                            if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
+                                if self.task_type == 'fine_grained_batch_subgraph':
                                     batch_anomalous_anchors = self.compute_anomalous_subgraph_anchor(
                                         batch_subgraph[self.target_node_name].x[batch_pos_samples_idx],
                                         batch_pos_samples_idx_batch)
@@ -333,23 +312,70 @@ class ModelPreTrainDDP:
                                         set(batch_neg_samples_idx) - set(batch_exclude_normal_idx))
                                     upgrade_batch_neg_samples_idx_batch = batch_subgraph[self.target_node_name].batch[
                                         upgrade_batch_neg_samples_idx]
-                                    cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
-                                                                             batch_h[batch_pos_samples_idx],
+                                    batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
                                                                              batch_h[upgrade_batch_neg_samples_idx],
                                                                              batch_pos_samples_idx_batch,
                                                                              upgrade_batch_neg_samples_idx_batch)
                                 else:
-                                    cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
-                                                                             batch_h[batch_pos_samples_idx],
+                                    batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
                                                                              batch_h[batch_neg_samples_idx],
                                                                              batch_pos_samples_idx_batch,
                                                                              batch_neg_samples_idx_batch)
-                                intra_loss = cross_loss
+                                intra_loss = batch_loss
                             else:
-                                intra_loss = torch.tensor(torch.nan).to(self.device)
-                        loss = inter_loss + intra_loss
+                                if fraudar_batch_h is not None:
+                                    if self.task_type == 'fine_grained_cross_subgraph':
+                                        batch_anomalous_anchors = self.compute_anomalous_subgraph_anchor(
+                                            batch_subgraph[self.target_node_name].x[batch_pos_samples_idx],
+                                            batch_pos_samples_idx_batch)
+                                        batch_exclude_normal_idx = self.exclude_anomalous_nodes_from_normals(
+                                            batch_subgraph[self.target_node_name].x[batch_neg_samples_idx],
+                                            batch_anomalous_anchors,
+                                            batch_neg_samples_idx_batch)
+                                        upgrade_batch_neg_samples_idx = list(
+                                            set(batch_neg_samples_idx) - set(batch_exclude_normal_idx))
+                                        upgrade_batch_neg_samples_idx_batch = \
+                                        batch_subgraph[self.target_node_name].batch[
+                                            upgrade_batch_neg_samples_idx]
+                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                                                                 batch_h[batch_pos_samples_idx],
+                                                                                 batch_h[upgrade_batch_neg_samples_idx],
+                                                                                 batch_pos_samples_idx_batch,
+                                                                                 upgrade_batch_neg_samples_idx_batch)
+                                    else:
+                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                                                                 batch_h[batch_pos_samples_idx],
+                                                                                 batch_h[batch_neg_samples_idx],
+                                                                                 batch_pos_samples_idx_batch,
+                                                                                 batch_neg_samples_idx_batch)
+                                    intra_loss = cross_loss
+                                else:
+                                    intra_loss = torch.tensor(torch.nan).to(self.device)
+                            loss = inter_loss + intra_loss
+                            if (i + 1) % self.print_batch == 0:
+                                print(
+                                    "Rank: {}, Batch: {}, Loss: {:.6f}, "
+                                    "Intra-subgraph Loss: {:.6f}, Inter-subgraph Loss: {:.6f}, "
+                                    "Time: {:.4f} s".format(
+                                        self.rank,
+                                        i + 1,
+                                        loss.detach().cpu().item(),
+                                        intra_loss.detach().cpu().item(),
+                                        inter_loss.detach().cpu().item(),
+                                        time.time() - batch_start_time))
+                        else:
+                            loss = inter_loss
+                            if (i + 1) % self.print_batch == 0:
+                                print(
+                                    "Rank: {}, Batch: {}, Loss: {:.6f}, "
+                                    "Time: {:.4f} s".format(
+                                        self.rank,
+                                        i + 1,
+                                        loss.detach().cpu().item(),
+                                        time.time() - batch_start_time))
+                    # Edge extraction error, skip the batch
                     else:
-                        loss = inter_loss
+                        loss = torch.tensor(torch.nan).to(self.device)
                 else:
                     loss = torch.tensor(torch.nan).to(self.device)
                 if not torch.isnan(loss):
@@ -357,43 +383,13 @@ class ModelPreTrainDDP:
                     self.optimizer.step()
                     loss_value = loss.detach().cpu().item()
                     epoch_loss.append(loss_value)
-                    if (i + 1) % self.print_batch == 0:
-                        if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
-                            print(
-                                "Rank: {}, Batch: {}, Loss: {:.6f}, "
-                                "Batch Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
-                                    self.rank,
-                                    i + 1,
-                                    loss_value,
-                                    intra_loss.detach().cpu().item(),
-                                    inter_loss.detach().cpu().item(),
-                                    time.time() - batch_start_time))
-                        elif self.task_type in ['cross_subgraph', 'fine_grained_cross_subgraph']:
-                            print(
-                                "Rank: {}, Batch: {}, Loss: {:.6f}, "
-                                "Cross Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
-                                    self.rank,
-                                    i + 1,
-                                    loss_value,
-                                    intra_loss.detach().cpu().item(),
-                                    inter_loss.detach().cpu().item(),
-                                    time.time() - batch_start_time))
-                        else:
-                            print(
-                                "Rank: {}, Batch: {}, Loss: {:.6f}, "
-                                "Time: {:.4f} s".format(
-                                    self.rank,
-                                    i + 1,
-                                    loss_value,
-                                    time.time() - batch_start_time))
-
             torch.cuda.empty_cache()
             epoch_loss = sum(epoch_loss) / len(epoch_loss)
             save_prefix = f"{self.conv_type}_{self.task_type}_{self.lr}"
             if self.rank == 0:
                 self.writer.add_scalar(f"{save_prefix}_pretraining_loss", epoch_loss, epoch)
             print("Rank Id: {}, Epoch: {}, Loss: {:.4f}, Time: {:.4f} s".format(self.rank, epoch, epoch_loss,
-                                                                                    time.time() - epoch_start_time))
+                                                                                time.time() - epoch_start_time))
             if epoch_loss < self.best_loss and self.rank == 0:
                 self.best_loss = epoch_loss
                 file_name = os.path.join(self.save_model_path, f"{save_prefix}_best_loss.pth")

@@ -50,6 +50,14 @@ class ArgsHeteroGangs:
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph'])
         # RGCN
         parser.add_argument('--world_size', type=int, default=2)
+        # Evaluation
+        parser.add_argument('--evaluate', type=bool, default=True)
+        parser.add_argument('--evaluate_times', type=int, default=5)
+        parser.add_argument('--evaluate_epoch', type=int, default=0)
+        parser.add_argument('--node_classes', type=int, default=5)
+        parser.add_argument('--best_test_f1', type=float, default=0.6)
+        parser.add_argument('--test_n_epochs', type=int, default=50)
+        parser.add_argument('--evaluate_lr', type=float, default=0.01)
 
         args = parser.parse_args()
         args_dict = vars(args)
@@ -70,11 +78,23 @@ def run_pretraining_graph(args):
     train_model.pretraining()
 
 
+def run_tuning_graph(args):
+    tune_model = ModelPreTrain(args.args_dict)
+    tune_model.testing()
+
+
 if __name__ == '__main__':
     args = ArgsHeteroGangs()
     print(f"Current GPUs: {torch.cuda.device_count()}")
-    if args.args_dict["world_size"] == 1:
-        run_pretraining_graph(args)
+    if args.args_dict["evaluate"]:
+        print(f"Parameters: {args.args_dict}")
+        for i in range(args.args_dict["evaluate_times"]):
+            print(f"======{args.args_dict['dataset_name']} {str(i+1)} Tuning======")
+            run_tuning_graph(args)
+            print(f"======End======")
     else:
-        mp.spawn(run_pretraining_graph_ddp, args=(args,),
-                 nprocs=args.args_dict["world_size"], join=True)
+        if args.args_dict["world_size"] == 1:
+            run_pretraining_graph(args)
+        else:
+            mp.spawn(run_pretraining_graph_ddp, args=(args,),
+                     nprocs=args.args_dict["world_size"], join=True)
