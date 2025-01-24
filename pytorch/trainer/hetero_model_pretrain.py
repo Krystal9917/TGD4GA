@@ -3,6 +3,7 @@ import time
 import torch
 import random
 import numpy as np
+from collections import OrderedDict
 from torch_scatter import scatter_mean
 from torch_geometric.data import Batch
 from torch_geometric.utils import subgraph
@@ -10,6 +11,8 @@ from torch.utils.tensorboard import SummaryWriter
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
 from mmgog_long_term_sequence_model.pytorch.dataprocess.other_datasets import load_dataset, reset_edge_index_by_map, \
     induced_subgraph
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, \
+    multilabel_confusion_matrix
 
 
 class ModelPreTrain:
@@ -22,6 +25,7 @@ class ModelPreTrain:
         self.epoch_num = args_dict["n_epochs"]
         self.task_type = args_dict["task_type"]
         self.print_batch = args_dict["print_batch_num"]
+        self.is_evaluate = args_dict["evaluate"]
         # device
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
@@ -50,26 +54,71 @@ class ModelPreTrain:
                           num_relations=num_relations)
         self.model = self.model.to(self.device)
         self.lr = args_dict["lr"]
-        self.best_loss = args_dict["best_loss"]
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        # save dir
         self.log_file_path = f"{self.dataset_name}_pretraining_{self.lr}"
         loss_log_path = os.path.abspath(os.path.join(args_dict['log_dir'],
                                                      args_dict["model_states_path"].split('/')[-1],
                                                      self.log_file_path))
-        if not os.path.exists(loss_log_path):
-            os.makedirs(loss_log_path)
-        self.writer = SummaryWriter(log_dir=loss_log_path)
         self.save_model_path = os.path.join(self.train_dict["model_states_path"],
                                             self.log_file_path)
-        if not os.path.exists(self.save_model_path):
-            os.makedirs(self.save_model_path)
-        self.set_seed()
-        # dataloader
-        self.pt_subgraph_idx = (self.raw_dataset[self.target_node_name].test_mask == 1).nonzero().squeeze().tolist()
-        random.shuffle(self.pt_subgraph_idx)
-        pt_size = len(self.pt_subgraph_idx)
-        self.batch_num = pt_size // self.batch_size if pt_size % self.batch_size == 0 else pt_size // self.batch_size + 1
+        if self.is_evaluate:
+            # load pretrained model
+            if args_dict["evaluate_epoch"] == 0:
+                file_name = os.path.join(self.save_model_path, f"{self.conv_type}_{self.task_type}_{self.lr}_best_loss.pth")
+            else:
+                file_name = os.path.join(self.save_model_path,
+                                         f"{self.conv_type}_{self.task_type}_{self.lr}_epoch_{args_dict['evaluate_epoch']}.pth")
+            model_weight = torch.load(file_name, map_location=self.device)
+            rename_key_model_weight = OrderedDict()
+            for key in model_weight.keys():
+                key_weight = model_weight[key]
+                key = key.replace('module.', '')
+                rename_key_model_weight[key] = key_weight
+            self.model.load_state_dict(rename_key_model_weight)
+            # classifier
+            self.classifier = torch.nn.Sequential(torch.nn.Linear(args_dict['output_dim'], args_dict['hidden_dim']),
+                                                  torch.nn.ReLU(),
+                                                  torch.nn.Linear(args_dict['hidden_dim'], args_dict['node_classes']),
+                                                  torch.nn.Softmax(dim=1))
+            self.classifier.to(self.device)
+            self.cls_optimizer = torch.optim.Adam(self.classifier.parameters(), lr=args_dict["evaluate_lr"])
+            self.criterion = torch.nn.CrossEntropyLoss()
+            # set seed
+            self.set_seed()
+            # dataloader
+            self.ft_subgraph_idx = (
+                        self.raw_dataset[self.target_node_name].train_mask == 1).nonzero().squeeze().tolist()
+            random.shuffle(self.ft_subgraph_idx)
+            ft_size = len(self.ft_subgraph_idx)
+            ratio = 0.8
+            ft_train_size = int(ft_size * ratio)
+            # fine-tuning train
+            self.ft_train_idx = self.ft_subgraph_idx[:ft_train_size]
+            ft_train_size = len(self.ft_train_idx)
+            print(f"Train Data Length: {ft_train_size}")
+            self.train_batch_num = ft_train_size // self.batch_size if ft_train_size % self.batch_size == 0 \
+                else ft_train_size // self.batch_size + 1
+            # fine-tuning test
+            self.ft_test_idx = self.ft_subgraph_idx[ft_train_size:]
+            ft_test_size = len(self.ft_test_idx)
+            print(f"Test Data Length: {ft_test_size}")
+            self.test_batch_num = ft_test_size // self.batch_size if ft_test_size % self.batch_size == 0 \
+                else ft_test_size // self.batch_size + 1
+        else:
+            self.best_loss = args_dict["best_loss"]
+            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+            # loss save dir
+            if not os.path.exists(loss_log_path):
+                os.makedirs(loss_log_path)
+            self.writer = SummaryWriter(log_dir=loss_log_path)
+            # model save dir
+            if not os.path.exists(self.save_model_path):
+                os.makedirs(self.save_model_path)
+            self.set_seed()
+            # dataloader
+            self.pt_subgraph_idx = (self.raw_dataset[self.target_node_name].test_mask == 1).nonzero().squeeze().tolist()
+            random.shuffle(self.pt_subgraph_idx)
+            pt_size = len(self.pt_subgraph_idx)
+            self.batch_num = pt_size // self.batch_size if pt_size % self.batch_size == 0 else pt_size // self.batch_size + 1
 
     def set_seed(self):
         torch.manual_seed(self.train_dict["seed"])
@@ -265,57 +314,36 @@ class ModelPreTrain:
                     fraudar_batch_subgraph = fraudar_batch_subgraph.to(self.device)
 
                     fraudar_batch_h = self.rgcn_fit(fraudar_batch_subgraph)
-                    fraudar_batch_h_g = scatter_mean(fraudar_batch_h,
-                                                     fraudar_batch_subgraph[self.target_node_name].batch, dim=0)
+                    if fraudar_batch_h is not None:
+                        fraudar_batch_h_g = scatter_mean(fraudar_batch_h,
+                                                         fraudar_batch_subgraph[self.target_node_name].batch, dim=0)
+                        pos_batch_h_g = batch_h_g[pos_subgraph_idx]
+                        neg_batch_h_g = batch_h_g[neg_subgraph_idx]
 
-                    pos_batch_h_g = batch_h_g[pos_subgraph_idx]
-                    neg_batch_h_g = batch_h_g[neg_subgraph_idx]
-
-                    inter_loss = self.preference_contrastive_loss(pos_batch_h_g, fraudar_batch_h_g, neg_batch_h_g)
-                    # intra-subgraph contrastive learning (high possibility subgraphs inside)
-                    if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph',
-                                          'cross_subgraph', 'fine_grained_cross_subgraph']:
-                        if list_flag:
-                            batch_pos_neg_samples_idx = torch.concat(
-                                [(batch_subgraph[self.target_node_name].batch == i).nonzero().squeeze().detach().cpu()
-                                 for i in pos_subgraph_idx], dim=0).tolist()
-                        else:
-                            batch_pos_neg_samples_idx = (batch_subgraph[self.target_node_name].batch ==
-                                                         pos_subgraph_idx).nonzero().squeeze().detach().cpu().tolist()
-                        pos_samples_idx = (batch_subgraph[
-                                               self.target_node_name].idx == 1).nonzero().squeeze().detach().cpu().tolist()
-                        batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
-                        batch_pos_samples_idx_batch = batch_subgraph[self.target_node_name].batch[batch_pos_samples_idx]
-
-                        batch_neg_samples_idx = list(set(batch_pos_neg_samples_idx) - set(pos_samples_idx))
-                        batch_neg_samples_idx_batch = batch_subgraph[self.target_node_name].batch[batch_neg_samples_idx]
-
-                        if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
-                            if self.task_type == 'fine_grained_batch_subgraph':
-                                batch_anomalous_anchors = self.compute_anomalous_subgraph_anchor(
-                                    batch_subgraph[self.target_node_name].x[batch_pos_samples_idx],
-                                    batch_pos_samples_idx_batch)
-                                batch_exclude_normal_idx = self.exclude_anomalous_nodes_from_normals(
-                                    batch_subgraph[self.target_node_name].x[batch_neg_samples_idx],
-                                    batch_anomalous_anchors,
-                                    batch_neg_samples_idx_batch)
-                                upgrade_batch_neg_samples_idx = list(
-                                    set(batch_neg_samples_idx) - set(batch_exclude_normal_idx))
-                                upgrade_batch_neg_samples_idx_batch = batch_subgraph[self.target_node_name].batch[
-                                    upgrade_batch_neg_samples_idx]
-                                batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
-                                                                         batch_h[upgrade_batch_neg_samples_idx],
-                                                                         batch_pos_samples_idx_batch,
-                                                                         upgrade_batch_neg_samples_idx_batch)
+                        inter_loss = self.preference_contrastive_loss(pos_batch_h_g, fraudar_batch_h_g, neg_batch_h_g)
+                        # intra-subgraph contrastive learning (high possibility subgraphs inside)
+                        if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph',
+                                              'cross_subgraph', 'fine_grained_cross_subgraph']:
+                            if list_flag:
+                                batch_pos_neg_samples_idx = torch.concat(
+                                    [(batch_subgraph[
+                                          self.target_node_name].batch == i).nonzero().squeeze().detach().cpu()
+                                     for i in pos_subgraph_idx], dim=0).tolist()
                             else:
-                                batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
-                                                                         batch_h[batch_neg_samples_idx],
-                                                                         batch_pos_samples_idx_batch,
-                                                                         batch_neg_samples_idx_batch)
-                            intra_loss = batch_loss
-                        else:
-                            if fraudar_batch_h is not None:
-                                if self.task_type == 'fine_grained_cross_subgraph':
+                                batch_pos_neg_samples_idx = (batch_subgraph[self.target_node_name].batch ==
+                                                             pos_subgraph_idx).nonzero().squeeze().detach().cpu().tolist()
+                            pos_samples_idx = (batch_subgraph[
+                                                   self.target_node_name].idx == 1).nonzero().squeeze().detach().cpu().tolist()
+                            batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
+                            batch_pos_samples_idx_batch = batch_subgraph[self.target_node_name].batch[
+                                batch_pos_samples_idx]
+
+                            batch_neg_samples_idx = list(set(batch_pos_neg_samples_idx) - set(pos_samples_idx))
+                            batch_neg_samples_idx_batch = batch_subgraph[self.target_node_name].batch[
+                                batch_neg_samples_idx]
+
+                            if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
+                                if self.task_type == 'fine_grained_batch_subgraph':
                                     batch_anomalous_anchors = self.compute_anomalous_subgraph_anchor(
                                         batch_subgraph[self.target_node_name].x[batch_pos_samples_idx],
                                         batch_pos_samples_idx_batch)
@@ -327,23 +355,51 @@ class ModelPreTrain:
                                         set(batch_neg_samples_idx) - set(batch_exclude_normal_idx))
                                     upgrade_batch_neg_samples_idx_batch = batch_subgraph[self.target_node_name].batch[
                                         upgrade_batch_neg_samples_idx]
-                                    cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
-                                                                             batch_h[batch_pos_samples_idx],
+                                    batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
                                                                              batch_h[upgrade_batch_neg_samples_idx],
                                                                              batch_pos_samples_idx_batch,
                                                                              upgrade_batch_neg_samples_idx_batch)
                                 else:
-                                    cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
-                                                                             batch_h[batch_pos_samples_idx],
+                                    batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
                                                                              batch_h[batch_neg_samples_idx],
                                                                              batch_pos_samples_idx_batch,
                                                                              batch_neg_samples_idx_batch)
-                                intra_loss = cross_loss
+                                intra_loss = batch_loss
                             else:
-                                intra_loss = torch.tensor(torch.nan).to(self.device)
-                        loss = inter_loss + intra_loss
+                                if fraudar_batch_h is not None:
+                                    if self.task_type == 'fine_grained_cross_subgraph':
+                                        batch_anomalous_anchors = self.compute_anomalous_subgraph_anchor(
+                                            batch_subgraph[self.target_node_name].x[batch_pos_samples_idx],
+                                            batch_pos_samples_idx_batch)
+                                        batch_exclude_normal_idx = self.exclude_anomalous_nodes_from_normals(
+                                            batch_subgraph[self.target_node_name].x[batch_neg_samples_idx],
+                                            batch_anomalous_anchors,
+                                            batch_neg_samples_idx_batch)
+                                        upgrade_batch_neg_samples_idx = list(
+                                            set(batch_neg_samples_idx) - set(batch_exclude_normal_idx))
+                                        upgrade_batch_neg_samples_idx_batch = \
+                                            batch_subgraph[self.target_node_name].batch[
+                                                upgrade_batch_neg_samples_idx]
+                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                                                                 batch_h[batch_pos_samples_idx],
+                                                                                 batch_h[upgrade_batch_neg_samples_idx],
+                                                                                 batch_pos_samples_idx_batch,
+                                                                                 upgrade_batch_neg_samples_idx_batch)
+                                    else:
+                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                                                                 batch_h[batch_pos_samples_idx],
+                                                                                 batch_h[batch_neg_samples_idx],
+                                                                                 batch_pos_samples_idx_batch,
+                                                                                 batch_neg_samples_idx_batch)
+                                    intra_loss = cross_loss
+                                else:
+                                    intra_loss = torch.tensor(torch.nan).to(self.device)
+                            loss = inter_loss + intra_loss
+                        else:
+                            loss = inter_loss
+                    # Edge extraction error, skip the batch
                     else:
-                        loss = inter_loss
+                        loss = torch.tensor(torch.nan).to(self.device)
                 else:
                     loss = torch.tensor(torch.nan).to(self.device)
                 if not torch.isnan(loss):
@@ -394,3 +450,93 @@ class ModelPreTrain:
                     torch.save(self.model.state_dict(), epoch_file_name)
                     print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
         self.writer.close()
+
+    def testing(self):
+        self.model.eval()
+        for param in self.model.parameters():
+            param.requires_grad = False
+        for param in self.classifier.parameters():
+            param.requires_grad = True
+        best_test_acc = 0
+        best_test_pre = 0
+        best_test_rec = 0
+        best_test_f1 = self.train_dict['best_test_f1']
+        best_test_roc_auc = 0
+        best_test_cm = np.array([[0, 0], [0, 0]])
+        for epoch in range(1, self.train_dict["test_n_epochs"] + 1):
+            self.classifier.train()
+            epoch_loss = []
+            epoch_start_time = time.time()
+            for i in range(self.train_batch_num):
+                self.cls_optimizer.zero_grad()
+                if i != self.train_batch_num - 1:
+                    batch_subgraph_idx = self.ft_train_idx[i * self.batch_size: (i + 1) * self.batch_size]
+                else:
+                    batch_subgraph_idx = self.ft_train_idx[i * self.batch_size:]
+                batch_subgraph = induced_subgraph(batch_subgraph_idx, self.raw_dataset, self.target_node_name)
+                batch_subgraph = Batch.from_data_list(batch_subgraph).to(self.device)
+
+                # raw subgraph
+                batch_h = self.rgcn_fit(batch_subgraph)
+                batch_y = batch_subgraph[self.target_node_name].y.float()
+
+                pred_y = self.classifier(batch_h)
+                loss = self.criterion(pred_y, batch_y)
+                loss.backward()
+                self.cls_optimizer.step()
+                epoch_loss.append(loss.detach().cpu().item())
+            current_loss = sum(epoch_loss) / len(epoch_loss)
+            print(f"Epoch {epoch}, Loss: {current_loss: .4f}, Time: {time.time() - epoch_start_time: .4f} s")
+            test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm = self.evaluate_classifier()
+            if test_f1 > best_test_f1:
+                best_test_acc = test_acc
+                best_test_pre = test_pre
+                best_test_rec = test_rec
+                best_test_f1 = test_f1
+                best_test_roc_auc = test_roc_auc
+                best_test_cm = test_cm
+        return best_test_acc, best_test_pre, best_test_rec, best_test_f1, best_test_roc_auc, best_test_cm
+
+    def evaluate_classifier(self):
+        self.classifier.eval()
+        self.model.eval()
+        true_y_list = []
+        pred_y_list = []
+        prob_y_list = []
+        with torch.no_grad():
+            for i in range(self.test_batch_num):
+                if i != self.test_batch_num - 1:
+                    batch_subgraph_idx = self.ft_test_idx[i * self.batch_size: (i + 1) * self.batch_size]
+                else:
+                    batch_subgraph_idx = self.ft_test_idx[i * self.batch_size:]
+                batch_subgraph = induced_subgraph(batch_subgraph_idx, self.raw_dataset, self.target_node_name)
+                batch_subgraph = Batch.from_data_list(batch_subgraph).to(self.device)
+
+                # raw subgraph
+                batch_h = self.rgcn_fit(batch_subgraph)
+                batch_y = batch_subgraph[self.target_node_name].y.argmax(dim=1).long()
+
+                prob_y = self.classifier(batch_h)
+                pred_y = prob_y.argmax(dim=1)
+
+                true_y_list.append(batch_y.detach().cpu())
+                pred_y_list.append(prob_y.detach().cpu())
+                prob_y_list.append(pred_y.detach().cpu())
+            true_y_list = torch.concat(true_y_list, dim=0).numpy()
+            prob_y_list = torch.concat(prob_y_list, dim=0).numpy()
+            pred_y_list = torch.concat(pred_y_list, dim=0).numpy()
+        average = "micro"
+        multi_class = "ovr"
+        acc = accuracy_score(true_y_list, prob_y_list)
+        f1 = f1_score(true_y_list, prob_y_list, average=average)
+        pre = precision_score(true_y_list, prob_y_list, average=average)
+        rec = recall_score(true_y_list, prob_y_list, average=average)
+        roc_auc = roc_auc_score(true_y_list, pred_y_list, multi_class=multi_class)
+        cm = multilabel_confusion_matrix(true_y_list, prob_y_list)
+        print(f"Test ACC: {acc: .4f}, "
+              f"Precision: {pre: .4f}, "
+              f"Recall: {rec: .4f}, "
+              f"F1: {f1: .4f}, "
+              f"ROC-AUC: {roc_auc: .4f}, "
+              f"Confusion Matrix: {cm.tolist()}")
+        return acc, pre, rec, f1, roc_auc, cm
