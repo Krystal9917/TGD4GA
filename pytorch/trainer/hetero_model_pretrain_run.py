@@ -57,7 +57,7 @@ class ArgsHeteroGangs:
         parser.add_argument('--node_classes', type=int, default=5)
         parser.add_argument('--best_test_f1', type=float, default=0.6)
         parser.add_argument('--test_n_epochs', type=int, default=50)
-        parser.add_argument('--evaluate_lr', type=float, default=0.01)
+        parser.add_argument('--evaluate_lr', type=float, default=0.0001)
 
         args = parser.parse_args()
         args_dict = vars(args)

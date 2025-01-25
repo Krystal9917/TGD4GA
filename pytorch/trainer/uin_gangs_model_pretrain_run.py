@@ -50,8 +50,6 @@ class ArgsUinGangs:
         parser.add_argument('--uin_hidden_size', type=int, default=512)
         parser.add_argument('--uin_out_size', type=int, default=128)
         parser.add_argument('--drop_rate', type=float, default=0.5)
-        parser.add_argument('--device', type=str, default="gpu")
-        parser.add_argument('--infer_device', type=str, default="cpu")
         parser.add_argument('--onnx_opset', type=int, default=15)
         parser.add_argument('--seed', type=int, default=42)
         parser.add_argument('--num_workers', type=int, default=32)
@@ -63,19 +61,20 @@ class ArgsUinGangs:
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--re_train', type=bool, default=False)
-        parser.add_argument('--is_debug', type=bool, default=False)
+        parser.add_argument('--is_debug', type=bool, default=True)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--conv_type', type=str, default='RGCN',
-                            choices=['RGCN', 'HAN', 'Score_based_HAN', 'GT', 'HGT'])
-        parser.add_argument('--task_type', type=str, default='batch_subgraph',
+        parser.add_argument('--conv_type', type=str, default='RGAT',
+                            choices=['RGCN', 'RGAT', 'HAN', 'HGT'])
+        parser.add_argument('--task_type', type=str, default='fine_grained_batch_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
-                                     'fine_grained_cross_subgraph'])
+                                     'fine_grained_cross_subgraph', 'fine_grained_batch_subgraph'])
         # RGCN
         parser.add_argument('--num_relations', type=int, default=10)
-        # HAN/GT/HGT
-        parser.add_argument('--num_heads', type=int, default=4)
+        # RGAT/HAN/HGT
+        parser.add_argument('--num_heads', type=int, default=2)
         parser.add_argument('--data_tag', type=str, default='order_1930_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
+        parser.add_argument('--similarity_diff', type=float, default=0.15)
         args = parser.parse_args()
         args_dict = vars(args)
         self.args_dict = args_dict
