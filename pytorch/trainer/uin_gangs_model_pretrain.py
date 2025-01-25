@@ -14,6 +14,7 @@ from torch_scatter import scatter_mean
 from torch.utils.tensorboard import SummaryWriter
 from transformers import BertModel
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
+from mmgog_long_term_sequence_model.pytorch.models.rgat_model import RGAT
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN, Score_based_HAN
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
@@ -23,7 +24,7 @@ class UinGangsModelPreTrain:
 
     def __init__(self, args_dict):
         self.train_dict = args_dict
-        if torch.cuda.is_available() and self.train_dict["device"] == "gpu":
+        if torch.cuda.is_available():
             print("GPU is available")
             self.device = torch.device("cuda")
         else:
@@ -41,22 +42,22 @@ class UinGangsModelPreTrain:
         self.conv_type = args_dict["conv_type"]
         self.task_type = args_dict["task_type"]
         if self.conv_type == 'RGCN':
-            self.model = RGCN(input_dim=args_dict['input_dim'],
-                              hidden_dim=args_dict['hidden_dim'],
-                              output_dim=args_dict['output_dim'],
-                              num_relations=args_dict['num_relations'])
             self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
                                ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
                                ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
                                ('uin', 'download_app', 'uin'): 9}
-        elif self.conv_type == 'GT':
-            self.model = GraphTransformer(
-                input_dim=args_dict['input_dim'],
-                hidden_dim=args_dict['hidden_dim'],
-                output_dim=args_dict['output_dim'],
-                heads=args_dict['num_heads']
-            )
-        elif self.conv_type in ['HAN', 'Score_based_HAN', 'HGT']:
+            if self.conv_type == 'RGCN':
+                self.model = RGCN(input_dim=args_dict['input_dim'],
+                                  hidden_dim=args_dict['hidden_dim'],
+                                  output_dim=args_dict['output_dim'],
+                                  num_relations=args_dict['num_relations'])
+            else:
+                self.model = RGAT(input_dim=args_dict['input_dim'],
+                                  hidden_dim=args_dict['hidden_dim'],
+                                  output_dim=args_dict['output_dim'],
+                                  num_heads=args_dict['num_heads'],
+                                  num_relations=args_dict['num_relations'])
+        elif self.conv_type in ['HAN', 'HGT']:
             self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
                                        ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
                                        ('uin', 'payee', 'uin'), ('uin', 'payer', 'uin'), ('uin', 'bankcard', 'uin'),
@@ -66,11 +67,6 @@ class UinGangsModelPreTrain:
                                  out_channels=args_dict['output_dim'],
                                  metadata=self.metadata,
                                  heads=args_dict['num_heads'])
-            elif self.conv_type == 'Score_based_HAN':
-                self.model = Score_based_HAN(in_channels=args_dict['input_dim'],
-                                             out_channels=args_dict['output_dim'],
-                                             metadata=self.metadata,
-                                             heads=args_dict['num_heads'])
             elif self.conv_type == 'HGT':
                 self.model = HeteroGraphTransformer(in_channels=args_dict['input_dim'],
                                                     hidden_channels=args_dict['hidden_dim'],
@@ -95,8 +91,9 @@ class UinGangsModelPreTrain:
                                                     collate_fn=self.train_data.pos_collate_fn_for_fraudar)
         if not self.train_dict["is_debug"]:
             self.log_file_path = f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
-            log_path = os.path.join(args_dict['log_dir'], self.train_dict["model_states_path"].split('/')[-1],
-                                    self.log_file_path)
+            log_path = os.path.abspath(
+                os.path.join(args_dict['log_dir'], self.train_dict["model_states_path"].split('/')[-1],
+                             self.log_file_path))
             if not os.path.exists(log_path):
                 os.makedirs(log_path)
             self.writer = SummaryWriter(log_dir=log_path)
@@ -224,7 +221,7 @@ class UinGangsModelPreTrain:
             average_normal_i = normal_batch_i.mean(dim=0)
             similarity_diff = (torch.cosine_similarity(normal_batch_i, anomalous_anchor_i) -
                                torch.cosine_similarity(normal_batch_i, average_normal_i))
-            exclude_idx = (similarity_diff > 0.15).nonzero().squeeze().detach().cpu()
+            exclude_idx = (similarity_diff > self.conv_type['similarity_diff']).nonzero().squeeze().detach().cpu()
             prefix_node_idx = (batch < idx_list[i]).nonzero().squeeze()
             if prefix_node_idx.shape != torch.Size([]):
                 exclude_idx = exclude_idx + prefix_node_idx.shape[0]
@@ -324,10 +321,6 @@ class UinGangsModelPreTrain:
                 file_name = os.path.join(self.save_model_path, "uin_gangs_RGCN_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {file_name}")
-            if epoch % 10 == 0:
-                file_name = os.path.join(self.save_model_path, f"uin_gangs_RGCN_model_epoch_{epoch}.pth")
-                torch.save(self.model.state_dict(), file_name)
-                print(f"Save model to {file_name}")
         if not self.train_dict["is_debug"]:
             self.writer.close()
 
@@ -340,38 +333,17 @@ class UinGangsModelPreTrain:
         else:
             return out
 
-    def Score_based_HAN_fit(self, x_dict, edge_index_dict, score_dict):
-        out = self.model(x_dict, edge_index_dict, score_dict)
-        return out
-
-    def rgcn_fit(self, pos_batch, batch_x):
+    def relation_fit(self, pos_batch, batch_x):
         try:
             batch_edge_index, batch_edge_types = self.get_edge_info(pos_batch)
             batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
         except Exception as e:
-            print(f"RGCN Get Edge Information Error: {e}")
+            print(f"{self.conv_type} Get Edge Information Error: <{e}>")
             return None
         else:
             return batch_h
 
-    def homo_fit(self, pos_batch, batch_x):
-        try:
-            batch_edge_index, _ = self.get_edge_info(pos_batch)
-        except Exception as e:
-            print(f"Get Edge Information Error: {e}")
-            return None
-        else:
-            out = self.model(batch_x, batch_edge_index)
-            return out
-
     def fraudar_sampling_pretraining(self):
-        # num_fraudar_nodes = 0
-        # num_fraudar_edges = 0
-        # num_fraudar_graphs = 0
-        #
-        # num_low_malicious_nodes = 0
-        # num_low_malicious_edges = 0
-        # num_low_malicious_graphs = 0
         for epoch in range(self.start_epoch, self.end_epoch):
             self.model.train()
             epoch_loss = []
@@ -392,13 +364,8 @@ class UinGangsModelPreTrain:
                 pos_batch['uin'].x = batch_x.to(self.device)
                 if self.conv_type in ['HAN', 'HGT']:
                     batch_h = self.hetero_fit(pos_batch.x_dict, pos_batch.edge_index_dict)
-                elif self.conv_type == 'Score_based_HAN':
-                    batch_h = self.Score_based_HAN_fit(pos_batch.x_dict, pos_batch.edge_index_dict,
-                                                       pos_batch.score_dict)
-                elif self.conv_type == 'RGCN':
-                    batch_h = self.rgcn_fit(pos_batch, batch_x)
                 else:
-                    batch_h = self.homo_fit(pos_batch, batch_x)
+                    batch_h = self.relation_fit(pos_batch, batch_x)
 
                 batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
                 pos_batch_idx = (pos_batch['uin'].flag == 1).nonzero().squeeze().detach().cpu().tolist()
@@ -415,39 +382,11 @@ class UinGangsModelPreTrain:
                 if list_flag or int_flag:
                     fraudar_batch = self.extract_batch_subgraphs(pos_batch)
                     fraudar_batch = fraudar_batch.to(self.device)
-                    # count average size of positive samples generated by fraudar
-                    # if epoch == 1:
-                    #     try:
-                    #         num_fraudar_nodes += (fraudar_batch['uin'].idx == 1).nonzero().squeeze().shape[0]
-                    #         num_fraudar_edges += fraudar_batch.num_edges
-                    #         num_fraudar_graphs += len(pos_batch_idx) if list_flag else pos_batch_idx
-                    #     except Exception as e:
-                    #         print(f"Error: <{e}>")
-                    #         print((fraudar_batch['uin'].idx == 1).nonzero().squeeze().shape)
-                    #         print(fraudar_batch.num_edges)
-                    #         print(len(pos_batch_idx) if list_flag else pos_batch_idx)
 
                     if self.conv_type in ['HAN', 'HGT']:
-                        try:
-                            edge_index_dict = fraudar_batch.edge_index_dict
-                        except Exception as e:
-                            print(f"{self.conv_type} Error: {e}")
-                            fraudar_batch_h = None
-                        else:
-                            fraudar_batch_h = self.hetero_fit(fraudar_batch.x_dict, edge_index_dict)
-                    elif self.conv_type == 'Score_based_HAN':
-                        try:
-                            edge_index_dict = fraudar_batch.edge_index_dict
-                        except Exception as e:
-                            print(f"Error: {e}")
-                            fraudar_batch_h = None
-                        else:
-                            fraudar_batch_h = self.Score_based_HAN_fit(fraudar_batch.x_dict, edge_index_dict,
-                                                                       fraudar_batch.score_dict)
-                    elif self.conv_type == 'RGCN':
-                        fraudar_batch_h = self.rgcn_fit(fraudar_batch, fraudar_batch['uin'].x)
+                        fraudar_batch_h = self.hetero_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
                     else:
-                        fraudar_batch_h = self.homo_fit(fraudar_batch, fraudar_batch['uin'].x)
+                        fraudar_batch_h = self.relation_fit(fraudar_batch, fraudar_batch['uin'].x)
 
                     if fraudar_batch_h is not None:
                         fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
@@ -467,17 +406,8 @@ class UinGangsModelPreTrain:
                                                                          neg_batch_h_g)
                     else:
                         subgraph_loss = torch.tensor(torch.nan).to(self.device)
-                    if self.task_type == 'node_subgraph':
-                        # node-level contrastive learning (only labelled nodes)
-                        normal_node_graph_idx = (pos_batch['uin'].y < 2).nonzero().squeeze().detach().cpu().tolist()
-                        abnormal_node_graph_idx = (pos_batch['uin'].y >= 2).nonzero().squeeze().detach().cpu().tolist()
-                        normal_node_idx = pos_batch['uin'].ptr[:-1][normal_node_graph_idx].detach().cpu().tolist()
-                        abnormal_node_idx = pos_batch['uin'].ptr[:-1][abnormal_node_graph_idx].detach().cpu().tolist()
-                        normal_h = batch_h[normal_node_idx]
-                        abnormal_h = batch_h[abnormal_node_idx]
-                        node_loss = self.node_contrastive_loss(abnormal_h, normal_h)
-                        loss = node_loss + subgraph_loss
-                    elif self.task_type in ['batch_subgraph', 'cross_subgraph', 'fine_grained_cross_subgraph']:
+                    if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph',
+                                          'cross_subgraph', 'fine_grained_cross_subgraph']:
                         # batch-level contrastive learning (high possibility subgraphs inside)
                         if list_flag:
                             batch_pos_neg_samples_idx = torch.concat(
@@ -492,11 +422,28 @@ class UinGangsModelPreTrain:
 
                         batch_neg_samples_idx = list(set(batch_pos_neg_samples_idx) - set(pos_samples_idx))
                         batch_neg_samples_idx_batch = pos_batch['uin'].batch[batch_neg_samples_idx]
-                        if self.task_type == 'batch_subgraph':
-                            batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
-                                                                     batch_h[batch_neg_samples_idx],
-                                                                     batch_pos_samples_idx_batch,
-                                                                     batch_neg_samples_idx_batch)
+                        if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
+                            if self.task_type == 'fine_grained_batch_subgraph':
+                                batch_anomalous_anchors = self.compute_anomalous_subgraph_anchor(
+                                    pos_batch['uin'].x[batch_pos_samples_idx],
+                                    batch_pos_samples_idx_batch)
+                                batch_exclude_normal_idx = self.exclude_anomalous_nodes_from_normals(
+                                    pos_batch['uin'].x[batch_neg_samples_idx],
+                                    batch_anomalous_anchors,
+                                    batch_neg_samples_idx_batch)
+                                upgrade_batch_neg_samples_idx = list(
+                                    set(batch_neg_samples_idx) - set(batch_exclude_normal_idx))
+                                upgrade_batch_neg_samples_idx_batch = pos_batch['uin'].batch[
+                                    upgrade_batch_neg_samples_idx]
+                                batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
+                                                                         batch_h[upgrade_batch_neg_samples_idx],
+                                                                         batch_pos_samples_idx_batch,
+                                                                         upgrade_batch_neg_samples_idx_batch)
+                            else:
+                                batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
+                                                                         batch_h[batch_neg_samples_idx],
+                                                                         batch_pos_samples_idx_batch,
+                                                                         batch_neg_samples_idx_batch)
                             loss = batch_loss + subgraph_loss
                         else:
                             if fraudar_batch_h is not None:
@@ -519,11 +466,10 @@ class UinGangsModelPreTrain:
                                                                              upgrade_batch_neg_samples_idx_batch)
                                 else:
                                     cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
-                                                                         batch_h[batch_pos_samples_idx],
-                                                                         batch_h[batch_neg_samples_idx],
-                                                                         batch_pos_samples_idx_batch,
-                                                                         batch_neg_samples_idx_batch)
-
+                                                                             batch_h[batch_pos_samples_idx],
+                                                                             batch_h[batch_neg_samples_idx],
+                                                                             batch_pos_samples_idx_batch,
+                                                                             batch_neg_samples_idx_batch)
                                 loss = cross_loss + subgraph_loss
                             else:
                                 loss = subgraph_loss
@@ -534,11 +480,35 @@ class UinGangsModelPreTrain:
                         self.optimizer.step()
                         loss_value = loss.detach().cpu().item()
                         epoch_loss.append(loss_value)
-                        print(
-                            "Batch: {}, Loss: {:.6f}, Time: {:.4f} s".format(
-                                i + 1,
-                                loss_value,
-                                time.time() - start_time))
+                        if (i + 1) % 50 == 0:
+                            if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
+                                print(
+                                    "Rank: {}, Batch: {}, Loss: {:.6f}, "
+                                    "Batch Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
+                                        self.rank,
+                                        i + 1,
+                                        loss_value,
+                                        batch_loss.detach().cpu().item(),
+                                        subgraph_loss.detach().cpu().item(),
+                                        time.time() - start_time))
+                            elif self.task_type in ['cross_subgraph', 'fine_grained_cross_subgraph']:
+                                print(
+                                    "Rank: {}, Batch: {}, Loss: {:.6f}, "
+                                    "Cross Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
+                                        self.rank,
+                                        i + 1,
+                                        loss_value,
+                                        cross_loss.detach().cpu().item(),
+                                        subgraph_loss.detach().cpu().item(),
+                                        time.time() - start_time))
+                            else:
+                                print(
+                                    "Rank: {}, Batch: {}, Loss: {:.6f}, "
+                                    "Time: {:.4f} s".format(
+                                        self.rank,
+                                        i + 1,
+                                        loss_value,
+                                        time.time() - start_time))
 
                     torch.cuda.empty_cache()
 
@@ -555,18 +525,5 @@ class UinGangsModelPreTrain:
                                                f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
-            if epoch % 5 == 0:
-                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
-                torch.save(self.model.state_dict(), file_name)
-                print(f"Save model to {file_name}")
-            # if epoch == 1:
-            #     print(
-            #         "Average fraudar graph number={:.4f}, fraudar graph size node={:.4f}, edge={:.4f}.\n"
-            #         "Average highly normal graph number={:.4f}, normal graph size node={:.4f}, edge={:.4f}.".format(
-            #             num_fraudar_graphs, num_fraudar_nodes / num_fraudar_graphs,
-            #                                 num_fraudar_edges / num_fraudar_graphs,
-            #             num_low_malicious_graphs, num_low_malicious_nodes / num_low_malicious_graphs,
-            #                                 num_low_malicious_edges / num_low_malicious_graphs
-            #         ))
         if not self.train_dict["is_debug"]:
             self.writer.close()

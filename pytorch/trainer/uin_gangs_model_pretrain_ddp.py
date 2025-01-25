@@ -16,6 +16,7 @@ from transformers import BertModel
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
+from mmgog_long_term_sequence_model.pytorch.models.rgat_model import RGAT
 from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg_ddp import UinGangsDataIterablePyGDDP
@@ -42,15 +43,22 @@ class UinGangsModelPreTrainDDP:
 
         self.conv_type = args_dict["conv_type"]
         self.task_type = args_dict["task_type"]
-        if self.conv_type == 'RGCN':
-            self.model = RGCN(input_dim=args_dict['input_dim'],
-                              hidden_dim=args_dict['hidden_dim'],
-                              output_dim=args_dict['output_dim'],
-                              num_relations=args_dict['num_relations'])
+        if self.conv_type in ['RGCN', 'RGAT']:
             self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
                                ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
                                ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
                                ('uin', 'download_app', 'uin'): 9}
+            if self.conv_type == 'RGCN':
+                self.model = RGCN(input_dim=args_dict['input_dim'],
+                                  hidden_dim=args_dict['hidden_dim'],
+                                  output_dim=args_dict['output_dim'],
+                                  num_relations=args_dict['num_relations'])
+            else:
+                self.model = RGAT(input_dim=args_dict['input_dim'],
+                                  hidden_dim=args_dict['hidden_dim'],
+                                  output_dim=args_dict['output_dim'],
+                                  num_heads=args_dict['num_heads'],
+                                  num_relations=args_dict['num_relations'])
         elif self.conv_type in ['HAN', 'HGT']:
             self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
                                        ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
@@ -74,9 +82,9 @@ class UinGangsModelPreTrainDDP:
         self.device_tag = self.train_dict["device_tag"]
 
         self.log_file_path = f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}{self.device_tag}"
-        log_path = os.path.join(args_dict['log_dir'],
-                                self.train_dict["model_states_path"].split('/')[-1],
-                                self.log_file_path)
+        log_path = os.path.abspath(os.path.join(args_dict['log_dir'],
+                                                self.train_dict["model_states_path"].split('/')[-1],
+                                                self.log_file_path))
         if not os.path.exists(log_path) and self.rank == 0:
             os.makedirs(log_path)
         if self.rank == 0:
@@ -329,12 +337,12 @@ class UinGangsModelPreTrainDDP:
         else:
             return out
 
-    def rgcn_fit(self, pos_batch, batch_x):
+    def relation_fit(self, pos_batch, batch_x):
         try:
             batch_edge_index, batch_edge_types = self.get_edge_info(pos_batch)
             batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
         except Exception as e:
-            print(f"RGCN Get Edge Information Error: <{e}>")
+            print(f"{self.conv_type} Get Edge Information Error: <{e}>")
             return None
         else:
             return batch_h
@@ -360,8 +368,8 @@ class UinGangsModelPreTrainDDP:
                 pos_batch['uin'].x = batch_x.to(self.device)
                 if self.conv_type in ['HAN', 'HGT']:
                     batch_h = self.hetero_fit(pos_batch.x_dict, pos_batch.edge_index_dict)
-                elif self.conv_type == 'RGCN':
-                    batch_h = self.rgcn_fit(pos_batch, batch_x)
+                else:
+                    batch_h = self.relation_fit(pos_batch, batch_x)
                 batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
 
                 pos_batch_idx = (pos_batch['uin'].flag == 1).nonzero().squeeze().detach().cpu().tolist()
@@ -379,10 +387,10 @@ class UinGangsModelPreTrainDDP:
                     fraudar_batch = self.extract_batch_subgraphs(pos_batch)
                     fraudar_batch = fraudar_batch.to(self.device)
 
-                    if self.conv_type == 'RGCN':
-                        fraudar_batch_h = self.rgcn_fit(fraudar_batch, fraudar_batch['uin'].x)
-                    else:
+                    if self.conv_type in ['HAN', 'HGT']:
                         fraudar_batch_h = self.hetero_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
+                    else:
+                        fraudar_batch_h = self.relation_fit(fraudar_batch, fraudar_batch['uin'].x)
 
                     if fraudar_batch_h is not None:
                         fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
@@ -402,17 +410,8 @@ class UinGangsModelPreTrainDDP:
                                                                          neg_batch_h_g)
                     else:
                         subgraph_loss = torch.tensor(torch.nan).to(self.device)
-                    if self.task_type == 'node_subgraph':
-                        # node-level contrastive learning (only labelled nodes)
-                        normal_node_graph_idx = (pos_batch['uin'].y < 2).nonzero().squeeze().detach().cpu().tolist()
-                        abnormal_node_graph_idx = (pos_batch['uin'].y >= 2).nonzero().squeeze().detach().cpu().tolist()
-                        normal_node_idx = pos_batch['uin'].ptr[:-1][normal_node_graph_idx].detach().cpu().tolist()
-                        abnormal_node_idx = pos_batch['uin'].ptr[:-1][abnormal_node_graph_idx].detach().cpu().tolist()
-                        normal_h = batch_h[normal_node_idx]
-                        abnormal_h = batch_h[abnormal_node_idx]
-                        node_loss = self.node_contrastive_loss(abnormal_h, normal_h)
-                        loss = node_loss + subgraph_loss
-                    elif self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph', 'cross_subgraph', 'fine_grained_cross_subgraph']:
+                    if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph',
+                                          'cross_subgraph', 'fine_grained_cross_subgraph']:
                         # batch-level contrastive learning (high possibility subgraphs inside)
                         if list_flag:
                             batch_pos_neg_samples_idx = torch.concat(
@@ -446,9 +445,9 @@ class UinGangsModelPreTrainDDP:
                                                                          upgrade_batch_neg_samples_idx_batch)
                             else:
                                 batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
-                                                                     batch_h[batch_neg_samples_idx],
-                                                                     batch_pos_samples_idx_batch,
-                                                                     batch_neg_samples_idx_batch)
+                                                                         batch_h[batch_neg_samples_idx],
+                                                                         batch_pos_samples_idx_batch,
+                                                                         batch_neg_samples_idx_batch)
                             loss = batch_loss + subgraph_loss
                         else:
                             if fraudar_batch_h is not None:
@@ -486,17 +485,7 @@ class UinGangsModelPreTrainDDP:
                         loss_value = loss.detach().cpu().item()
                         epoch_loss.append(loss_value)
                         if (i + 1) % 50 == 0:
-                            if self.task_type == 'node_subgraph':
-                                print(
-                                    "Rank: {}, Batch: {}, Loss: {:.6f}, "
-                                    "Node Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
-                                        self.rank,
-                                        i + 1,
-                                        loss_value,
-                                        node_loss.detach().cpu().item(),
-                                        subgraph_loss.detach().cpu().item(),
-                                        time.time() - start_time))
-                            elif self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
+                            if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
                                 print(
                                     "Rank: {}, Batch: {}, Loss: {:.6f}, "
                                     "Batch Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(

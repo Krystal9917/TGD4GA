@@ -91,14 +91,14 @@ class ArgsUinGangs:
         parser.add_argument('--data_tag', type=str, default='order_1930_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
         parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2'])
-        parser.add_argument('--eval_epoch', type=int, default=14)
+        parser.add_argument('--eval_epoch', type=int, default=10)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_gang_detection',
                             choices=['node_classification', 'subgraph',
                                      'subgraph_gang_detection', 'subgraph_prompt_tuning',
                                      'inference_gang_members', 'inference_gang_members_by_fraudar'])
         parser.add_argument('--evaluate_task_tuning', type=bool, default=False)
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT'])
-        parser.add_argument('--task_type', type=str, default='fine_grained_batch_subgraph',
+        parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph'])
         parser.add_argument('--is_supervised', type=bool, default=False)
@@ -107,7 +107,7 @@ class ArgsUinGangs:
                             choices=[None, 'add_subgraph', 'concat_subgraph', 'concat_prompt',
                                      'concat_subgraph_prompt'])
         parser.add_argument('--prompt_lr', type=float, default=1e-4)
-        parser.add_argument('--info_insertion_type', type=str, default=None,
+        parser.add_argument('--info_insertion_type', type=str, default='add_prompt',
                             choices=[None, 'combine_subgraph', 'combine_difference', 'add_prompt', 'add_subgraph'])
         parser.add_argument('--threshold', type=float, default=0.5)
         parser.add_argument('--test_times', type=int, default=5)

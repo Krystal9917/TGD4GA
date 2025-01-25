@@ -515,7 +515,7 @@ class UinGangsModelTuning:
                 batch['uin'].x = batch_x
                 if self.conv_type == 'RGCN':
                     if self.info_type == 'add_prompt':
-                        batch['uin'].x = (batch['uin'].x + self.prompt.repeat(batch_x.shape[0], 1)) / 2
+                        batch['uin'].x = batch['uin'].x + self.prompt.repeat(batch_x.shape[0], 1)
                     elif self.info_type == 'add_subgraph':
                         batch_x_g = scatter_mean(batch_x, batch['uin'].batch, dim=0)
                         expand_batch_x_g = self.subgraph_embedding_expand(batch_x_g, batch['uin'].ptr)
@@ -587,7 +587,7 @@ class UinGangsModelTuning:
                 batch['uin'].x = batch_x
                 if self.conv_type == 'RGCN':
                     if self.info_type == 'add_prompt':
-                        batch['uin'].x = (batch['uin'].x + self.prompt.repeat(batch_x.shape[0], 1)) / 2
+                        batch['uin'].x = batch['uin'].x + self.prompt.repeat(batch_x.shape[0], 1)
                     elif self.info_type == 'add_subgraph':
                         batch_x_g = scatter_mean(batch_x, batch['uin'].batch, dim=0)
                         expand_batch_x_g = self.subgraph_embedding_expand(batch_x_g, batch['uin'].ptr)
