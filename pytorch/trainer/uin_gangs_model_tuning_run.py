@@ -98,7 +98,7 @@ class ArgsUinGangs:
                                      'inference_gang_members', 'inference_gang_members_by_fraudar'])
         parser.add_argument('--evaluate_task_tuning', type=bool, default=False)
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT'])
-        parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
+        parser.add_argument('--task_type', type=str, default='fine_grained_batch_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph'])
         parser.add_argument('--is_supervised', type=bool, default=False)
@@ -107,8 +107,8 @@ class ArgsUinGangs:
                             choices=[None, 'add_subgraph', 'concat_subgraph', 'concat_prompt',
                                      'concat_subgraph_prompt'])
         parser.add_argument('--prompt_lr', type=float, default=1e-4)
-        parser.add_argument('--info_insertion_type', type=str, default='add_prompt',
-                            choices=[None, 'combine_subgraph', 'combine_difference', 'add_prompt', 'add_subgraph'])
+        parser.add_argument('--info_insertion_type', type=str, default='combine_difference',
+                            choices=[None, 'combine_subgraph', 'combine_difference'])
         parser.add_argument('--threshold', type=float, default=0.5)
         parser.add_argument('--test_times', type=int, default=5)
         parser.add_argument('--loss_weight', type=str, default='1.0 2.0',

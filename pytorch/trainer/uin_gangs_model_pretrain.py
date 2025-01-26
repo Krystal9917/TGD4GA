@@ -16,7 +16,7 @@ from transformers import BertModel
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
 from mmgog_long_term_sequence_model.pytorch.models.rgat_model import RGAT
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
-from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN, Score_based_HAN
+from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
 
 
@@ -41,7 +41,7 @@ class UinGangsModelPreTrain:
         # Initialize GNN Model for Graph
         self.conv_type = args_dict["conv_type"]
         self.task_type = args_dict["task_type"]
-        if self.conv_type == 'RGCN':
+        if self.conv_type in ['RGCN', 'RGAT']:
             self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
                                ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
                                ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
@@ -155,7 +155,7 @@ class UinGangsModelPreTrain:
             h1_abs = h1.norm(dim=1)
             h3_abs = h3.norm(dim=1)
             pos_sim = torch.exp(torch.cosine_similarity(h1, h2) / t)
-            sim_matrix = torch.einsum('ik,jk->ij', h1, h3) / torch.einsum('i,j->ij', h1_abs, h3_abs)
+            sim_matrix = torch.einsum('ik,jk->ij', h1, h3) / (torch.einsum('i,j->ij', h1_abs, h3_abs) + 1e-4)
             sim_matrix = torch.exp(sim_matrix / t)
         except Exception as e:
             loss = torch.tensor(5.0, requires_grad=True).to(h1.device)
@@ -173,10 +173,10 @@ class UinGangsModelPreTrain:
             h2 = h2.unsqueeze(0)
         h1_abs = h1.norm(dim=1)
         h2_abs = h2.norm(dim=1)
-        pos_matrix = torch.einsum('ij,jk->ik', h1, h1.T) / torch.einsum('i,j->ij', h1_abs, h1_abs)
+        pos_matrix = torch.einsum('ij,jk->ik', h1, h1.T) / (torch.einsum('i,j->ij', h1_abs, h1_abs) + 1e-4)
         pos_matrix = pos_matrix - torch.eye(pos_matrix.shape[0], device=self.device)
         pos_matrix = torch.exp(pos_matrix / t)
-        neg_matrix = torch.einsum('ij,jk->ik', h1, h2.T) / torch.einsum('i,j->ij', h1_abs, h2_abs)
+        neg_matrix = torch.einsum('ij,jk->ik', h1, h2.T) / (torch.einsum('i,j->ij', h1_abs, h2_abs) + 1e-4)
         neg_matrix = torch.exp(neg_matrix / t)
         loss = pos_matrix.sum(dim=1) / (pos_matrix.sum(dim=1) + neg_matrix.sum(dim=1) + 1e-4)
         loss = -torch.log(loss).mean()
@@ -221,12 +221,12 @@ class UinGangsModelPreTrain:
             average_normal_i = normal_batch_i.mean(dim=0)
             similarity_diff = (torch.cosine_similarity(normal_batch_i, anomalous_anchor_i) -
                                torch.cosine_similarity(normal_batch_i, average_normal_i))
-            exclude_idx = (similarity_diff > self.conv_type['similarity_diff']).nonzero().squeeze().detach().cpu()
+            exclude_idx = (similarity_diff >= self.train_dict['similarity_diff']).nonzero().squeeze().detach().cpu()
             prefix_node_idx = (batch < idx_list[i]).nonzero().squeeze()
             if prefix_node_idx.shape != torch.Size([]):
                 exclude_idx = exclude_idx + prefix_node_idx.shape[0]
             else:
-                exclude_idx = exclude_idx + torch.tensor(1, device=self.device)
+                exclude_idx = exclude_idx + torch.tensor(1)
             if exclude_idx.shape != torch.Size([]):
                 exclude_list.extend(exclude_idx.tolist())
             else:

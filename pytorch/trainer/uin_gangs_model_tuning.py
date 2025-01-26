@@ -315,7 +315,7 @@ class UinGangsModelTuning:
             batch_edge_index, batch_edge_types = self.get_edge_info(pos_batch)
             batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
         except Exception as e:
-            print(f"RGCN Get Edge Information Error: <{e}>")
+            print(f"{self.conv_type} Get Edge Information Error: <{e}>")
             return None
         else:
             return batch_h
@@ -514,12 +514,6 @@ class UinGangsModelTuning:
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 batch['uin'].x = batch_x
                 if self.conv_type == 'RGCN':
-                    if self.info_type == 'add_prompt':
-                        batch['uin'].x = batch['uin'].x + self.prompt.repeat(batch_x.shape[0], 1)
-                    elif self.info_type == 'add_subgraph':
-                        batch_x_g = scatter_mean(batch_x, batch['uin'].batch, dim=0)
-                        expand_batch_x_g = self.subgraph_embedding_expand(batch_x_g, batch['uin'].ptr)
-                        batch['uin'].x = (batch['uin'].x + expand_batch_x_g) / 2
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
                 else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
@@ -586,12 +580,6 @@ class UinGangsModelTuning:
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 batch['uin'].x = batch_x
                 if self.conv_type == 'RGCN':
-                    if self.info_type == 'add_prompt':
-                        batch['uin'].x = batch['uin'].x + self.prompt.repeat(batch_x.shape[0], 1)
-                    elif self.info_type == 'add_subgraph':
-                        batch_x_g = scatter_mean(batch_x, batch['uin'].batch, dim=0)
-                        expand_batch_x_g = self.subgraph_embedding_expand(batch_x_g, batch['uin'].ptr)
-                        batch['uin'].x = (batch['uin'].x + expand_batch_x_g) / 2
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
                 else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
@@ -669,9 +657,7 @@ class UinGangsModelTuning:
                 return acc, pre, rec, f1, roc_auc, cm
 
     def insert_prompt(self, batch_h, batch, prompt):
-        if self.prompt_type == 'add_prompt':
-            prompt_batch_h = batch_h + prompt.repeat(batch_h.shape[0], 1)
-        elif self.prompt_type == 'concat_prompt':
+        if self.prompt_type == 'concat_prompt':
             prompt_batch_h = torch.concat([batch_h, prompt.repeat(batch_h.shape[0], 1)], dim=1)
         else:
             if self.eval_dict["is_weighted_subgraph"]:
@@ -843,7 +829,7 @@ class UinGangsModelTuning:
                 batch['uin'].x = batch_x
                 if self.conv_type == 'RGCN':
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
-                elif self.conv_type == 'HGT':
+                else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 if batch_h is not None:
                     if prompt is not None:
