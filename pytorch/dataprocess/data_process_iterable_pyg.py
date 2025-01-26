@@ -52,7 +52,7 @@ class UinGangsDataIterablePyG(IterableDataset):
         self.control_node_num = self.args_dict["filter_node_num"]
 
         # 预训练的文本embedding模型的分词工具
-        if torch.cuda.is_available() and self.args_dict["device"] == "gpu":
+        if torch.cuda.is_available():
             self.device = torch.device("cuda")
         else:
             self.device = torch.device("cpu")

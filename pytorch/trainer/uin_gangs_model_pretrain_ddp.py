@@ -529,11 +529,6 @@ class UinGangsModelPreTrainDDP:
                                                f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
-            if epoch % 5 == 0 and self.rank == 0:
-                file_name = os.path.join(self.save_model_path,
-                                         f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch}.pth")
-                torch.save(self.model.state_dict(), file_name)
-                print(f"Save model to {file_name}")
         if self.rank == 0:
             self.writer.close()
         dist.destroy_process_group()
