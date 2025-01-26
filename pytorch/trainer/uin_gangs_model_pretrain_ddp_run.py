@@ -62,7 +62,7 @@ class ArgsUinGangs:
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'RGAT', 'HAN', 'HGT'])
+        parser.add_argument('--conv_type', type=str, default='HAN', choices=['RGCN', 'RGAT', 'HAN', 'HGT'])
         parser.add_argument('--task_type', type=str, default='fine_grained_batch_subgraph',
                             choices=['subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph'])
