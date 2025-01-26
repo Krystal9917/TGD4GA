@@ -483,9 +483,8 @@ class UinGangsModelPreTrain:
                         if (i + 1) % 50 == 0:
                             if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
                                 print(
-                                    "Rank: {}, Batch: {}, Loss: {:.6f}, "
+                                    "Batch: {}, Loss: {:.6f}, "
                                     "Batch Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
-                                        self.rank,
                                         i + 1,
                                         loss_value,
                                         batch_loss.detach().cpu().item(),
@@ -493,9 +492,8 @@ class UinGangsModelPreTrain:
                                         time.time() - start_time))
                             elif self.task_type in ['cross_subgraph', 'fine_grained_cross_subgraph']:
                                 print(
-                                    "Rank: {}, Batch: {}, Loss: {:.6f}, "
+                                    "Batch: {}, Loss: {:.6f}, "
                                     "Cross Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
-                                        self.rank,
                                         i + 1,
                                         loss_value,
                                         cross_loss.detach().cpu().item(),
@@ -503,9 +501,8 @@ class UinGangsModelPreTrain:
                                         time.time() - start_time))
                             else:
                                 print(
-                                    "Rank: {}, Batch: {}, Loss: {:.6f}, "
+                                    "Batch: {}, Loss: {:.6f}, "
                                     "Time: {:.4f} s".format(
-                                        self.rank,
                                         i + 1,
                                         loss_value,
                                         time.time() - start_time))
