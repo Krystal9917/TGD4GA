@@ -13,6 +13,7 @@ from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
 from torch.utils.tensorboard import SummaryWriter
 from transformers import BertModel
+from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, CosineAnnealingLR
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
 from mmgog_long_term_sequence_model.pytorch.models.rgat_model import RGAT
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
@@ -90,7 +91,8 @@ class UinGangsModelPreTrain:
                                                     num_workers=self.train_dict["num_workers"],
                                                     collate_fn=self.train_data.pos_collate_fn_for_fraudar)
         if not self.train_dict["is_debug"]:
-            self.log_file_path = f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}"
+            self.log_file_path = (f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_"
+                                  f"{control_node_num}_lr_{str(lr)}_{self.train_dict['lr_scheduler']}")
             log_path = os.path.abspath(
                 os.path.join(args_dict['log_dir'], self.train_dict["model_states_path"].split('/')[-1],
                              self.log_file_path))
@@ -114,6 +116,23 @@ class UinGangsModelPreTrain:
         self.model.to(self.device)
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        # lr scheduler
+        if self.train_dict["lr_scheduler"] == "stepLR":
+            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
+                                                             step_size=self.train_dict["lr_adjust_step"],
+                                                             gamma=self.train_dict["lr_gamma"],
+                                                             verbose=True)
+        elif self.train_dict["lr_scheduler"] == "reduceLR":
+            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer,
+                                                                        patience=self.train_dict["lr_adjust_step"],
+                                                                        verbose=True)
+        elif self.train_dict["lr_scheduler"] == "cosineLR":
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer,
+                                                                        T_max=self.train_dict["n_epochs"],
+                                                                        eta_min=self.train_dict["lr"] * 1e-2,
+                                                                        verbose=True)
+        else:
+            self.scheduler = None
         self.setup_seed()
         self.best_loss = self.train_dict["best_loss"]
 
@@ -478,6 +497,8 @@ class UinGangsModelPreTrain:
                     if not torch.isnan(loss):
                         loss.backward()
                         self.optimizer.step()
+                        if self.train_dict["lr_scheduler"] == "cosineLR":
+                            self.scheduler.step()
                         loss_value = loss.detach().cpu().item()
                         epoch_loss.append(loss_value)
                         if (i + 1) % 50 == 0:
@@ -508,15 +529,18 @@ class UinGangsModelPreTrain:
                                         time.time() - start_time))
 
                     torch.cuda.empty_cache()
-
             epoch_loss = sum(epoch_loss) / len(epoch_loss)
             if not self.train_dict["is_debug"]:
                 self.writer.add_scalar(f'{self.conv_type}_pretraining_loss', epoch_loss, epoch)
             print("Epoch: {}, Loss: {:.4f}, Time: {:.4f} s".format(epoch, epoch_loss,
                                                                    time.time() - epoch_start_time))
+            if self.train_dict["lr_scheduler"] == "stepLR":
+                self.scheduler.step()
+            elif self.train_dict["lr_scheduler"] == "reduceLR":
+                self.scheduler.step(epoch_loss)
             if epoch_loss < self.best_loss:
                 self.best_loss = epoch_loss
-                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
+                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
                 epoch_file_name = os.path.join(self.save_model_path,
                                                f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")

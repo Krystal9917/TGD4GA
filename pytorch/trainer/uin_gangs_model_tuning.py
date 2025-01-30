@@ -70,7 +70,9 @@ class UinGangsModelTuning:
         self.device_tag = self.eval_dict["device_tag"]
         self.task_type = self.eval_dict["task_type"]
         self.save_model_path = os.path.join(self.eval_dict["model_states_path"],
-                                            f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_{self.control_node_num}_lr_{str(lr)}{self.device_tag}")
+                                            f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_"
+                                            f"filter_{self.control_node_num}_lr_{str(lr)}_"
+                                            f"{self.eval_dict['lr_scheduler']}{self.device_tag}")
         if not self.eval_dict["is_supervised"]:
             if self.eval_dict["eval_epoch"] != 0:
                 epoch_num = self.eval_dict["eval_epoch"]
@@ -84,7 +86,8 @@ class UinGangsModelTuning:
                 if self.task_type == 'subgraph':
                     file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
                 else:
-                    file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
+                    file_name = os.path.join(self.save_model_path,
+                                             f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
             model_weight = torch.load(file_name, map_location=self.device)
             if self.device_tag == '_GPU2':
                 rename_key_model_weight = OrderedDict()
@@ -184,7 +187,7 @@ class UinGangsModelTuning:
             self.loss_weight = self.eval_dict['loss_weight'].split(' ')
             self.loss_weight = [float(item) for item in self.loss_weight]
             self.criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor(self.loss_weight, device=self.device))
-        elif self.eval_dict["evaluate_task"] in ['subgraph_prompt_tuning', 'inference_gang_members']:
+        elif self.eval_dict["evaluate_task"] in ['subgraph_prompt_tuning']:
             self.initial_data = UinGangsDataIterablePyG(self.eval_dict,
                                                         self.eval_dict["prompt_initial_data_path"],
                                                         is_shuffle=False)
@@ -255,13 +258,23 @@ class UinGangsModelTuning:
             self.loss_weight = self.eval_dict['loss_weight'].split(' ')
             self.loss_weight = [float(item) for item in self.loss_weight]
             self.criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor(self.loss_weight).to(self.device))
-        elif self.eval_dict["evaluate_task"] in ['inference_gang_members_by_fraudar']:
+        elif self.eval_dict["evaluate_task"] in ['inference_gang_members', 'inference_gang_members_by_fraudar']:
             self.eval_data = UinGangsDataIterablePyG(self.eval_dict,
                                                      self.eval_dict["prompt_evaluating_data_path"])
             self.eval_loader = Data.DataLoader(self.eval_data,
                                                batch_size=self.eval_dict["batch_size"],
                                                num_workers=self.eval_dict["num_workers"],
                                                collate_fn=self.eval_data.pos_collate_fn_for_fraudar)
+            self.info_type = self.eval_dict["info_insertion_type"]
+            if self.info_type in ['combine_subgraph']:
+                cls_input = args_dict['output_dim'] * 2
+            else:
+                cls_input = args_dict['output_dim']
+            self.classifier = torch.nn.Sequential(torch.nn.Linear(cls_input, args_dict['hidden_dim']),
+                                                  torch.nn.ReLU(),
+                                                  torch.nn.Linear(args_dict['hidden_dim'], 2),
+                                                  torch.nn.Softmax(dim=1))
+            self.classifier.to(self.device)
         # Set seed for whole environment
         self.setup_seed()
 
@@ -274,7 +287,8 @@ class UinGangsModelTuning:
         torch.backends.cudnn.deterministic = True
 
     def get_edge_info(self, batch):
-        edge_index = [batch[edge_type].edge_index for edge_type in list(self.edge_types.keys()) if edge_type in batch.edge_types]
+        edge_index = [batch[edge_type].edge_index for edge_type in list(self.edge_types.keys()) if
+                      edge_type in batch.edge_types]
         edge_index = torch.concat(edge_index, dim=1)
         edge_counts = {edge_type: batch[edge_type].num_edges for edge_type in list(self.edge_types.keys()) if
                        edge_type in batch.edge_types}
@@ -478,7 +492,9 @@ class UinGangsModelTuning:
             else:
                 fp_items = (node_y_pred_i == 1).nonzero().squeeze().detach().cpu().tolist()
                 fp_num = len(fp_items) if type(fp_items) == list else 1
-                fp_penalty = torch.exp(torch.tensor((fp_num - self.control_node_num + 1) / node_y_pred_i.shape[0])) - torch.exp(torch.tensor(-1))
+                fp_penalty = torch.exp(
+                    torch.tensor((fp_num - self.control_node_num + 1) / node_y_pred_i.shape[0])) - torch.exp(
+                    torch.tensor(-1))
                 penalty_list.append(fp_penalty)
         penalty = torch.stack(penalty_list).to(self.device).mean()
         return penalty
@@ -878,7 +894,8 @@ class UinGangsModelTuning:
                   )
             return acc, pre, rec, f1, roc_auc, cm, jaccard
 
-    def inference_gang_members_by_fraudar(self):
+    def inference_gang_members_by_fraudar(self, save_results=False):
+        start_time = time.time()
         jaccard_list = []
         true_idx_list = []
         pred_idx_list = []
@@ -917,14 +934,20 @@ class UinGangsModelTuning:
             rec = recall_score(true_y_list, pred_y_list)
             roc_auc = roc_auc_score(true_y_list, prob_y_list)
             cm = confusion_matrix(true_y_list, pred_y_list)
+            pos_jaccard = np.array(jaccard_list)[true_y_list != 0].mean()
+            neg_jaccard = np.array(jaccard_list)[true_y_list == 0].mean()
             print(f"Fraudar ACC: {acc: .4f}, "
                   f"Precision: {pre: .4f}, "
                   f"Recall: {rec: .4f}, "
                   f"F1: {f1: .4f}, "
                   f"ROC-AUC: {roc_auc: .4f}, "
-                  f"Confusion Matrix: {cm.tolist()}"
+                  f"Confusion Matrix: {cm.tolist()}, "
+                  f"Pos Jaccard Coefficient: {pos_jaccard: .4f}, "
+                  f"Neg Jaccard Coefficient: {neg_jaccard: .4f}, "
+                  f"Time: {time.time() - start_time: .4f} s"
                   )
-        # save inference results
+        if save_results:
+            # save inference results
             for i in range(len(true_idx_list)):
                 true_uin_idx = true_idx_list[i][1:-1].split(',')
                 pred_uin_idx = pred_idx_list[i][1:-1].split(',')
@@ -950,20 +973,27 @@ class UinGangsModelTuning:
             df.to_csv(output_file_dir + file_name, index=False)
             print(f"Save to file: {output_file_dir + file_name}")
 
-    def inference_gang_members(self):
+    def inference_gang_members(self, save_results=False):
+        start_time = time.time()
         prefix = f'{self.conv_type}_{self.task_type}_{self.eval_dict["eval_epoch"]}'
-        file_name = f"{self.prompt_type}_{prefix}_best_f1.pth" if self.prompt_type is not None \
-            else f"{prefix}_best_f1_tn_53_tp_43.pth"
+        file_name = f"{self.info_type}_{prefix}_best_f1_tn_67_tp_44.pth" if self.info_type is not None \
+            else f"{prefix}_best_f1.pth"
+        print(f"Load Classifier: {self.eval_dict['cls_model_states_path'] + file_name}")
         model_weight = torch.load(self.eval_dict['cls_model_states_path'] + file_name, map_location=self.device)
         self.classifier.load_state_dict(model_weight)
         self.classifier.eval()
-        true_idx_list = []
-        pred_idx_list = []
-        true_uin_list = []
-        pred_uin_list = []
         jaccard_list = []
-        subgraph_y_list = []
-        subgraph_uin_list = []
+        if save_results:
+            true_idx_list = []
+            pred_idx_list = []
+            true_uin_list = []
+            pred_uin_list = []
+            subgraph_y_list = []
+            subgraph_uin_list = []
+        else:
+            true_y_list = []
+            prob_y_list = []
+            pred_y_list = []
         with torch.no_grad():
             for i, batch in enumerate(self.eval_loader):
                 batch = batch.to(self.device)
@@ -981,38 +1011,76 @@ class UinGangsModelTuning:
                 else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 if batch_h is not None:
-                    pred_y = self.classifier(batch_h).argmax(dim=1)
+                    if self.info_type == 'combine_subgraph':
+                        batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                        expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                        diff_h = expand_batch_h_g - batch_h
+                        batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
+                    prob_y = self.classifier(batch_h)
+                    pred_y = prob_y.argmax(dim=1)
                     batch_y = batch['uin'].gang_mem.int()
                     true_y = batch_y.detach().cpu()
                     pred_y = pred_y.detach().cpu()
-                    jaccard_coefficient, true_idx, pred_idx = self.jaccard_batch(true_y, pred_y,
-                                                                                 batch['uin'].batch)
-                    jaccard_list.extend(jaccard_coefficient)
-                    true_idx_list.extend(true_idx)
-                    pred_idx_list.extend(pred_idx)
-                    subgraph_y_list.extend(batch['uin'].y.detach().cpu().tolist())
-                    subgraph_uin_list.extend(batch['uin'].nodeid2uin_map)
-            for i in range(len(true_idx_list)):
-                true_uin_idx = true_idx_list[i][1:-1].split(',')
-                pred_uin_idx = pred_idx_list[i][1:-1].split(',')
-                uin_map_list = subgraph_uin_list[i]
-                if true_uin_idx != ['']:
-                    true_uin_list.append([uin_map_list[int(item)] for item in true_uin_idx])
+                    jaccard_coeff, true_idx, pred_idx = self.jaccard_batch(true_y, pred_y,
+                                                                           batch['uin'].batch)
+                    jaccard_list.extend(jaccard_coeff)
+                    if save_results:
+                        true_idx_list.extend(true_idx)
+                        pred_idx_list.extend(pred_idx)
+                        subgraph_y_list.extend(batch['uin'].y.detach().cpu().tolist())
+                        subgraph_uin_list.extend(batch['uin'].nodeid2uin_map)
+                    else:
+                        prob_y = torch.tensor(jaccard_coeff, device=self.device)
+                        pred_y = torch.zeros(prob_y.shape[0], device=self.device)
+                        pred_y[prob_y >= self.eval_dict["threshold"]] = 1
+                        true_y_list.append(batch['uin'].gang_label.detach().cpu().long())
+                        prob_y_list.append(prob_y.detach().cpu())
+                        pred_y_list.append(pred_y.detach().cpu())
+            # compute metrics
+            if save_results:
+                for i in range(len(true_idx_list)):
+                    true_uin_idx = true_idx_list[i][1:-1].split(',')
+                    pred_uin_idx = pred_idx_list[i][1:-1].split(',')
+                    uin_map_list = subgraph_uin_list[i]
+                    if true_uin_idx != ['']:
+                        true_uin_list.append([uin_map_list[int(item)] for item in true_uin_idx])
+                    else:
+                        true_uin_list.append([])
+                    if pred_uin_idx != ['']:
+                        pred_uin_list.append([uin_map_list[int(item)] for item in pred_uin_idx])
+                    else:
+                        pred_uin_list.append([])
+                df = pd.DataFrame(data={'label_gang_mem_list': true_uin_list,
+                                        'pred_gang_mem_list': pred_uin_list,
+                                        'jaccard': jaccard_list,
+                                        'subgraph_gang_label': subgraph_y_list,
+                                        'subgraph_node_map': subgraph_uin_list})
+                if torch.cuda.is_available():
+                    output_file_dir = '/mnt/cephfs'
                 else:
-                    true_uin_list.append([])
-                if pred_uin_idx != ['']:
-                    pred_uin_list.append([uin_map_list[int(item)] for item in pred_uin_idx])
-                else:
-                    pred_uin_list.append([])
-            df = pd.DataFrame(data={'label_gang_mem_list': true_uin_list,
-                                    'pred_gang_mem_list': pred_uin_list,
-                                    'jaccard': jaccard_list,
-                                    'subgraph_gang_label': subgraph_y_list,
-                                    'subgraph_node_map': subgraph_uin_list})
-            if torch.cuda.is_available():
-                output_file_dir = '/mnt/cephfs'
+                    output_file_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common'
+                file_name = f'/jiujiuchen/projects/mmgog_long_term_sequence_model/data/{prefix}_{self.eval_dict["filter_node_num"]}_y.csv'
+                df.to_csv(output_file_dir + file_name, index=False)
+                print(f"Save to file: {output_file_dir + file_name}")
             else:
-                output_file_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common'
-            file_name = f'/jiujiuchen/projects/mmgog_long_term_sequence_model/data/{prefix}_{self.eval_dict["filter_node_num"]}_y.csv'
-            df.to_csv(output_file_dir + file_name, index=False)
-            print(f"Save to file: {output_file_dir + file_name}")
+                true_y_list = torch.concat(true_y_list, dim=0).numpy()
+                prob_y_list = torch.concat(prob_y_list, dim=0).numpy()
+                pred_y_list = torch.concat(pred_y_list, dim=0).numpy()
+                acc = accuracy_score(true_y_list, pred_y_list)
+                f1 = f1_score(true_y_list, pred_y_list)
+                pre = precision_score(true_y_list, pred_y_list)
+                rec = recall_score(true_y_list, pred_y_list)
+                roc_auc = roc_auc_score(true_y_list, prob_y_list)
+                cm = confusion_matrix(true_y_list, pred_y_list)
+                pos_jaccard = np.array(jaccard_list)[true_y_list != 0].mean()
+                neg_jaccard = np.array(jaccard_list)[true_y_list == 0].mean()
+                print(f"{self.conv_type} ACC: {acc: .4f}, "
+                      f"Precision: {pre: .4f}, "
+                      f"Recall: {rec: .4f}, "
+                      f"F1: {f1: .4f}, "
+                      f"ROC-AUC: {roc_auc: .4f}, "
+                      f"Confusion Matrix: {cm.tolist()}, "
+                      f"Pos Jaccard Coefficient: {pos_jaccard: .4f}, "
+                      f"Neg Jaccard Coefficient: {neg_jaccard: .4f}, "
+                      f"Time: {time.time() - start_time: .4f} s"
+                      )
