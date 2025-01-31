@@ -118,19 +118,19 @@ class UinGangsModelPreTrain:
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         # lr scheduler
         if self.train_dict["lr_scheduler"] == "stepLR":
-            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
-                                                             step_size=self.train_dict["lr_adjust_step"],
-                                                             gamma=self.train_dict["lr_gamma"],
-                                                             verbose=True)
+            self.scheduler = StepLR(self.optimizer,
+                                    step_size=self.train_dict["lr_adjust_step"],
+                                    gamma=self.train_dict["lr_gamma"],
+                                    verbose=True)
         elif self.train_dict["lr_scheduler"] == "reduceLR":
-            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer,
-                                                                        patience=self.train_dict["lr_adjust_step"],
-                                                                        verbose=True)
+            self.scheduler = ReduceLROnPlateau(self.optimizer,
+                                               patience=self.train_dict["lr_adjust_step"],
+                                               verbose=True)
         elif self.train_dict["lr_scheduler"] == "cosineLR":
-            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer,
-                                                                        T_max=self.train_dict["n_epochs"],
-                                                                        eta_min=self.train_dict["lr"] * 1e-2,
-                                                                        verbose=True)
+            self.scheduler = CosineAnnealingLR(self.optimizer,
+                                               T_max=self.train_dict["n_epochs"],
+                                               eta_min=self.train_dict["lr"] * 1e-2,
+                                               verbose=True)
         else:
             self.scheduler = None
         self.setup_seed()
@@ -385,10 +385,15 @@ class UinGangsModelPreTrain:
                     batch_h = self.hetero_fit(pos_batch.x_dict, pos_batch.edge_index_dict)
                 else:
                     batch_h = self.relation_fit(pos_batch, batch_x)
-
-                batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
-                pos_batch_idx = (pos_batch['uin'].flag == 1).nonzero().squeeze().detach().cpu().tolist()
-                neg_batch_idx = (pos_batch['uin'].flag == 0).nonzero().squeeze().detach().cpu().tolist()
+                try:
+                    batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
+                except Exception as e:
+                    print(f"Error: <{e}>; "
+                          f"h shape: {batch_h.shape}; "
+                          f"batch: {pos_batch['uin'].batch}")
+                else:
+                    pos_batch_idx = (pos_batch['uin'].flag == 1).nonzero().squeeze().detach().cpu().tolist()
+                    neg_batch_idx = (pos_batch['uin'].flag == 0).nonzero().squeeze().detach().cpu().tolist()
 
                 # more than one subgraph
                 if type(pos_batch_idx) is list:
@@ -540,7 +545,8 @@ class UinGangsModelPreTrain:
                 self.scheduler.step(epoch_loss)
             if epoch_loss < self.best_loss:
                 self.best_loss = epoch_loss
-                file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
+                file_name = os.path.join(self.save_model_path,
+                                         f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
                 epoch_file_name = os.path.join(self.save_model_path,
                                                f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
