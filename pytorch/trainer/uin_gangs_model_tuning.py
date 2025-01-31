@@ -16,6 +16,7 @@ from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
 from transformers import BertModel
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
+from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix, \
@@ -50,18 +51,24 @@ class UinGangsModelTuning:
                                ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
                                ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
                                ('uin', 'download_app', 'uin'): 9}
-        elif self.conv_type == 'HGT':
+        elif self.conv_type in ['HGT', 'HAN']:
             self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
                                        ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
                                        ('uin', 'payee', 'uin'), ('uin', 'payer', 'uin'), ('uin', 'bankcard', 'uin'),
                                        ('uin', 'download_app', 'uin')])
-            self.model = HeteroGraphTransformer(
-                in_channels=args_dict['input_dim'],
-                hidden_channels=args_dict['hidden_dim'],
-                out_channels=args_dict['output_dim'],
-                metadata=self.metadata,
-                heads=args_dict['num_heads']
-            )
+            if self.conv_type == 'HGT':
+                self.model = HeteroGraphTransformer(
+                    in_channels=args_dict['input_dim'],
+                    hidden_channels=args_dict['hidden_dim'],
+                    out_channels=args_dict['output_dim'],
+                    metadata=self.metadata,
+                    heads=args_dict['num_heads']
+                )
+            else:
+                self.model = HAN(in_channels=args_dict['input_dim'],
+                                 out_channels=args_dict['output_dim'],
+                                 metadata=self.metadata,
+                                 heads=args_dict['num_heads'])
 
         lr = self.eval_dict["lr"]
         self.control_node_num = self.eval_dict["filter_node_num"]
