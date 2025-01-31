@@ -382,96 +382,79 @@ class UinGangsModelPreTrain:
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 pos_batch['uin'].x = batch_x.to(self.device)
                 if self.conv_type in ['HAN', 'HGT']:
-                    batch_h = self.hetero_fit(pos_batch.x_dict, pos_batch.edge_index_dict)
+                    try:
+                        pos_x_dict = pos_batch.x_dict
+                        pos_edge_index_dict = pos_batch.edge_index_dict
+                    except Exception as e:
+                        print(f"Error: <{e}>; data: {pos_batch}")
+                        batch_h = None
+                    else:
+                        batch_h = self.hetero_fit(pos_batch.x_dict, pos_batch.edge_index_dict)
                 else:
                     batch_h = self.relation_fit(pos_batch, batch_x)
-                try:
+                if batch_h is not None:
                     batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
-                except Exception as e:
-                    print(f"Error: <{e}>; "
-                          f"h shape: {batch_h.shape}; "
-                          f"batch: {pos_batch['uin'].batch}")
-                else:
                     pos_batch_idx = (pos_batch['uin'].flag == 1).nonzero().squeeze().detach().cpu().tolist()
                     neg_batch_idx = (pos_batch['uin'].flag == 0).nonzero().squeeze().detach().cpu().tolist()
-
-                # more than one subgraph
-                if type(pos_batch_idx) is list:
-                    list_flag = len(pos_batch_idx) != 0
-                else:
-                    list_flag = False
-                # only one subgraph
-                int_flag = type(pos_batch_idx) is int
-                # subgraph generated from fraudar (the index of initial graphs)
-                if list_flag or int_flag:
-                    fraudar_batch = self.extract_batch_subgraphs(pos_batch)
-                    fraudar_batch = fraudar_batch.to(self.device)
-
-                    if self.conv_type in ['HAN', 'HGT']:
-                        fraudar_batch_h = self.hetero_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
+                    # more than one subgraph
+                    if type(pos_batch_idx) is list:
+                        list_flag = len(pos_batch_idx) != 0
                     else:
-                        fraudar_batch_h = self.relation_fit(fraudar_batch, fraudar_batch['uin'].x)
-
-                    if fraudar_batch_h is not None:
-                        fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
-                        fraudar_batch_h_g = fraudar_batch_h_g[pos_batch_idx]
-
-                        # readout for subgraph
-                        pos_batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
-                        pos_batch_h_g = pos_batch_h_g[pos_batch_idx]
-
-                        if (type(neg_batch_idx) is list and len(neg_batch_idx) != 0) or type(neg_batch_idx) is int:
-                            neg_batch_h_g = batch_h_g[neg_batch_idx]
-                        else:
-                            neg_batch_h_g = batch_h_g
-
-                        # subgraph-level contrastive learning
-                        subgraph_loss = self.preference_contrastive_loss(fraudar_batch_h_g, pos_batch_h_g,
-                                                                         neg_batch_h_g)
-                    else:
-                        subgraph_loss = torch.tensor(torch.nan).to(self.device)
-                    if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph',
-                                          'cross_subgraph', 'fine_grained_cross_subgraph']:
-                        # batch-level contrastive learning (high possibility subgraphs inside)
-                        if list_flag:
-                            batch_pos_neg_samples_idx = torch.concat(
-                                [(pos_batch['uin'].batch == i).nonzero().squeeze().detach().cpu() for i in
-                                 pos_batch_idx], dim=0).tolist()
-                        else:
-                            batch_pos_neg_samples_idx = (pos_batch[
-                                                             'uin'].batch == pos_batch_idx).nonzero().squeeze().detach().cpu().tolist()
-                        pos_samples_idx = (pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()
-                        batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
-                        batch_pos_samples_idx_batch = pos_batch['uin'].batch[batch_pos_samples_idx]
-
-                        batch_neg_samples_idx = list(set(batch_pos_neg_samples_idx) - set(pos_samples_idx))
-                        batch_neg_samples_idx_batch = pos_batch['uin'].batch[batch_neg_samples_idx]
-                        if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
-                            if self.task_type == 'fine_grained_batch_subgraph':
-                                batch_anomalous_anchors = self.compute_anomalous_subgraph_anchor(
-                                    pos_batch['uin'].x[batch_pos_samples_idx],
-                                    batch_pos_samples_idx_batch)
-                                batch_exclude_normal_idx = self.exclude_anomalous_nodes_from_normals(
-                                    pos_batch['uin'].x[batch_neg_samples_idx],
-                                    batch_anomalous_anchors,
-                                    batch_neg_samples_idx_batch)
-                                upgrade_batch_neg_samples_idx = list(
-                                    set(batch_neg_samples_idx) - set(batch_exclude_normal_idx))
-                                upgrade_batch_neg_samples_idx_batch = pos_batch['uin'].batch[
-                                    upgrade_batch_neg_samples_idx]
-                                batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
-                                                                         batch_h[upgrade_batch_neg_samples_idx],
-                                                                         batch_pos_samples_idx_batch,
-                                                                         upgrade_batch_neg_samples_idx_batch)
+                        list_flag = False
+                    # only one subgraph
+                    int_flag = type(pos_batch_idx) is int
+                    # subgraph generated from fraudar (the index of initial graphs)
+                    if list_flag or int_flag:
+                        fraudar_batch = self.extract_batch_subgraphs(pos_batch)
+                        fraudar_batch = fraudar_batch.to(self.device)
+                        if self.conv_type in ['HAN', 'HGT']:
+                            try:
+                                x_dict = fraudar_batch.x_dict
+                                edge_index_dict = fraudar_batch.edge_index_dict
+                            except Exception as e:
+                                print(f"Error: <{e}>; data: {pos_batch}")
+                                fraudar_batch_h = None
                             else:
-                                batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
-                                                                         batch_h[batch_neg_samples_idx],
-                                                                         batch_pos_samples_idx_batch,
-                                                                         batch_neg_samples_idx_batch)
-                            loss = batch_loss + subgraph_loss
+                                fraudar_batch_h = self.hetero_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
                         else:
-                            if fraudar_batch_h is not None:
-                                if self.task_type == 'fine_grained_cross_subgraph':
+                            fraudar_batch_h = self.relation_fit(fraudar_batch, fraudar_batch['uin'].x)
+
+                        if fraudar_batch_h is not None:
+                            fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
+                            fraudar_batch_h_g = fraudar_batch_h_g[pos_batch_idx]
+
+                            # readout for subgraph
+                            pos_batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
+                            pos_batch_h_g = pos_batch_h_g[pos_batch_idx]
+
+                            if (type(neg_batch_idx) is list and len(neg_batch_idx) != 0) or type(neg_batch_idx) is int:
+                                neg_batch_h_g = batch_h_g[neg_batch_idx]
+                            else:
+                                neg_batch_h_g = batch_h_g
+
+                            # subgraph-level contrastive learning
+                            subgraph_loss = self.preference_contrastive_loss(fraudar_batch_h_g, pos_batch_h_g,
+                                                                             neg_batch_h_g)
+                        else:
+                            subgraph_loss = torch.tensor(torch.nan).to(self.device)
+                        if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph',
+                                              'cross_subgraph', 'fine_grained_cross_subgraph']:
+                            # batch-level contrastive learning (high possibility subgraphs inside)
+                            if list_flag:
+                                batch_pos_neg_samples_idx = torch.concat(
+                                    [(pos_batch['uin'].batch == i).nonzero().squeeze().detach().cpu() for i in
+                                     pos_batch_idx], dim=0).tolist()
+                            else:
+                                batch_pos_neg_samples_idx = (pos_batch[
+                                                                 'uin'].batch == pos_batch_idx).nonzero().squeeze().detach().cpu().tolist()
+                            pos_samples_idx = (pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()
+                            batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
+                            batch_pos_samples_idx_batch = pos_batch['uin'].batch[batch_pos_samples_idx]
+
+                            batch_neg_samples_idx = list(set(batch_pos_neg_samples_idx) - set(pos_samples_idx))
+                            batch_neg_samples_idx_batch = pos_batch['uin'].batch[batch_neg_samples_idx]
+                            if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
+                                if self.task_type == 'fine_grained_batch_subgraph':
                                     batch_anomalous_anchors = self.compute_anomalous_subgraph_anchor(
                                         pos_batch['uin'].x[batch_pos_samples_idx],
                                         batch_pos_samples_idx_batch)
@@ -483,57 +466,82 @@ class UinGangsModelPreTrain:
                                         set(batch_neg_samples_idx) - set(batch_exclude_normal_idx))
                                     upgrade_batch_neg_samples_idx_batch = pos_batch['uin'].batch[
                                         upgrade_batch_neg_samples_idx]
-                                    cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
-                                                                             batch_h[batch_pos_samples_idx],
+                                    batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
                                                                              batch_h[upgrade_batch_neg_samples_idx],
                                                                              batch_pos_samples_idx_batch,
                                                                              upgrade_batch_neg_samples_idx_batch)
                                 else:
-                                    cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
-                                                                             batch_h[batch_pos_samples_idx],
+                                    batch_loss = self.batch_contrastive_loss(batch_h[batch_pos_samples_idx],
                                                                              batch_h[batch_neg_samples_idx],
                                                                              batch_pos_samples_idx_batch,
                                                                              batch_neg_samples_idx_batch)
-                                loss = cross_loss + subgraph_loss
+                                loss = batch_loss + subgraph_loss
                             else:
-                                loss = subgraph_loss
-                    else:
-                        loss = subgraph_loss
-                    if not torch.isnan(loss):
-                        loss.backward()
-                        self.optimizer.step()
-                        if self.train_dict["lr_scheduler"] == "cosineLR":
-                            self.scheduler.step()
-                        loss_value = loss.detach().cpu().item()
-                        epoch_loss.append(loss_value)
-                        if (i + 1) % 50 == 0:
-                            if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
-                                print(
-                                    "Batch: {}, Loss: {:.6f}, "
-                                    "Batch Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
-                                        i + 1,
-                                        loss_value,
-                                        batch_loss.detach().cpu().item(),
-                                        subgraph_loss.detach().cpu().item(),
-                                        time.time() - start_time))
-                            elif self.task_type in ['cross_subgraph', 'fine_grained_cross_subgraph']:
-                                print(
-                                    "Batch: {}, Loss: {:.6f}, "
-                                    "Cross Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
-                                        i + 1,
-                                        loss_value,
-                                        cross_loss.detach().cpu().item(),
-                                        subgraph_loss.detach().cpu().item(),
-                                        time.time() - start_time))
-                            else:
-                                print(
-                                    "Batch: {}, Loss: {:.6f}, "
-                                    "Time: {:.4f} s".format(
-                                        i + 1,
-                                        loss_value,
-                                        time.time() - start_time))
+                                if fraudar_batch_h is not None:
+                                    if self.task_type == 'fine_grained_cross_subgraph':
+                                        batch_anomalous_anchors = self.compute_anomalous_subgraph_anchor(
+                                            pos_batch['uin'].x[batch_pos_samples_idx],
+                                            batch_pos_samples_idx_batch)
+                                        batch_exclude_normal_idx = self.exclude_anomalous_nodes_from_normals(
+                                            pos_batch['uin'].x[batch_neg_samples_idx],
+                                            batch_anomalous_anchors,
+                                            batch_neg_samples_idx_batch)
+                                        upgrade_batch_neg_samples_idx = list(
+                                            set(batch_neg_samples_idx) - set(batch_exclude_normal_idx))
+                                        upgrade_batch_neg_samples_idx_batch = pos_batch['uin'].batch[
+                                            upgrade_batch_neg_samples_idx]
+                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                                                                 batch_h[batch_pos_samples_idx],
+                                                                                 batch_h[upgrade_batch_neg_samples_idx],
+                                                                                 batch_pos_samples_idx_batch,
+                                                                                 upgrade_batch_neg_samples_idx_batch)
+                                    else:
+                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                                                                 batch_h[batch_pos_samples_idx],
+                                                                                 batch_h[batch_neg_samples_idx],
+                                                                                 batch_pos_samples_idx_batch,
+                                                                                 batch_neg_samples_idx_batch)
+                                    loss = cross_loss + subgraph_loss
+                                else:
+                                    loss = subgraph_loss
 
-                    torch.cuda.empty_cache()
+                        else:
+                            loss = subgraph_loss
+                        if not torch.isnan(loss):
+                            loss.backward()
+                            self.optimizer.step()
+                            if self.train_dict["lr_scheduler"] == "cosineLR":
+                                self.scheduler.step()
+                            loss_value = loss.detach().cpu().item()
+                            epoch_loss.append(loss_value)
+                            if (i + 1) % 50 == 0:
+                                if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
+                                    print(
+                                        "Batch: {}, Loss: {:.6f}, "
+                                        "Batch Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
+                                            i + 1,
+                                            loss_value,
+                                            batch_loss.detach().cpu().item(),
+                                            subgraph_loss.detach().cpu().item(),
+                                            time.time() - start_time))
+                                elif self.task_type in ['cross_subgraph', 'fine_grained_cross_subgraph']:
+                                    print(
+                                        "Batch: {}, Loss: {:.6f}, "
+                                        "Cross Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
+                                            i + 1,
+                                            loss_value,
+                                            cross_loss.detach().cpu().item(),
+                                            subgraph_loss.detach().cpu().item(),
+                                            time.time() - start_time))
+                                else:
+                                    print(
+                                        "Batch: {}, Loss: {:.6f}, "
+                                        "Time: {:.4f} s".format(
+                                            i + 1,
+                                            loss_value,
+                                            time.time() - start_time))
+
+                        torch.cuda.empty_cache()
             epoch_loss = sum(epoch_loss) / len(epoch_loss)
             if not self.train_dict["is_debug"]:
                 self.writer.add_scalar(f'{self.conv_type}_pretraining_loss', epoch_loss, epoch)
