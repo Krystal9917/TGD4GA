@@ -523,10 +523,12 @@ class UinGangsModelPreTrainDDP:
             if epoch_loss < self.best_loss and self.rank == 0:
                 self.best_loss = epoch_loss
                 file_name = os.path.join(self.save_model_path,
-                                         f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
+                                         f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
+                                         f"{self.train_dict['temperature']}_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
                 epoch_file_name = os.path.join(self.save_model_path,
-                                               f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch}.pth")
+                                               f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
+                                               f"{self.train_dict['temperature']}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
         if self.rank == 0:

@@ -78,7 +78,7 @@ class UinGangsModelTuning:
         self.task_type = self.eval_dict["task_type"]
         self.save_model_path = os.path.join(self.eval_dict["model_states_path"],
                                             f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_"
-                                            f"filter_{self.control_node_num}_lr_{str(lr)}_"
+                                            f"filter_{self.control_node_num}_lr_{str(lr)}"
                                             f"{self.eval_dict['lr_scheduler']}{self.device_tag}")
         if not self.eval_dict["is_supervised"]:
             if self.eval_dict["eval_epoch"] != 0:
@@ -151,6 +151,8 @@ class UinGangsModelTuning:
                                                collate_fn=self.eval_data.collate_fn)
             self.info_type = self.eval_dict["info_insertion_type"]
             params = []
+            if self.eval_dict["is_finetune"]:
+                params.append({'params': self.model.parameters(), 'lr': self.eval_dict['lr']})
             self.is_prompt = True if self.eval_dict["info_insertion_type"] in ['add_prompt'] else False
             if self.is_prompt:
                 self.initial_data = UinGangsDataIterablePyG(self.eval_dict,
@@ -507,9 +509,14 @@ class UinGangsModelTuning:
         return penalty
 
     def detect_subgraph_gang_members(self):
-        self.model.eval()
-        for param in self.model.parameters():
-            param.requires_grad = False
+        if self.eval_dict["is_finetune"]:
+            self.model.train()
+            for param in self.model.parameters():
+                param.requires_grad = True
+        else:
+            self.model.eval()
+            for param in self.model.parameters():
+                param.requires_grad = False
         for param in self.classifier.parameters():
             param.requires_grad = True
         best_test_acc = 0
@@ -575,8 +582,9 @@ class UinGangsModelTuning:
                 best_test_cm = test_cm
                 prefix = f'{self.conv_type}_{self.task_type}_{self.eval_dict["eval_epoch"]}'
                 tp_tf = f'tn_{str(best_test_cm[0, 0])}_tp_{str(best_test_cm[1, 1])}'
-                file_name = f"{self.info_type}_{prefix}_best_f1_{tp_tf}.pth" if self.info_type is not None \
-                    else f"{prefix}_best_f1_{tp_tf}.pth"
+                is_finetune = '_finetune' if self.eval_dict["is_finetune"] else ''
+                file_name = f"{self.info_type}_{prefix}_best_f1_{tp_tf}{is_finetune}.pth" if self.info_type is not None \
+                    else f"{prefix}_best_f1_{tp_tf}{is_finetune}.pth"
                 file_name = self.eval_dict["cls_model_states_path"] + file_name
                 torch.save(self.classifier.state_dict(), file_name)
                 print(f"Now best f1: {test_f1:.4f}, save model to {file_name}")
