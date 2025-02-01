@@ -31,7 +31,7 @@ class ArgsHeteroGangs:
         parser.add_argument('--log_dir', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "losses")))
         parser.add_argument('--best_loss', type=float, default=1e2)
-        parser.add_argument('--batch_size', type=int, default=64)
+        parser.add_argument('--batch_size', type=int, default=128)
         parser.add_argument('--lr', type=float, default=1e-4)
         parser.add_argument('--n_epochs', type=int, default=100)
         parser.add_argument('--seed', type=int, default=42)
@@ -51,13 +51,13 @@ class ArgsHeteroGangs:
         # RGCN
         parser.add_argument('--world_size', type=int, default=2)
         # Evaluation
-        parser.add_argument('--evaluate', type=bool, default=False)
+        parser.add_argument('--evaluate', type=bool, default=True)
         parser.add_argument('--evaluate_times', type=int, default=5)
         parser.add_argument('--evaluate_epoch', type=int, default=0)
         parser.add_argument('--node_classes', type=int, default=5)
         parser.add_argument('--best_test_f1', type=float, default=0.6)
         parser.add_argument('--test_n_epochs', type=int, default=50)
-        parser.add_argument('--evaluate_lr', type=float, default=0.0001)
+        parser.add_argument('--evaluate_lr', type=float, default=0.0005)
 
         args = parser.parse_args()
         args_dict = vars(args)

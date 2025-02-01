@@ -63,7 +63,8 @@ class ModelPreTrain:
         if self.is_evaluate:
             # load pretrained model
             if args_dict["evaluate_epoch"] == 0:
-                file_name = os.path.join(self.save_model_path, f"{self.conv_type}_{self.task_type}_{self.lr}_best_loss.pth")
+                file_name = os.path.join(self.save_model_path,
+                                         f"{self.conv_type}_{self.task_type}_{self.lr}_best_loss.pth")
             else:
                 file_name = os.path.join(self.save_model_path,
                                          f"{self.conv_type}_{self.task_type}_{self.lr}_epoch_{args_dict['evaluate_epoch']}.pth")
@@ -86,7 +87,7 @@ class ModelPreTrain:
             self.set_seed()
             # dataloader
             self.ft_subgraph_idx = (
-                        self.raw_dataset[self.target_node_name].train_mask == 1).nonzero().squeeze().tolist()
+                    self.raw_dataset[self.target_node_name].train_mask == 1).nonzero().squeeze().tolist()
             random.shuffle(self.ft_subgraph_idx)
             ft_size = len(self.ft_subgraph_idx)
             ratio = 0.8
@@ -451,6 +452,23 @@ class ModelPreTrain:
                     print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
         self.writer.close()
 
+    def jaccard_metric(self, set_a, set_b):
+        intersection = torch.sum(set_a & set_b)
+        union = torch.sum(set_a | set_b)
+        return intersection / union if union != torch.tensor(0) else torch.tensor(0.0)
+
+    def compute_jaccard(self, y_true, y_pred, idx, flag, batch):
+        N = batch.max().detach().cpu().item() + 1
+        jaccard_list = []
+        for i in range(N):
+            subgraph_i_idx = (batch == i).nonzero().squeeze().detach().cpu()
+            if flag[i] == 1:
+                target_label = y_true[idx[subgraph_i_idx].long()][0].detach().cpu().item()
+                y_true_i = idx[subgraph_i_idx].detach().cpu()
+                y_pred_i = (y_pred[idx[subgraph_i_idx].long()] == target_label).int().detach().cpu()
+                jaccard_list.append(self.jaccard_metric(y_true_i, y_pred_i))
+        return torch.tensor(jaccard_list)
+
     def testing(self):
         self.model.eval()
         for param in self.model.parameters():
@@ -481,13 +499,19 @@ class ModelPreTrain:
                 batch_y = batch_subgraph[self.target_node_name].y.float()
 
                 pred_y = self.classifier(batch_h)
-                loss = self.criterion(pred_y, batch_y)
+                cls_loss = self.criterion(pred_y, batch_y)
+                jaccard_index = self.compute_jaccard(batch_y.argmax(dim=1), pred_y.argmax(dim=1),
+                                                     batch_subgraph[self.target_node_name].idx,
+                                                     batch_subgraph[self.target_node_name].flag,
+                                                     batch_subgraph[self.target_node_name].batch).to(self.device).mean()
+                jaccard_penalty_loss = torch.exp(-jaccard_index)
+                loss = cls_loss + jaccard_penalty_loss
                 loss.backward()
                 self.cls_optimizer.step()
                 epoch_loss.append(loss.detach().cpu().item())
             current_loss = sum(epoch_loss) / len(epoch_loss)
             print(f"Epoch {epoch}, Loss: {current_loss: .4f}, Time: {time.time() - epoch_start_time: .4f} s")
-            test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm = self.evaluate_classifier()
+            test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_jaccard, test_cm = self.evaluate_classifier()
             if test_f1 > best_test_f1:
                 best_test_acc = test_acc
                 best_test_pre = test_pre
@@ -503,6 +527,7 @@ class ModelPreTrain:
         true_y_list = []
         pred_y_list = []
         prob_y_list = []
+        jaccard_list = []
         with torch.no_grad():
             for i in range(self.test_batch_num):
                 if i != self.test_batch_num - 1:
@@ -522,9 +547,14 @@ class ModelPreTrain:
                 true_y_list.append(batch_y.detach().cpu())
                 pred_y_list.append(prob_y.detach().cpu())
                 prob_y_list.append(pred_y.detach().cpu())
+                jaccard_list.append(self.compute_jaccard(batch_y, pred_y,
+                                                         batch_subgraph[self.target_node_name].idx,
+                                                         batch_subgraph[self.target_node_name].flag,
+                                                         batch_subgraph[self.target_node_name].batch))
             true_y_list = torch.concat(true_y_list, dim=0).numpy()
             prob_y_list = torch.concat(prob_y_list, dim=0).numpy()
             pred_y_list = torch.concat(pred_y_list, dim=0).numpy()
+            jaccard = torch.concat(jaccard_list, dim=0).numpy().mean().item()
         average = "micro"
         multi_class = "ovr"
         acc = accuracy_score(true_y_list, prob_y_list)
@@ -538,5 +568,6 @@ class ModelPreTrain:
               f"Recall: {rec: .4f}, "
               f"F1: {f1: .4f}, "
               f"ROC-AUC: {roc_auc: .4f}, "
+              f"Jaccard Index: {jaccard: .4f}, "
               f"Confusion Matrix: {cm.tolist()}")
-        return acc, pre, rec, f1, roc_auc, cm
+        return acc, pre, rec, f1, roc_auc, jaccard, cm

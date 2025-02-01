@@ -37,12 +37,12 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "pic")))
         parser.add_argument('--minirbt_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
-        parser.add_argument('--best_loss', type=float, default=5)
+        parser.add_argument('--best_loss', type=float, default=10)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
         parser.add_argument('--batch_size', type=int, default=40)
         parser.add_argument('--data_buffer_size', type=int, default=64)
         parser.add_argument('--lr', type=float, default=0.001)
-        parser.add_argument('--n_epochs', type=int, default=100)
+        parser.add_argument('--n_epochs', type=int, default=20)
         parser.add_argument('--uin_in_size', type=int, default=846)
         parser.add_argument('--uin_acs_numberical_feat_dim', type=int, default=290)
         parser.add_argument('--uin_acs_text_feat_dim', type=int, default=256)
@@ -53,7 +53,7 @@ class ArgsUinGangs:
         parser.add_argument('--onnx_opset', type=int, default=15)
         parser.add_argument('--seed', type=int, default=42)
         parser.add_argument('--num_workers', type=int, default=32)
-        parser.add_argument('--temperature', type=int, default=1)
+        parser.add_argument('--temperature', type=int, default=0.5)
         parser.add_argument('--input_dim', type=int, default=846)
         parser.add_argument('--hidden_dim', type=int, default=1024)
         parser.add_argument('--output_dim', type=int, default=846)
@@ -62,7 +62,7 @@ class ArgsUinGangs:
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--conv_type', type=str, default='HGT', choices=['RGCN', 'RGAT', 'HAN', 'HGT'])
+        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'RGAT', 'HAN', 'HGT'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph'])

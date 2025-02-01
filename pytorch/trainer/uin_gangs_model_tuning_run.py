@@ -63,9 +63,9 @@ class ArgsUinGangs:
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
         parser.add_argument('--batch_size', type=int, default=40)
         parser.add_argument('--data_buffer_size', type=int, default=40)
-        parser.add_argument('--lr', type=float, default=0.01)
-        parser.add_argument('--lr_scheduler', type=str, default='stepLR',
-                            choices=['stepLR', 'reduceLR', 'cosineLR'])
+        parser.add_argument('--lr', type=float, default=0.001)
+        parser.add_argument('--lr_scheduler', type=str, default='',
+                            choices=['', '_stepLR', '_reduceLR', '_cosineLR'])
         parser.add_argument('--n_epochs', type=int, default=30)
         parser.add_argument('--uin_in_size', type=int, default=846)
         parser.add_argument('--uin_acs_numberical_feat_dim', type=int, default=290)
@@ -92,14 +92,15 @@ class ArgsUinGangs:
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--data_tag', type=str, default='order_1930_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--device_tag', type=str, default='', choices=['', '_GPU2'])
-        parser.add_argument('--eval_epoch', type=int, default=0)
+        parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2'])
+        parser.add_argument('--eval_epoch', type=int, default=10)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_gang_detection',
                             choices=['node_classification', 'subgraph',
                                      'subgraph_gang_detection', 'subgraph_prompt_tuning',
                                      'inference_gang_members', 'inference_gang_members_by_fraudar'])
         parser.add_argument('--evaluate_task_tuning', type=bool, default=False)
-        parser.add_argument('--conv_type', type=str, default='HAN', choices=['RGCN', 'HGT', 'HAN'])
+        parser.add_argument('--is_finetune', type=bool, default=True)
+        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT', 'HAN'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph'])
@@ -109,7 +110,7 @@ class ArgsUinGangs:
                             choices=[None, 'add_subgraph', 'concat_subgraph', 'concat_prompt',
                                      'concat_subgraph_prompt'])
         parser.add_argument('--prompt_lr', type=float, default=1e-4)
-        parser.add_argument('--info_insertion_type', type=str, default='combine_subgraph',
+        parser.add_argument('--info_insertion_type', type=str, default='combine_difference',
                             choices=[None, 'combine_subgraph', 'combine_difference'])
         parser.add_argument('--threshold', type=float, default=0.5)
         parser.add_argument('--test_times', type=int, default=5)
