@@ -85,16 +85,21 @@ class UinGangsModelTuning:
                 epoch_num = self.eval_dict["eval_epoch"]
                 if self.task_type == 'subgraph':
                     file_name = os.path.join(self.save_model_path,
-                                             f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
+                                             f"uin_gangs_{self.conv_type}_model_t_"
+                                             f"{self.eval_dict['temperature']}_epoch_{epoch_num}.pth")
                 else:
                     file_name = os.path.join(self.save_model_path,
-                                             f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch_num}.pth")
+                                             f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
+                                             f"{self.eval_dict['temperature']}_model_epoch_{epoch_num}.pth")
             else:
                 if self.task_type == 'subgraph':
-                    file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_best_loss.pth")
+                    file_name = os.path.join(self.save_model_path,
+                                             f"uin_gangs_{self.conv_type}_model_t_"
+                                             f"{self.eval_dict['temperature']}_best_loss.pth")
                 else:
                     file_name = os.path.join(self.save_model_path,
-                                             f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
+                                             f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
+                                             f"{self.eval_dict['temperature']}_model_best_loss.pth")
             model_weight = torch.load(file_name, map_location=self.device)
             if self.device_tag == '_GPU2':
                 rename_key_model_weight = OrderedDict()
@@ -580,7 +585,8 @@ class UinGangsModelTuning:
                 best_test_f1 = test_f1
                 best_test_roc_auc = test_roc_auc
                 best_test_cm = test_cm
-                prefix = f'{self.conv_type}_{self.task_type}_{self.eval_dict["eval_epoch"]}'
+                prefix = (f'{self.conv_type}_{self.task_type}_{self.eval_dict["eval_epoch"]}_'
+                          f't_{self.eval_dict["temperature"]}')
                 tp_tf = f'tn_{str(best_test_cm[0, 0])}_tp_{str(best_test_cm[1, 1])}'
                 is_finetune = '_finetune' if self.eval_dict["is_finetune"] else ''
                 file_name = f"{self.info_type}_{prefix}_best_f1_{tp_tf}{is_finetune}.pth" if self.info_type is not None \
