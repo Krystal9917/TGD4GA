@@ -12,6 +12,7 @@ pip install /mnt/cephfs/jiujiuchen/projects/mmgog_long_term_sequence_model/data/
 pip install /mnt/cephfs/jiujiuchen/projects/mmgog_long_term_sequence_model/data/config/libs/torch_sparse-0.6.16+pt113cu117-cp38-cp38-linux_x86_64.whl
 pip install /mnt/cephfs/jiujiuchen/projects/mmgog_long_term_sequence_model/data/config/libs/torch_geometric-2.6.1-py3-none-any.whl
 pip install /mnt/cephfs/jiujiuchen/projects/mmgog_long_term_sequence_model/data/config/libs/sentencepiece-0.1.91-cp38-cp38-manylinux1_x86_64.whl
+export CUDA_LAUNCH_BLOCKING=1
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 export MASTER_ADDR='localhost'
 export MASTER_PORT='10086'

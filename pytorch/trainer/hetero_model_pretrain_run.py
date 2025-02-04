@@ -20,7 +20,7 @@ class ArgsHeteroGangs:
     def __init__(self):
         parser = argparse.ArgumentParser()
         # dataset
-        parser.add_argument('--dataset_name', type=str, default="IMDB", choices=["IMDB", "DBLP", 'ACM'])
+        parser.add_argument('--dataset_name', type=str, default="ACM", choices=["IMDB", 'ACM'])
         parser.add_argument('--train_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "hetero_datasets")))
         parser.add_argument('--model_states_path', type=str, default=os.path.abspath(
@@ -36,25 +36,24 @@ class ArgsHeteroGangs:
         parser.add_argument('--n_epochs', type=int, default=100)
         parser.add_argument('--seed', type=int, default=42)
         parser.add_argument('--num_workers', type=int, default=32)
-        parser.add_argument('--temperature', type=int, default=1)
+        parser.add_argument('--temperature', type=int, default=0.9)
         parser.add_argument('--hidden_dim', type=int, default=1024)
         parser.add_argument('--output_dim', type=int, default=1024)
-        parser.add_argument('--filter_node_num', type=int, default=3)
+        parser.add_argument('--filter_node_num', type=int, default=10)
         parser.add_argument('--print_batch_num', type=int, default=20)
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--similarity_diff', type=float, default=0.15)
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HAN', 'HGT'])
-        parser.add_argument('--task_type', type=str, default='fine_grained_batch_subgraph',
+        parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph'])
         # RGCN
         parser.add_argument('--world_size', type=int, default=2)
         # Evaluation
-        parser.add_argument('--evaluate', type=bool, default=True)
+        parser.add_argument('--evaluate', type=bool, default=False)
         parser.add_argument('--evaluate_times', type=int, default=5)
         parser.add_argument('--evaluate_epoch', type=int, default=0)
-        parser.add_argument('--node_classes', type=int, default=5)
         parser.add_argument('--best_test_f1', type=float, default=0.6)
         parser.add_argument('--test_n_epochs', type=int, default=50)
         parser.add_argument('--evaluate_lr', type=float, default=0.0005)

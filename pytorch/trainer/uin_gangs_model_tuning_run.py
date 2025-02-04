@@ -93,7 +93,7 @@ class ArgsUinGangs:
         parser.add_argument('--data_tag', type=str, default='order_1930_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
         parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2'])
-        parser.add_argument('--eval_epoch', type=int, default=6)
+        parser.add_argument('--eval_epoch', type=int, default=10)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_gang_detection',
                             choices=['node_classification', 'subgraph',
                                      'subgraph_gang_detection', 'subgraph_prompt_tuning',
@@ -110,14 +110,16 @@ class ArgsUinGangs:
                             choices=[None, 'add_subgraph', 'concat_subgraph', 'concat_prompt',
                                      'concat_subgraph_prompt'])
         parser.add_argument('--prompt_lr', type=float, default=1e-4)
-        parser.add_argument('--info_insertion_type', type=str, default=None,
+        parser.add_argument('--info_insertion_type', type=str, default='combine_subgraph',
                             choices=[None, 'combine_subgraph', 'combine_difference'])
         parser.add_argument('--threshold', type=float, default=0.5)
         parser.add_argument('--test_times', type=int, default=5)
         parser.add_argument('--loss_weight', type=str, default='1.0 2.0',
                             choices=['1.0 2.0', '1.0 3.0', '1.0 4.0'])
-        parser.add_argument('--cls_lr', type=float, default=1e-4)
+        parser.add_argument('--cls_lr', type=float, default=5e-5)
         parser.add_argument('--best_test_f1', type=float, default=0.6)
+        parser.add_argument('--alpha', type=float, default=0.2)
+        parser.add_argument('--beta', type=float, default=0.8)
 
         args = parser.parse_args()
         args_dict = vars(args)
