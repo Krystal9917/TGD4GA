@@ -156,7 +156,7 @@ class UinGangsModelTuning:
                                                collate_fn=self.eval_data.collate_fn)
             self.info_type = self.eval_dict["info_insertion_type"]
             params = []
-            if self.eval_dict["is_finetune"]:
+            if self.eval_dict["is_finetune"] or self.eval_dict["is_supervised"]:
                 params.append({'params': self.model.parameters(), 'lr': self.eval_dict['lr']})
             self.is_prompt = True if self.eval_dict["info_insertion_type"] in ['add_prompt'] else False
             if self.is_prompt:
@@ -514,7 +514,7 @@ class UinGangsModelTuning:
         return penalty
 
     def detect_subgraph_gang_members(self):
-        if self.eval_dict["is_finetune"]:
+        if self.eval_dict["is_finetune"] or self.eval_dict["is_supervised"]:
             self.model.train()
             for param in self.model.parameters():
                 param.requires_grad = True
@@ -571,7 +571,7 @@ class UinGangsModelTuning:
                                                              pred_y.argmax(dim=1),
                                                              batch['uin'].gang_label.detach().cpu().int().tolist(),
                                                              batch['uin'].batch)
-                    loss = cls_loss + penalty_loss
+                    loss = self.eval_dict['alpha'] * cls_loss + self.eval_dict['beta'] *penalty_loss
                     loss.backward()
                     self.cls_optimizer.step()
                     epoch_loss.append(loss.detach().cpu().item())
@@ -586,11 +586,12 @@ class UinGangsModelTuning:
                 best_test_roc_auc = test_roc_auc
                 best_test_cm = test_cm
                 prefix = (f'{self.conv_type}_{self.task_type}_{self.eval_dict["eval_epoch"]}_'
-                          f't_{self.eval_dict["temperature"]}')
-                tp_tf = f'tn_{str(best_test_cm[0, 0])}_tp_{str(best_test_cm[1, 1])}'
+                          f't_{self.eval_dict["temperature"]}_lr_{self.eval_dict["cls_lr"]}')
+                tp_tf = f'tn_{str(best_test_cm[0, 0])}_tp_{str(best_test_cm[1, 1])}_total_{str(best_test_cm[0, 0]+best_test_cm[1, 1])}'
                 is_finetune = '_finetune' if self.eval_dict["is_finetune"] else ''
-                file_name = f"{self.info_type}_{prefix}_best_f1_{tp_tf}{is_finetune}.pth" if self.info_type is not None \
-                    else f"{prefix}_best_f1_{tp_tf}{is_finetune}.pth"
+                is_supervised = '_supervised' if self.eval_dict["is_supervised"] else ''
+                file_name = f"{self.info_type}_{prefix}_best_f1_{tp_tf}{is_finetune}{is_supervised}.pth" \
+                    if self.info_type is not None else f"{prefix}_best_f1_{tp_tf}{is_finetune}{is_supervised}.pth"
                 file_name = self.eval_dict["cls_model_states_path"] + file_name
                 torch.save(self.classifier.state_dict(), file_name)
                 print(f"Now best f1: {test_f1:.4f}, save model to {file_name}")

@@ -36,14 +36,12 @@ class ModelPreTrain:
             self.target_node_name = "movie"
             input_dim = 3489
             num_relations = 3
-        elif self.dataset_name == "DBLP":
-            self.target_node_name = "author"
-            input_dim = 1024
-            num_relations = 1
+            node_classes = 5
         else:
             self.target_node_name = "paper"
             input_dim = 1902
             num_relations = 4
+            node_classes = 5
         self.raw_dataset = load_dataset(os.path.join(self.data_dir, self.dataset_name), self.dataset_name)
         self.metadata = self.raw_dataset.metadata()
         self.edge_types = {self.metadata[1][i]: i for i in range(len(self.metadata[1]))}
@@ -78,7 +76,7 @@ class ModelPreTrain:
             # classifier
             self.classifier = torch.nn.Sequential(torch.nn.Linear(args_dict['output_dim'], args_dict['hidden_dim']),
                                                   torch.nn.ReLU(),
-                                                  torch.nn.Linear(args_dict['hidden_dim'], args_dict['node_classes']),
+                                                  torch.nn.Linear(args_dict['hidden_dim'], node_classes),
                                                   torch.nn.Softmax(dim=1))
             self.classifier.to(self.device)
             self.cls_optimizer = torch.optim.Adam(self.classifier.parameters(), lr=args_dict["evaluate_lr"])
@@ -280,6 +278,9 @@ class ModelPreTrain:
 
     def pretraining(self):
         self.model.train()
+        ave_nodes = []
+        ave_edges = []
+        ave_types = []
         for epoch in range(1, self.epoch_num + 1):
             epoch_loss = []
             epoch_start_time = time.time()
@@ -289,8 +290,14 @@ class ModelPreTrain:
                     batch_subgraph_idx = self.pt_subgraph_idx[i * self.batch_size: (i + 1) * self.batch_size]
                 else:
                     batch_subgraph_idx = self.pt_subgraph_idx[i * self.batch_size:]
-                batch_subgraph = induced_subgraph(batch_subgraph_idx, self.raw_dataset, self.target_node_name)
+                batch_subgraph = induced_subgraph(batch_subgraph_idx, self.raw_dataset, self.target_node_name,
+                                                  lower_bound=self.train_dict["filter_node_num"], upper_bound=300)
                 batch_subgraph = Batch.from_data_list(batch_subgraph).to(self.device)
+
+                if epoch == 1:
+                    ave_nodes.append(batch_subgraph[self.target_node_name].num_nodes)
+                    ave_edges.append(batch_subgraph.num_edges)
+                    ave_types.append(len(batch_subgraph.edge_types))
 
                 # raw subgraph
                 batch_h = self.rgcn_fit(batch_subgraph)
@@ -320,8 +327,10 @@ class ModelPreTrain:
                                                          fraudar_batch_subgraph[self.target_node_name].batch, dim=0)
                         pos_batch_h_g = batch_h_g[pos_subgraph_idx]
                         neg_batch_h_g = batch_h_g[neg_subgraph_idx]
-
-                        inter_loss = self.preference_contrastive_loss(pos_batch_h_g, fraudar_batch_h_g, neg_batch_h_g)
+                        if neg_batch_h_g.shape[0] != 0:
+                            inter_loss = self.preference_contrastive_loss(pos_batch_h_g, fraudar_batch_h_g, neg_batch_h_g)
+                        else:
+                            inter_loss = torch.tensor(0, device=self.device)
                         # intra-subgraph contrastive learning (high possibility subgraphs inside)
                         if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph',
                                               'cross_subgraph', 'fine_grained_cross_subgraph']:
@@ -381,13 +390,13 @@ class ModelPreTrain:
                                         upgrade_batch_neg_samples_idx_batch = \
                                             batch_subgraph[self.target_node_name].batch[
                                                 upgrade_batch_neg_samples_idx]
-                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h,
                                                                                  batch_h[batch_pos_samples_idx],
                                                                                  batch_h[upgrade_batch_neg_samples_idx],
                                                                                  batch_pos_samples_idx_batch,
                                                                                  upgrade_batch_neg_samples_idx_batch)
                                     else:
-                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h,
                                                                                  batch_h[batch_pos_samples_idx],
                                                                                  batch_h[batch_neg_samples_idx],
                                                                                  batch_pos_samples_idx_batch,
