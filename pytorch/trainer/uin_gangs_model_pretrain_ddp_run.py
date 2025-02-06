@@ -28,7 +28,7 @@ class ArgsUinGangs:
                          "config", "yml", "uin_gangs_enum.yaml")))
         parser.add_argument('--model_states_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "saved_model", "GNN_models", "pretraining_filter_subgraph_cl")))
+                         "saved_model", "RGCN_models", "pretraining_filter_subgraph_cl")))
         parser.add_argument('--export_requirements_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, "data", "config", "requirements" + ".txt")))
         parser.add_argument('--log_dir', type=str, default=os.path.abspath(
@@ -42,6 +42,7 @@ class ArgsUinGangs:
         parser.add_argument('--batch_size', type=int, default=40)
         parser.add_argument('--data_buffer_size', type=int, default=64)
         parser.add_argument('--lr', type=float, default=0.001)
+        parser.add_argument('--weight_decay', type=float, default=1e-5)
         parser.add_argument('--n_epochs', type=int, default=15)
         parser.add_argument('--uin_in_size', type=int, default=846)
         parser.add_argument('--uin_acs_numberical_feat_dim', type=int, default=290)
@@ -63,7 +64,7 @@ class ArgsUinGangs:
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'RGAT', 'HAN', 'HGT'])
-        parser.add_argument('--task_type', type=str, default='intra_subgraph',
+        parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph',
                                      'intra_subgraph'])
@@ -73,7 +74,6 @@ class ArgsUinGangs:
         parser.add_argument('--num_heads', type=int, default=2)
         parser.add_argument('--world_size', type=int, default=2)
         parser.add_argument('--data_tag', type=str, default='order_1930_', choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2', '_GPU4'])
         parser.add_argument('--similarity_diff', type=float, default=0.15)
 
         args = parser.parse_args()
@@ -92,6 +92,8 @@ def run_pretraining_graph_ddp(rank, args):
 
 if __name__ == '__main__':
     args = ArgsUinGangs()
-    print(f"Current GPUs: {torch.cuda.device_count()}")
+    num_gpu = torch.cuda.device_count()
+    print(f"Current GPUs: {num_gpu}")
+    args.args_dict["world_size"] = num_gpu
     mp.spawn(run_pretraining_graph_ddp, args=(args,),
              nprocs=args.args_dict["world_size"], join=True)

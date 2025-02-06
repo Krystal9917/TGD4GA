@@ -52,7 +52,8 @@ class UinGangsModelPreTrainDDP:
                 self.model = RGCN(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
-                                  num_relations=args_dict['num_relations'])
+                                  num_relations=args_dict['num_relations'],
+                                  num_bases=args_dict['num_relations'])
             else:
                 self.model = RGAT(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
@@ -79,7 +80,7 @@ class UinGangsModelPreTrainDDP:
         control_node_num = self.train_dict["filter_node_num"]
         sampling_type = self.train_dict["sampling"]
         self.data_tag = self.train_dict["data_tag"]
-        self.device_tag = self.train_dict["device_tag"]
+        self.device_tag = f'_GPU{str(self.train_dict["world_size"])}'
 
         self.log_file_path = f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_{control_node_num}_lr_{str(lr)}{self.device_tag}"
         log_path = os.path.abspath(os.path.join(args_dict['log_dir'],
@@ -117,7 +118,7 @@ class UinGangsModelPreTrainDDP:
                                                     batch_size=self.train_dict["batch_size"],
                                                     num_workers=self.train_dict["num_workers"],
                                                     collate_fn=self.train_data.pos_collate_fn_for_fraudar)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=self.train_dict["weight_decay"])
         self.best_loss = self.train_dict["best_loss"]
         self.setup_seed()
 
@@ -197,7 +198,7 @@ class UinGangsModelPreTrainDDP:
             i_fraudar_pos_h = fraudar_pos_h[pos_batch == i]
             i_subgraph_pos_h = subgraph_pos_h[pos_batch == i]
             i_subgraph_neg_h = subgraph_neg_h[neg_batch == i]
-            cross_loss = self.preference_contrastive_loss(i_subgraph_pos_h, i_fraudar_pos_h, i_subgraph_neg_h)
+            cross_loss = self.preference_contrastive_loss(i_fraudar_pos_h, i_subgraph_pos_h, i_subgraph_neg_h)
             batch_loss_list.append(cross_loss)
         return torch.stack([item for item in batch_loss_list if not torch.isnan(item)]).mean()
 
