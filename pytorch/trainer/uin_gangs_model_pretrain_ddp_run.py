@@ -42,7 +42,7 @@ class ArgsUinGangs:
         parser.add_argument('--batch_size', type=int, default=40)
         parser.add_argument('--data_buffer_size', type=int, default=64)
         parser.add_argument('--lr', type=float, default=0.001)
-        parser.add_argument('--n_epochs', type=int, default=20)
+        parser.add_argument('--n_epochs', type=int, default=15)
         parser.add_argument('--uin_in_size', type=int, default=846)
         parser.add_argument('--uin_acs_numberical_feat_dim', type=int, default=290)
         parser.add_argument('--uin_acs_text_feat_dim', type=int, default=256)
@@ -63,9 +63,10 @@ class ArgsUinGangs:
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'RGAT', 'HAN', 'HGT'])
-        parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
+        parser.add_argument('--task_type', type=str, default='intra_subgraph',
                             choices=['subgraph', 'batch_subgraph', 'cross_subgraph',
-                                     'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph'])
+                                     'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph',
+                                     'intra_subgraph'])
         # RGCN
         parser.add_argument('--num_relations', type=int, default=10)
         # HAN/HGT

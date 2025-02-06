@@ -392,7 +392,7 @@ class UinGangsModelPreTrainDDP:
                     else:
                         fraudar_batch_h = self.relation_fit(fraudar_batch, fraudar_batch['uin'].x)
 
-                    if fraudar_batch_h is not None:
+                    if fraudar_batch_h is not None and self.task_type != 'intra_subgraph':
                         fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
                         fraudar_batch_h_g = fraudar_batch_h_g[pos_batch_idx]
 
@@ -408,10 +408,13 @@ class UinGangsModelPreTrainDDP:
                         # subgraph-level contrastive learning
                         subgraph_loss = self.preference_contrastive_loss(fraudar_batch_h_g, pos_batch_h_g,
                                                                          neg_batch_h_g)
+                    elif self.task_type == 'intra_subgraph':
+                        subgraph_loss = torch.tensor(0).to(self.device)
                     else:
                         subgraph_loss = torch.tensor(torch.nan).to(self.device)
                     if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph',
-                                          'cross_subgraph', 'fine_grained_cross_subgraph']:
+                                          'cross_subgraph', 'fine_grained_cross_subgraph',
+                                          'intra_subgraph']:
                         # batch-level contrastive learning (high possibility subgraphs inside)
                         if list_flag:
                             batch_pos_neg_samples_idx = torch.concat(
@@ -451,7 +454,7 @@ class UinGangsModelPreTrainDDP:
                             loss = batch_loss + subgraph_loss
                         else:
                             if fraudar_batch_h is not None:
-                                if self.task_type == 'fine_grained_cross_subgraph':
+                                if self.task_type in ['fine_grained_cross_subgraph', 'intra_subgraph']:
                                     batch_anomalous_anchors = self.compute_anomalous_subgraph_anchor(
                                         pos_batch['uin'].x[batch_pos_samples_idx],
                                         batch_pos_samples_idx_batch)
@@ -479,7 +482,7 @@ class UinGangsModelPreTrainDDP:
                                 loss = subgraph_loss
                     else:
                         loss = subgraph_loss
-                    if not torch.isnan(loss):
+                    if not torch.isnan(loss) and loss != torch.tensor(0):
                         loss.backward()
                         self.optimizer.step()
                         loss_value = loss.detach().cpu().item()

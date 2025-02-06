@@ -85,8 +85,10 @@ class UinGangsModelTuning:
                 epoch_num = self.eval_dict["eval_epoch"]
                 if self.task_type == 'subgraph':
                     file_name = os.path.join(self.save_model_path,
-                                             f"uin_gangs_{self.conv_type}_model_t_"
-                                             f"{self.eval_dict['temperature']}_epoch_{epoch_num}.pth")
+                                             f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
+                elif self.task_type == 'cross_subgraph':
+                    file_name = os.path.join(self.save_model_path,
+                                             f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch_num}.pth")
                 else:
                     file_name = os.path.join(self.save_model_path,
                                              f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
@@ -94,8 +96,10 @@ class UinGangsModelTuning:
             else:
                 if self.task_type == 'subgraph':
                     file_name = os.path.join(self.save_model_path,
-                                             f"uin_gangs_{self.conv_type}_model_t_"
-                                             f"{self.eval_dict['temperature']}_best_loss.pth")
+                                             f"uin_gangs_{self.conv_type}_model_best_loss.pth")
+                elif self.task_type == 'cross_subgraph':
+                    file_name = os.path.join(self.save_model_path,
+                                             f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
                 else:
                     file_name = os.path.join(self.save_model_path,
                                              f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
@@ -510,7 +514,7 @@ class UinGangsModelTuning:
                     torch.tensor((fp_num - self.control_node_num + 1) / node_y_pred_i.shape[0])) - torch.exp(
                     torch.tensor(-1))
                 penalty_list.append(fp_penalty)
-        penalty = torch.stack(penalty_list).to(self.device).mean()
+        penalty = torch.stack(penalty_list).to(self.device).mean().requires_grad_()
         return penalty
 
     def detect_subgraph_gang_members(self):
@@ -566,12 +570,18 @@ class UinGangsModelTuning:
                         diff_h = expand_batch_h_g - batch_h
                         batch_h = torch.concat([batch_h, diff_h], dim=1)
                     pred_y = self.classifier(batch_h)
-                    cls_loss = self.criterion(pred_y, batch_y)
-                    penalty_loss = self.compute_penalty_loss(batch_y,
-                                                             pred_y.argmax(dim=1),
-                                                             batch['uin'].gang_label.detach().cpu().int().tolist(),
-                                                             batch['uin'].batch)
-                    loss = self.eval_dict['alpha'] * cls_loss + self.eval_dict['beta'] *penalty_loss
+                    if self.eval_dict['cls_node']:
+                        cls_loss = self.criterion(pred_y, batch_y)
+                    else:
+                        cls_loss = torch.tensor(0, device=self.device)
+                    if self.eval_dict['cls_subgraph']:
+                        penalty_loss = self.compute_penalty_loss(batch_y,
+                                                                 pred_y.argmax(dim=1),
+                                                                 batch['uin'].gang_label.detach().cpu().int().tolist(),
+                                                                 batch['uin'].batch)
+                    else:
+                        penalty_loss = torch.tensor(0, device=self.device)
+                    loss = self.eval_dict['alpha'] * cls_loss + self.eval_dict['beta'] * penalty_loss
                     loss.backward()
                     self.cls_optimizer.step()
                     epoch_loss.append(loss.detach().cpu().item())
@@ -586,8 +596,9 @@ class UinGangsModelTuning:
                 best_test_roc_auc = test_roc_auc
                 best_test_cm = test_cm
                 prefix = (f'{self.conv_type}_{self.task_type}_{self.eval_dict["eval_epoch"]}_'
-                          f't_{self.eval_dict["temperature"]}_lr_{self.eval_dict["cls_lr"]}')
-                tp_tf = f'tn_{str(best_test_cm[0, 0])}_tp_{str(best_test_cm[1, 1])}_total_{str(best_test_cm[0, 0]+best_test_cm[1, 1])}'
+                          f't_{self.eval_dict["temperature"]}_lr_{self.eval_dict["cls_lr"]}_'
+                          f'alpha_{self.eval_dict["alpha"]}_beta_{self.eval_dict["beta"]}')
+                tp_tf = f'tn_{str(best_test_cm[0, 0])}_tp_{str(best_test_cm[1, 1])}_total_{str(best_test_cm[0, 0] + best_test_cm[1, 1])}'
                 is_finetune = '_finetune' if self.eval_dict["is_finetune"] else ''
                 is_supervised = '_supervised' if self.eval_dict["is_supervised"] else ''
                 file_name = f"{self.info_type}_{prefix}_best_f1_{tp_tf}{is_finetune}{is_supervised}.pth" \
@@ -994,6 +1005,8 @@ class UinGangsModelTuning:
             file_name = '/jiujiuchen/projects/mmgog_long_term_sequence_model/data/fraudar_y.csv'
             df.to_csv(output_file_dir + file_name, index=False)
             print(f"Save to file: {output_file_dir + file_name}")
+        else:
+            return acc, pre, rec, f1, roc_auc, pos_jaccard, neg_jaccard
 
     def inference_gang_members(self, save_results=False):
         start_time = time.time()

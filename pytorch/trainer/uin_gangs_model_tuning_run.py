@@ -120,10 +120,28 @@ class ArgsUinGangs:
         parser.add_argument('--best_test_f1', type=float, default=0.6)
         parser.add_argument('--alpha', type=float, default=0.2)
         parser.add_argument('--beta', type=float, default=0.8)
+        parser.add_argument('--cls_node', type=bool, default=False)
+        parser.add_argument('--cls_subgraph', type=bool, default=True)
 
         args = parser.parse_args()
         args_dict = vars(args)
         self.args_dict = args_dict
+
+
+def compute_metrics_std(acc, pre, rec, f1, roc_auc, pos_jaccard=None, neg_jaccard=None):
+    acc = np.array(acc)
+    pre = np.array(pre)
+    rec = np.array(rec)
+    f1 = np.array(f1)
+    roc_auc = np.array(roc_auc)
+    if pos_jaccard is not None:
+        pos_jaccard = np.array(pos_jaccard)
+    if neg_jaccard is not None:
+        neg_jaccard = np.array(neg_jaccard)
+    if pos_jaccard is not None and neg_jaccard is not None:
+        return acc.std(), pre.std(), rec.std(), f1.std(), roc_auc.std(), pos_jaccard.std(), neg_jaccard.std()
+    else:
+        return acc.std(), pre.std(), rec.std(), f1.std(), roc_auc.std()
 
 
 if __name__ == '__main__':
@@ -136,11 +154,11 @@ if __name__ == '__main__':
     elif args.args_dict["evaluate_task"] in ['subgraph', 'subgraph_gang_detection']:
         print(f"======Labelled {args.args_dict['evaluate_task']} Evaluation======")
         times_list = ['1st', '2nd', '3rd', '4th', '5th']
-        ave_acc = 0
-        ave_pre = 0
-        ave_rec = 0
-        ave_f1 = 0
-        ave_roc_auc = 0
+        acc_list = []
+        pre_list = []
+        rec_list = []
+        f1_list = []
+        roc_auc_list = []
         ave_cfm = np.array([[0, 0], [0, 0]])
         for i in range(args.args_dict["test_times"]):
             tuning_model = UinGangsModelTuning(args.args_dict)
@@ -149,19 +167,20 @@ if __name__ == '__main__':
                 test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm = tuning_model.evaluate_labelled_subgraph_predict()
             else:
                 test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm = tuning_model.detect_subgraph_gang_members()
-            ave_acc += test_acc
-            ave_pre += test_pre
-            ave_rec += test_rec
-            ave_f1 += test_f1
-            ave_roc_auc += test_roc_auc
+            acc_list.append(test_acc)
+            pre_list.append(test_pre)
+            rec_list.append(test_rec)
+            f1_list.append(test_f1)
+            roc_auc_list.append(test_roc_auc)
             ave_cfm += test_cfm
             print(f"*****End {times_list[i]} Time Testing*****")
-        print(f"{len(times_list)} Times Average Best Test ACC: {ave_acc / len(times_list): .4f}, "
-              f"Precision: {ave_pre / len(times_list): .4f}, "
-              f"Recall: {ave_rec / len(times_list): .4f}, "
-              f"F1: {ave_f1 / len(times_list): .4f}, "
-              f"ROC-AUC: {ave_roc_auc / len(times_list): .4f}, "
-              f"Confusion Matrix: {ave_cfm / len(times_list)}, "
+        acc_std, pre_std, rec_std, f1_std, roc_auc_std = compute_metrics_std(acc_list, pre_list, rec_list, f1_list, roc_auc_list)
+        print(f"{len(acc_list)} Times Average Best Test ACC: {sum(acc_list) / len(acc_list): .4f}, std: {acc_std: .4f}, "
+              f"Precision: {sum(pre_list) / len(pre_list): .4f}, std: {pre_std: .4f}, "
+              f"Recall: {sum(rec_list) / len(rec_list): .4f}, std: {rec_std: .4f}, "
+              f"F1: {sum(f1_list) / len(f1_list): .4f}, std: {f1_std: .4f}, "
+              f"ROC-AUC: {sum(roc_auc_list) / len(roc_auc_list): .4f}, std: {roc_auc_std: .4f}, "
+              f"Confusion Matrix: {ave_cfm / len(times_list)}"
               )
     elif args.args_dict["evaluate_task"] == 'subgraph_prompt_tuning':
         print("======Labelled Subgraph Prompt Tuning======")
@@ -199,7 +218,35 @@ if __name__ == '__main__':
         tuning_model.inference_gang_members()
         print(f"*****End Inference*****")
     elif args.args_dict["evaluate_task"] == 'inference_gang_members_by_fraudar':
-        print(f"*****Start Fraudar Inference*****")
-        tuning_model = UinGangsModelTuning(args.args_dict)
-        tuning_model.inference_gang_members_by_fraudar()
-        print(f"*****End Fraudar Inference*****")
+        print("======Labelled Subgraph Prompt Tuning======")
+        times_list = ['1st', '2nd', '3rd', '4th', '5th']
+        acc_list = []
+        pre_list = []
+        rec_list = []
+        f1_list = []
+        roc_auc_list = []
+        pos_jac_list = []
+        neg_jac_list = []
+        for i in range(args.args_dict["test_times"]):
+            print(f"*****Start {times_list[i]} Fraudar Inference*****")
+            tuning_model = UinGangsModelTuning(args.args_dict)
+            acc, pre, rec, f1, roc_auc, pos_jaccard, neg_jaccard = tuning_model.inference_gang_members_by_fraudar()
+            acc_list.append(acc)
+            pre_list.append(pre)
+            rec_list.append(rec)
+            f1_list.append(f1)
+            roc_auc_list.append(roc_auc)
+            pos_jac_list.append(pos_jaccard)
+            neg_jac_list.append(neg_jaccard)
+            print(f"*****End {times_list[i]} Fraudar Inference*****")
+        acc_std, pre_std, rec_std, f1_std, roc_auc_std, pos_std, neg_std = (
+            compute_metrics_std(acc_list, pre_list, rec_list, f1_list, roc_auc_list, pos_jac_list, neg_jac_list))
+        print(
+            f"{len(acc_list)} Times Average Best Test ACC: {sum(acc_list) / len(acc_list): .4f}, std: {acc_std: .4f}, "
+            f"Precision: {sum(pre_list) / len(pre_list): .4f}, std: {pre_std: .4f}, "
+            f"Recall: {sum(rec_list) / len(rec_list): .4f}, std: {rec_std: .4f}, "
+            f"F1: {sum(f1_list) / len(f1_list): .4f}, std: {f1_std: .4f}, "
+            f"ROC-AUC: {sum(roc_auc_list) / len(roc_auc_list): .4f}, std: {roc_auc_std: .4f}, "
+            f"Pos Jaccard: {sum(pos_jac_list) / len(times_list): .4f}, std: {pos_std: .4f}, "
+            f"Neg Jaccard: {sum(neg_jac_list) / len(times_list): .4f}, std: {neg_std: .4f}"
+            )
