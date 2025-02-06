@@ -19,6 +19,7 @@ from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
 from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
+from mmgog_long_term_sequence_model.utils.utils import batch_subgraph_loss_based_cross_entropy
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix, \
     multilabel_confusion_matrix
 
@@ -570,18 +571,25 @@ class UinGangsModelTuning:
                         diff_h = expand_batch_h_g - batch_h
                         batch_h = torch.concat([batch_h, diff_h], dim=1)
                     pred_y = self.classifier(batch_h)
-                    if self.eval_dict['cls_node']:
-                        cls_loss = self.criterion(pred_y, batch_y)
+                    if self.eval_dict['finetune_loss'] == 'node_subgraph':
+                        if self.eval_dict['cls_node']:
+                            cls_loss = self.criterion(pred_y, batch_y)
+                        else:
+                            cls_loss = torch.tensor(0, device=self.device)
+                        if self.eval_dict['cls_subgraph']:
+                            penalty_loss = self.compute_penalty_loss(batch_y,
+                                                                     pred_y.argmax(dim=1),
+                                                                     batch[
+                                                                         'uin'].gang_label.detach().cpu().int().tolist(),
+                                                                     batch['uin'].batch)
+                        else:
+                            penalty_loss = torch.tensor(0, device=self.device)
+                        loss = self.eval_dict['alpha'] * cls_loss + self.eval_dict['beta'] * penalty_loss
                     else:
-                        cls_loss = torch.tensor(0, device=self.device)
-                    if self.eval_dict['cls_subgraph']:
-                        penalty_loss = self.compute_penalty_loss(batch_y,
-                                                                 pred_y.argmax(dim=1),
-                                                                 batch['uin'].gang_label.detach().cpu().int().tolist(),
-                                                                 batch['uin'].batch)
-                    else:
-                        penalty_loss = torch.tensor(0, device=self.device)
-                    loss = self.eval_dict['alpha'] * cls_loss + self.eval_dict['beta'] * penalty_loss
+                        loss = batch_subgraph_loss_based_cross_entropy(batch['uin'].y.long(),
+                                                                       batch['uin'].batch,
+                                                                       pred_y[:, 1],
+                                                                       batch_y)
                     loss.backward()
                     self.cls_optimizer.step()
                     epoch_loss.append(loss.detach().cpu().item())

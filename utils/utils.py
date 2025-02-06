@@ -1,15 +1,12 @@
-import itertools
 import logging
 import subprocess
-from logging.handlers import TimedRotatingFileHandler
-
 import numpy
 import numpy as np
 from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
-from sklearn.metrics import roc_curve, roc_auc_score, precision_score, recall_score, f1_score, confusion_matrix, precision_recall_curve, auc, silhouette_score
+from sklearn.metrics import (roc_curve, roc_auc_score, precision_score, recall_score, f1_score,
+                             confusion_matrix, precision_recall_curve, auc, silhouette_score)
 from datetime import datetime
 import os
 import torch
@@ -230,7 +227,8 @@ def eval_emb_with_knn(X, k=10):
     return score
 
 
-def visualization_fig_save(input_embedding, input_class, save_path, visual_type='PCA', is_show=False, data_type='Subgraph Type'):
+def visualization_fig_save(input_embedding, input_class, save_path, visual_type='PCA', is_show=False,
+                           data_type='Subgraph Type'):
     if visual_type == 'PCA':
         vis = PCA(n_components=2)
     else:
@@ -249,15 +247,78 @@ def visualization_fig_save(input_embedding, input_class, save_path, visual_type=
         plt.show()
 
 
+def neg_subgraph_based_cross_entropy(neg_sub_idx, batch, y_pred, y_true):
+    neg_subgraph_loss = []
+    for i in neg_sub_idx:
+        neg_i_y_pred = y_pred[batch == i]
+        neg_i_y_true = y_true[batch == i]
+        neg_loss = -((1 - neg_i_y_true) * torch.log(1 - neg_i_y_pred + 1e-4)).mean()
+        neg_subgraph_loss.append(neg_loss)
+    neg_subgraph_loss = torch.stack(neg_subgraph_loss)
+    return neg_subgraph_loss
+
+
+def pos_subgraph_based_cross_entropy(pos_sub_idx, batch, y_pred, y_true):
+    pos_subgraph_loss = []
+    for i in pos_sub_idx:
+        i_y_pred = y_pred[batch == i]
+        n = i_y_pred.shape[0]
+        i_y_true = y_true[batch == i]
+        pos_i_y_idx = (i_y_true == 1).nonzero().squeeze()
+        pos_i_y_pred = i_y_pred[pos_i_y_idx]
+        pos_i_y_true = i_y_true[pos_i_y_idx]
+        neg_i_y_idx = (i_y_true == 0).nonzero().squeeze()
+        neg_i_y_pred = i_y_pred[neg_i_y_idx]
+        neg_i_y_true = i_y_true[neg_i_y_idx]
+        pos_part_loss = (pos_i_y_true * torch.log(pos_i_y_pred + 1e-4)).sum()
+        neg_part_loss = ((1 - neg_i_y_true) * torch.log(1 - neg_i_y_pred + 1e-4)).sum()
+        pos_subgraph_loss.append(-(pos_part_loss + neg_part_loss)/n)
+    pos_subgraph_loss = torch.stack(pos_subgraph_loss)
+    return pos_subgraph_loss
+
+
+def batch_subgraph_loss_based_cross_entropy(subgraph_y, batch, y_prob, y_true):
+    pos_sub_idx = (subgraph_y >= 2).nonzero().squeeze()
+    if pos_sub_idx.shape[0] != 0:
+        pos_loss = pos_subgraph_based_cross_entropy(pos_sub_idx, batch, y_prob, y_true)
+    else:
+        pos_loss = torch.tensor(0, device=subgraph_y.device)
+    neg_sub_idx = (subgraph_y < 2).nonzero().squeeze()
+    if neg_sub_idx.shape[0] != 0:
+        neg_loss = neg_subgraph_based_cross_entropy(neg_sub_idx, batch, y_prob, y_true)
+    else:
+        neg_loss = torch.tensor(0, device=subgraph_y.device)
+    batch_subgraph_loss = torch.concat([pos_loss, neg_loss], dim=0).mean()
+    return batch_subgraph_loss
+
+
 if __name__ == '__main__':
-    # 生成模拟数据
-    x = np.random.rand(4, 4)  # 生成一个4x16的随机矩阵
-    y = np.array([1, 2, 3, 0])
-    auc_scores, precision_scores, recall_scores, f1_scores, confusion_mats = get_indicator_of_mutil_cls_base_softmax(y,
-                                                                                                                     x,
-                                                                                                                     4)
-    print(auc_scores)
-    print(precision_scores)
-    print(recall_scores)
-    print(f1_scores)
-    print(confusion_mats)
+    g_y = torch.tensor([0, 0, 0, 1, 1])
+    g_batch = torch.tensor([0, 0, 0, 0, 0, 0,
+                            1, 1, 1, 1, 1,
+                            2, 2, 2, 2,
+                            3, 3, 3, 3, 3, 3, 3,
+                            4, 4, 4, 4, 4, 4])
+    node_y_pred1 = torch.tensor([0.1, 0.15, 0.1, 0.4, 0.8, 0.2,
+                                0.1, 0.25, 0.0, 0.1, 0.15,
+                                0.23, 0.24, 0.2, 0.01,
+                                0.07, 0.34, 0.56, 0.45, 0.69, 0.63, 0.55,
+                                0.24, 0.62, 0.54, 0.48, 0.46, 0.71], requires_grad=True)
+    node_y_pred2 = torch.tensor([0.01, 0.02, 0.03, 0.01, 0.02, 0.05,
+                                 0.01, 0.0, 0.0, 0.0, 0.02,
+                                 0.03, 0.04, 0.01, 0.005,
+                                 0.97, 0.92, 0.88, 0.12, 0.15, 0.78, 0.86,
+                                 0.68, 0.93, 0.08, 0.79, 0.37, 0.92], requires_grad=True)
+    node_y_true = torch.tensor([0, 0, 0, 0, 0, 0,
+                                0, 0, 0, 0, 0,
+                                0, 0, 0, 0,
+                                1, 1, 1, 0, 0, 1, 1,
+                                1, 1, 0, 1, 0, 1])
+    loss1 = batch_subgraph_loss_based_cross_entropy(g_y, g_batch, node_y_pred1, node_y_true)
+    loss2 = batch_subgraph_loss_based_cross_entropy(g_y, g_batch, node_y_pred2, node_y_true)
+    print(f"Loss 1: {loss1: .4f}, Loss 2: {loss2: .4f}")
+
+    y_prob = torch.tensor([[0.1, 0.9], [0.2, 0.8], [0.3, 0.7]])
+    print(y_prob)
+    print(y_prob[:, 1])
+
