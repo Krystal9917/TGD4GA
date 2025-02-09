@@ -12,6 +12,7 @@ import os
 import torch
 from typing import List
 import matplotlib.pyplot as plt
+from torch_geometric.utils import to_dense_adj
 
 
 def print_model_size(model):
@@ -258,7 +259,7 @@ def neg_subgraph_based_cross_entropy(neg_sub_idx, batch, y_pred, y_true):
     return neg_subgraph_loss
 
 
-def pos_subgraph_based_cross_entropy(pos_sub_idx, batch, y_pred, y_true):
+def pos_subgraph_based_cross_entropy(pos_sub_idx, batch, y_pred, y_true, pos_weight=2.0, neg_weight=1.0):
     pos_subgraph_loss = []
     for i in pos_sub_idx:
         i_y_pred = y_pred[batch == i]
@@ -270,26 +271,61 @@ def pos_subgraph_based_cross_entropy(pos_sub_idx, batch, y_pred, y_true):
         neg_i_y_idx = (i_y_true == 0).nonzero().squeeze()
         neg_i_y_pred = i_y_pred[neg_i_y_idx]
         neg_i_y_true = i_y_true[neg_i_y_idx]
-        pos_part_loss = (pos_i_y_true * torch.log(pos_i_y_pred + 1e-4)).sum()
-        neg_part_loss = ((1 - neg_i_y_true) * torch.log(1 - neg_i_y_pred + 1e-4)).sum()
+        pos_part_loss = (pos_weight * pos_i_y_true * torch.log(pos_i_y_pred + 1e-4)).sum()
+        neg_part_loss = (neg_weight * (1 - neg_i_y_true) * torch.log(1 - neg_i_y_pred + 1e-4)).sum()
         pos_subgraph_loss.append(-(pos_part_loss + neg_part_loss)/n)
     pos_subgraph_loss = torch.stack(pos_subgraph_loss)
     return pos_subgraph_loss
 
 
-def batch_subgraph_loss_based_cross_entropy(subgraph_y, batch, y_prob, y_true):
-    pos_sub_idx = (subgraph_y >= 2).nonzero().squeeze()
+def batch_subgraph_loss_based_cross_entropy(subgraph_y, batch, y_prob, y_true, alpha, beta, wp, wn):
+    pos_sub_idx = (subgraph_y == 1).nonzero().squeeze()
+    if pos_sub_idx.shape == torch.Size([]):
+        pos_sub_idx = torch.tensor([pos_sub_idx], device=pos_sub_idx.device)
     if pos_sub_idx.shape[0] != 0:
-        pos_loss = pos_subgraph_based_cross_entropy(pos_sub_idx, batch, y_prob, y_true)
+        pos_loss = pos_subgraph_based_cross_entropy(pos_sub_idx, batch, y_prob, y_true, pos_weight=wp, neg_weight=wn)
     else:
-        pos_loss = torch.tensor(0, device=subgraph_y.device)
-    neg_sub_idx = (subgraph_y < 2).nonzero().squeeze()
+        pos_loss = torch.tensor([0], device=subgraph_y.device)
+    neg_sub_idx = (subgraph_y == 0).nonzero().squeeze()
+    if neg_sub_idx.shape == torch.Size([]):
+        neg_sub_idx = torch.tensor([neg_sub_idx], device=neg_sub_idx.device)
     if neg_sub_idx.shape[0] != 0:
         neg_loss = neg_subgraph_based_cross_entropy(neg_sub_idx, batch, y_prob, y_true)
     else:
-        neg_loss = torch.tensor(0, device=subgraph_y.device)
-    batch_subgraph_loss = torch.concat([pos_loss, neg_loss], dim=0).mean()
+        neg_loss = torch.tensor([0], device=subgraph_y.device)
+    batch_subgraph_loss = torch.concat([alpha * pos_loss, beta * neg_loss], dim=0).mean()
     return batch_subgraph_loss
+
+
+def compute_density_by_probability(y_true, y_prob, deg_vec):
+    pos_idx = (y_true == 1).nonzero().squeeze()
+    truth_dense = deg_vec[pos_idx].mean()
+    target_dense = torch.mul(y_prob[pos_idx], deg_vec[pos_idx]).mean()
+    d_loss = -torch.log(target_dense / truth_dense + 1e-1)
+    return d_loss
+
+
+def batch_dense_loss_based_cross_entropy(batch, y_prob):
+    pos_sub_idx = (batch['uin'].gang_label == 1).nonzero().squeeze()
+    if pos_sub_idx.shape == torch.Size([]):
+        pos_sub_idx = torch.tensor([pos_sub_idx], device=pos_sub_idx.device)
+    if pos_sub_idx.shape[0] != 0:
+        dense_loss = []
+        N = batch['uin'].num_nodes
+        adj = to_dense_adj(torch.concat([batch[edge_type].edge_index for edge_type in batch.edge_types], dim=1),
+                           max_num_nodes=N).squeeze()
+        deg_vec = torch.zeros(N, device=batch['uin'].x.device)
+        for i in range(N):
+            deg_vec[i] = (adj[i, :] + adj[:, i]).sum()
+        for pos_idx in pos_sub_idx:
+            node_idx = (batch['uin'].batch == pos_idx).nonzero().squeeze()
+            y_true = batch['uin'].gang_mem.long()[node_idx]
+            i_d_loss = compute_density_by_probability(y_true, y_prob[node_idx], deg_vec[node_idx])
+            dense_loss.append(i_d_loss)
+        dense_loss = torch.stack(dense_loss).mean()
+    else:
+        dense_loss = torch.tensor(0, device=batch['uin'].x.device)
+    return dense_loss
 
 
 if __name__ == '__main__':
