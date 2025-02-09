@@ -22,26 +22,6 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "valid", "processed",
                          "uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt")))
-        parser.add_argument('--node_train_data_path', type=str, default=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "uin_gangs_full_graph_dataset", "train", "raw",
-                         "uin_gangs_full_graph_dataset_train_241201_20241119.txt")))
-        parser.add_argument('--node_test_data_path', type=str, default=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "uin_gangs_full_graph_dataset", "train", "raw",
-                         "uin_gangs_full_graph_dataset_train_241202_20241119.txt")))
-        parser.add_argument('--prompt_initial_data_path', type=str, default=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "uin_gangs_full_graph_dataset", "valid", "raw",
-                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive_20.txt")))
-        parser.add_argument('--prompt_tuning_data_path', type=str, default=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "uin_gangs_full_graph_dataset", "valid", "raw",
-                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive_20_40.txt")))
-        parser.add_argument('--prompt_evaluating_data_path', type=str, default=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "uin_gangs_full_graph_dataset", "valid", "raw",
-                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive_exclude_40.txt")))
         parser.add_argument('--uin_gangs_enum_yaml_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "config", "yml", "uin_gangs_enum.yaml")))
@@ -50,7 +30,9 @@ class ArgsUinGangs:
                          "saved_model", "GNN_models", "pretraining_filter_subgraph_cl")))
         parser.add_argument('--cls_model_states_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "saved_model", "cls_models", "mlp_")))
+                         "saved_model", "cls_models")))
+        parser.add_argument('--output_save_path', type=str, default=os.path.abspath(
+            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "prediction")))
         parser.add_argument('--export_requirements_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, "data", "config", "requirements" + ".txt")))
         parser.add_argument('--log_dir', type=str, default=os.path.abspath(
@@ -59,11 +41,10 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data", "pic")))
         parser.add_argument('--minirbt_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
-        parser.add_argument('--best_loss', type=float, default=0.5)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
         parser.add_argument('--batch_size', type=int, default=40)
         parser.add_argument('--data_buffer_size', type=int, default=40)
-        parser.add_argument('--lr', type=float, default=0.001)
+        parser.add_argument('--pretrain_lr', type=float, default=0.001)
         parser.add_argument('--lr_scheduler', type=str, default='',
                             choices=['', '_stepLR', '_reduceLR', '_cosineLR'])
         parser.add_argument('--n_epochs', type=int, default=30)
@@ -92,11 +73,10 @@ class ArgsUinGangs:
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--data_tag', type=str, default='order_1930_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2'])
+        parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2', '_GPU3'])
         parser.add_argument('--eval_epoch', type=int, default=10)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_gang_detection',
-                            choices=['node_classification', 'subgraph',
-                                     'subgraph_gang_detection', 'subgraph_prompt_tuning',
+                            choices=['subgraph', 'subgraph_gang_detection',
                                      'inference_gang_members', 'inference_gang_members_by_fraudar'])
         parser.add_argument('--evaluate_task_tuning', type=bool, default=False)
         parser.add_argument('--is_finetune', type=bool, default=True)
@@ -106,25 +86,32 @@ class ArgsUinGangs:
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph',
                                      'intra_subgraph'])
         parser.add_argument('--is_supervised', type=bool, default=False)
-        parser.add_argument('--is_weighted_subgraph', type=bool, default=False)
-        parser.add_argument('--prompt_insertion_type', type=str, default=None,
-                            choices=[None, 'add_subgraph', 'concat_subgraph', 'concat_prompt',
-                                     'concat_subgraph_prompt'])
-        parser.add_argument('--prompt_lr', type=float, default=1e-4)
-        parser.add_argument('--info_insertion_type', type=str, default=None,
-                            choices=[None, 'combine_subgraph', 'combine_difference'])
+        parser.add_argument('--info_insertion_type', type=str, default='combine_subgraph',
+                            choices=[None, 'combine_subgraph', 'concat_subgraph'])
         parser.add_argument('--threshold', type=float, default=0.5)
         parser.add_argument('--test_times', type=int, default=5)
-        parser.add_argument('--loss_weight', type=str, default='1.0 2.0',
+        parser.add_argument('--cls_loss_weight', type=str, default='1.0 2.0',
                             choices=['1.0 2.0', '1.0 3.0', '1.0 4.0'])
         parser.add_argument('--cls_lr', type=float, default=5e-5)
-        parser.add_argument('--best_test_f1', type=float, default=0.6)
-        parser.add_argument('--alpha', type=float, default=0.2)
-        parser.add_argument('--beta', type=float, default=0.8)
-        parser.add_argument('--cls_node', type=bool, default=True)
+        parser.add_argument('--best_test_f1', type=float, default=0.5)
+        # inner weight for positive subgraph
+        parser.add_argument('--w_p', type=float, default=2.0)
+        parser.add_argument('--w_n', type=float, default=1.0)
+        # proportion of positive and negative
+        parser.add_argument('--W_p', type=float, default=0.8)
+        parser.add_argument('--W_n', type=float, default=0.2)
+        # proportion of node and penalty loss
+        parser.add_argument('--W_node', type=float, default=0.6)
+        parser.add_argument('--W_penalty', type=float, default=0.4)
+        # proportion of subgraph and dense loss
+        parser.add_argument('--W_sub', type=float, default=0.6)
+        parser.add_argument('--W_den', type=float, default=0.4)
+        parser.add_argument('--cls_node', type=bool, default=False)
+        parser.add_argument('--cls_penalty', type=bool, default=False)
         parser.add_argument('--cls_subgraph', type=bool, default=True)
-        parser.add_argument('--finetune_loss', type=str, default='subgraph_cross_entropy',
-                            choices=['subgraph_cross_entropy', 'node_subgraph'])
+        parser.add_argument('--cls_dense', type=bool, default=True)
+        parser.add_argument('--ft_loss', type=str, default='subgraph_and_dense',
+                            choices=['subgraph_and_dense', 'node_penalty'])
 
         args = parser.parse_args()
         args_dict = vars(args)
