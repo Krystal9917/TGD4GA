@@ -21,8 +21,7 @@ from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import Grap
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
 from mmgog_long_term_sequence_model.utils.utils import batch_subgraph_loss_based_cross_entropy, \
     batch_dense_loss_based_cross_entropy
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix, \
-    multilabel_confusion_matrix
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix
 
 
 class UinGangsModelTuning:
@@ -44,12 +43,19 @@ class UinGangsModelTuning:
         self.minirbt_model.to(self.device)
 
         self.conv_type = args_dict["conv_type"]
+        self.device_tag = self.eval_dict["device_tag"]
         if self.conv_type == 'RGCN':
-            self.model = RGCN(input_dim=args_dict['input_dim'],
-                              hidden_dim=args_dict['hidden_dim'],
-                              output_dim=args_dict['output_dim'],
-                              num_relations=args_dict['num_relations'],
-                              )
+            if self.device_tag == '_GPU3':
+                self.model = RGCN(input_dim=args_dict['input_dim'],
+                                  hidden_dim=args_dict['hidden_dim'],
+                                  output_dim=args_dict['output_dim'],
+                                  num_relations=args_dict['num_relations'],
+                                  num_bases=args_dict['num_relations'])
+            else:
+                self.model = RGCN(input_dim=args_dict['input_dim'],
+                                  hidden_dim=args_dict['hidden_dim'],
+                                  output_dim=args_dict['output_dim'],
+                                  num_relations=args_dict['num_relations'])
             self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
                                ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
                                ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
@@ -74,7 +80,6 @@ class UinGangsModelTuning:
                                  heads=args_dict['num_heads'])
         self.pretrain_lr = self.eval_dict['pretrain_lr']
         self.control_node_num = self.eval_dict["filter_node_num"]
-        self.device_tag = self.eval_dict["device_tag"]
         self.task_type = self.eval_dict["task_type"]
         self.info_type = self.eval_dict["info_insertion_type"]
         self.save_model_path = os.path.join(self.eval_dict["model_states_path"],
@@ -130,16 +135,22 @@ class UinGangsModelTuning:
         self.classifier.to(self.device)
         self.pred_save_path = self.eval_dict["output_save_path"]
         self.pt_info = (f'{self.conv_type}_{self.task_type}_{self.eval_dict["eval_epoch"]}_'
-                        f't_{self.eval_dict["temperature"]}_lr_{self.eval_dict["cls_lr"]}')
-        if self.eval_dict['finetune_loss'] == "node_subgraph":
-            self.ft_info = f'W_node_{self.eval_dict["W_den"]}_W_penalty_{self.eval_dict["W_sub"]}'
-        elif self.eval_dict['finetune_loss'] == 'subgraph_cross_entropy':
-            self.ft_info = (f'Wp_{self.eval_dict["W_p"]}_Wn_{self.eval_dict["W_n"]}_'
-                            f'wp_{self.eval_dict["w_p"]}_wn_{self.eval_dict["w_n"]}')
-        else:
-            self.ft_info = (f'W_sub_{self.eval_dict["W_sub"]}_W_den_{self.eval_dict["W_den"]}_'
-                            f'Wp_{self.eval_dict["W_p"]}_Wn_{self.eval_dict["W_n"]}_'
-                            f'wp_{self.eval_dict["w_p"]}_wn_{self.eval_dict["w_n"]}')
+                        f't_{self.eval_dict["temperature"]}_lr_{self.eval_dict["cls_lr"]}{self.device_tag}')
+        if self.eval_dict['ft_loss'] == "node_penalty":
+            weights = self.eval_dict['cls_loss_weight'].split[' ']
+            if not self.eval_dict['cls_penalty']:
+                self.ft_info = f'wp_{weights[1]}_wn_{weights[0]}'
+            else:
+                self.ft_info = (f'wp_{weights[1]}_wn_{weights[0]}_W_node_{self.eval_dict["W_node"]}_'
+                                f'W_penalty_{self.eval_dict["W_penalty"]}')
+        elif self.eval_dict['ft_loss'] == 'subgraph_and_dense':
+            if not self.eval_dict['cls_dense']:
+                self.ft_info = (f'Wp_{self.eval_dict["W_p"]}_Wn_{self.eval_dict["W_n"]}_'
+                                f'wp_{self.eval_dict["w_p"]}_wn_{self.eval_dict["w_n"]}')
+            else:
+                self.ft_info = (f'W_sub_{self.eval_dict["W_sub"]}_W_den_{self.eval_dict["W_den"]}_'
+                                f'Wp_{self.eval_dict["W_p"]}_Wn_{self.eval_dict["W_n"]}_'
+                                f'wp_{self.eval_dict["w_p"]}_wn_{self.eval_dict["w_n"]}')
         if self.eval_dict["evaluate_task"] in ['subgraph', 'subgraph_gang_detection']:
             self.train_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["train_data_path"])
             self.eval_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["test_data_path"])
@@ -420,9 +431,12 @@ class UinGangsModelTuning:
                 tp_tf = f'tn_{best_test_cm[0, 0]}_tp_{best_test_cm[1, 1]}_total_{best_test_cm[0, 0] + best_test_cm[1, 1]}'
                 is_finetune = '_finetune' if self.eval_dict["is_finetune"] else ''
                 is_supervised = '_supervised' if self.eval_dict["is_supervised"] else ''
-                file_name = f"{self.info_type}_f1_{best_test_f1}_{tp_tf}{is_finetune}{is_supervised}.pth" \
+                file_name = f"{self.info_type}_f1_{best_test_f1:.2f}_{tp_tf}{is_finetune}{is_supervised}.pth" \
                     if self.info_type is not None else f"f1_{best_test_f1}_{tp_tf}{is_finetune}{is_supervised}.pth"
-                file_name = os.path.join(self.eval_dict["cls_model_states_path"], self.pt_info, self.ft_info, file_name)
+                file_dir = os.path.join(self.eval_dict["cls_model_states_path"], self.pt_info, self.ft_info)
+                if not os.path.exists(file_dir):
+                    os.makedirs(file_dir)
+                file_name = os.path.join(file_dir, file_name)
                 torch.save(self.classifier.state_dict(), file_name)
                 print(f"===== Best F1: {test_f1:.4f}, Save To: {file_name} =====")
         return best_test_acc, best_test_pre, best_test_rec, best_test_f1, best_test_roc_auc, best_test_cm
@@ -456,9 +470,6 @@ class UinGangsModelTuning:
                 else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
                 if batch_h is not None:
-                    if self.eval_dict["is_weighted_subgraph"]:
-                        exp_score = torch.exp(batch['uin'].score)
-                        batch_h = batch_h * exp_score
                     if task == "subgraph":
                         batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                         batch_y = batch['uin'].gang_label
@@ -514,9 +525,9 @@ class UinGangsModelTuning:
                 file_name = os.path.join(self.pred_save_path, self.pt_info, self.ft_info)
                 if not os.path.exists(file_name):
                     os.makedirs(file_name)
-                file_name = os.path.join(file_name, f"{self.info_type}_f1_{f1}.csv")
-                self.save_output_file(true_idx_list, pred_idx_list, subgraph_uin_list, subgraph_y_list, jaccard_list,
-                                      file_name)
+                file_name = os.path.join(file_name, f"{self.info_type}_f1_{f1:.2f}.csv")
+                self.save_output_file(true_idx_list, pred_idx_list, subgraph_uin_list,
+                                      subgraph_y_list, jaccard_list, file_name)
             return acc, pre, rec, f1, roc_auc, cm
 
     def inference_gang_members_by_fraudar(self, save_results=False):
