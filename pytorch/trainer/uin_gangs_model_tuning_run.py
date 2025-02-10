@@ -27,7 +27,7 @@ class ArgsUinGangs:
                          "config", "yml", "uin_gangs_enum.yaml")))
         parser.add_argument('--model_states_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "saved_model", "GNN_models", "pretraining_filter_subgraph_cl")))
+                         "saved_model", "RGCN_models", "pretraining_filter_subgraph_cl")))
         parser.add_argument('--cls_model_states_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "saved_model", "cls_models")))
@@ -42,8 +42,8 @@ class ArgsUinGangs:
         parser.add_argument('--minirbt_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
-        parser.add_argument('--batch_size', type=int, default=40)
-        parser.add_argument('--data_buffer_size', type=int, default=40)
+        parser.add_argument('--batch_size', type=int, default=64)
+        parser.add_argument('--data_buffer_size', type=int, default=64)
         parser.add_argument('--pretrain_lr', type=float, default=0.001)
         parser.add_argument('--lr_scheduler', type=str, default='',
                             choices=['', '_stepLR', '_reduceLR', '_cosineLR'])
@@ -73,12 +73,11 @@ class ArgsUinGangs:
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--data_tag', type=str, default='order_1930_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2', '_GPU3'])
-        parser.add_argument('--eval_epoch', type=int, default=10)
+        parser.add_argument('--device_tag', type=str, default='_GPU3', choices=['', '_GPU2', '_GPU3'])
+        parser.add_argument('--eval_epoch', type=int, default=13)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_gang_detection',
                             choices=['subgraph', 'subgraph_gang_detection',
                                      'inference_gang_members', 'inference_gang_members_by_fraudar'])
-        parser.add_argument('--evaluate_task_tuning', type=bool, default=False)
         parser.add_argument('--is_finetune', type=bool, default=True)
         parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'HGT', 'HAN'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
@@ -90,22 +89,23 @@ class ArgsUinGangs:
                             choices=[None, 'combine_subgraph', 'concat_subgraph'])
         parser.add_argument('--threshold', type=float, default=0.5)
         parser.add_argument('--test_times', type=int, default=5)
+        parser.add_argument('--cls_lr', type=float, default=5e-5)
+        parser.add_argument('--best_test_f1', type=float, default=0.7)
+        # node classification weight
         parser.add_argument('--cls_loss_weight', type=str, default='1.0 2.0',
                             choices=['1.0 2.0', '1.0 3.0', '1.0 4.0'])
-        parser.add_argument('--cls_lr', type=float, default=5e-5)
-        parser.add_argument('--best_test_f1', type=float, default=0.5)
         # inner weight for positive subgraph
         parser.add_argument('--w_p', type=float, default=2.0)
         parser.add_argument('--w_n', type=float, default=1.0)
         # proportion of positive and negative
-        parser.add_argument('--W_p', type=float, default=0.8)
-        parser.add_argument('--W_n', type=float, default=0.2)
+        parser.add_argument('--W_p', type=float, default=0.6)
+        parser.add_argument('--W_n', type=float, default=0.4)
         # proportion of node and penalty loss
         parser.add_argument('--W_node', type=float, default=0.6)
         parser.add_argument('--W_penalty', type=float, default=0.4)
         # proportion of subgraph and dense loss
-        parser.add_argument('--W_sub', type=float, default=0.6)
-        parser.add_argument('--W_den', type=float, default=0.4)
+        parser.add_argument('--W_sub', type=float, default=0.8)
+        parser.add_argument('--W_den', type=float, default=0.2)
         parser.add_argument('--cls_node', type=bool, default=False)
         parser.add_argument('--cls_penalty', type=bool, default=False)
         parser.add_argument('--cls_subgraph', type=bool, default=True)
@@ -137,11 +137,7 @@ def compute_metrics_std(acc, pre, rec, f1, roc_auc, pos_jaccard=None, neg_jaccar
 if __name__ == '__main__':
     args = ArgsUinGangs()
     print(f"Tuning Parameters: {args.args_dict}")
-    if args.args_dict["evaluate_task"] == 'node_classification':
-        tuning_model = UinGangsModelTuning(args.args_dict)
-        print("======Labelled Node Classification Evaluation======")
-        tuning_model.evaluate_node_classification()
-    elif args.args_dict["evaluate_task"] in ['subgraph', 'subgraph_gang_detection']:
+    if args.args_dict["evaluate_task"] in ['subgraph', 'subgraph_gang_detection']:
         print(f"======Labelled {args.args_dict['evaluate_task']} Evaluation======")
         times_list = ['1st', '2nd', '3rd', '4th', '5th']
         acc_list = []
@@ -171,36 +167,6 @@ if __name__ == '__main__':
               f"F1: {sum(f1_list) / len(f1_list): .4f}, std: {f1_std: .4f}, "
               f"ROC-AUC: {sum(roc_auc_list) / len(roc_auc_list): .4f}, std: {roc_auc_std: .4f}, "
               f"Confusion Matrix: {ave_cfm / len(times_list)}"
-              )
-    elif args.args_dict["evaluate_task"] == 'subgraph_prompt_tuning':
-        print("======Labelled Subgraph Prompt Tuning======")
-        times_list = ['1st', '2nd', '3rd', '4th', '5th']
-        ave_acc = 0
-        ave_pre = 0
-        ave_rec = 0
-        ave_f1 = 0
-        ave_roc_auc = 0
-        ave_cfm = np.array([[0, 0], [0, 0]])
-        ave_jac = 0
-        for i in range(args.args_dict["test_times"]):
-            print(f"*****Start {times_list[i]} Time Tuning*****")
-            tuning_model = UinGangsModelTuning(args.args_dict)
-            test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm, test_jac = tuning_model.evaluate_labelled_subgraph_prompt_tuning()
-            ave_acc += test_acc
-            ave_pre += test_pre
-            ave_rec += test_rec
-            ave_f1 += test_f1
-            ave_roc_auc += test_roc_auc
-            ave_cfm += test_cfm
-            ave_jac += test_jac
-            print(f"*****End {times_list[i]} Time Tuning*****")
-        print(f"{len(times_list)} Times Average Best Test ACC: {ave_acc / len(times_list): .4f}, "
-              f"Precision: {ave_pre / len(times_list): .4f}, "
-              f"Recall: {ave_rec / len(times_list): .4f}, "
-              f"F1: {ave_f1 / len(times_list): .4f}, "
-              f"ROC-AUC: {ave_roc_auc / len(times_list): .4f}, "
-              f"Confusion Matrix: {ave_cfm / len(times_list)}, "
-              f"Jaccard Coefficient: {ave_jac / len(times_list): .4f}"
               )
     elif args.args_dict["evaluate_task"] == 'inference_gang_members':
         print(f"*****Start Inference*****")
