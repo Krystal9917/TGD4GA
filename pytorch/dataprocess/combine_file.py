@@ -1,4 +1,5 @@
 import json
+import os.path
 import random
 
 def combine_supervise_file(in_dir, file1_name, file2_name, out_dir, outfile_name):
@@ -34,18 +35,30 @@ def combine_supervise_file(in_dir, file1_name, file2_name, out_dir, outfile_name
     print(f"Combined {file1_name} and {file2_name} into {outfile_name}.")
 
 
-def split_data(in_dir, infile_name, out_dir, train_file_name, test_file_name):
+def split_data(time, in_dir, infile_name, out_dir, train_file_name, test_file_name):
+    random.seed(42)
     with open(in_dir + infile_name, 'r') as f:
         lines = list(range(sum(1 for _ in f)))
         random.shuffle(lines)
     total_lines = len(lines)
     print(f"All: {total_lines}")
-    ratio = 0.75
-    split = int(total_lines * ratio)
-    train_lines = lines[:split]
-    test_lines = lines[split:]
-    train_list = []
+    part_len = int(total_lines * 0.2)
+    test_len = int(total_lines * 0.25)
+    if time == 1:
+        test_lines = lines[:test_len]
+        train_lines = lines[test_len:]
+    elif time == 5:
+        start_idx = part_len * (time - 1)
+        end_idx = (start_idx + test_len) % total_lines
+        test_lines = lines[start_idx:] + lines[:end_idx]
+        train_lines = lines[end_idx:start_idx]
+    else:
+        start_idx = part_len * (time - 1)
+        end_idx = start_idx + test_len
+        test_lines = lines[start_idx:end_idx]
+        train_lines = lines[:start_idx] + lines[end_idx:]
     test_list = []
+    train_list = []
     with open(in_dir + infile_name, 'r') as f:
         for i, line in enumerate(f):
             if i in train_lines:
@@ -98,16 +111,19 @@ if __name__ == '__main__':
     # file1 = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241211.txt'
     file2 = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241211.txt'
     file3 = 'uin_gangs_supervise_full_graph_dataset_eval_normal_subgraphs.txt'
-    output_file = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive.txt'
+    output_file = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_combined.txt'
     out_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/valid/processed/'
     train_file = 'uin_gangs_supervise_full_graph_dataset_train_241204_20241204.txt'
     test_file = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt'
     # read_file(path_dir, file1)
 
     # combine_supervise_file(path_dir, file2, file3, path_dir, output_file)
-
-    # split_data(path_dir, output_file, out_dir, train_file, test_file)
+    for idx in range(1, 6):
+        out_path = out_dir + f'split_{idx}/'
+        if not os.path.exists(out_path):
+            os.makedirs(out_path)
+        split_data(idx, path_dir, output_file, out_path, train_file, test_file)
 
     # read_file(out_dir, train_file)
 
-    filter_positive_samples(path_dir, file2, output_file)
+    # filter_positive_samples(path_dir, file2, output_file)

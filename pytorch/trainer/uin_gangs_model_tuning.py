@@ -15,6 +15,7 @@ import torch.utils.data as Data
 from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
 from transformers import BertModel
+from torch_geometric.utils import to_dense_adj
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
 from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
@@ -152,8 +153,12 @@ class UinGangsModelTuning:
                                 f'Wp_{self.eval_dict["W_p"]}_Wn_{self.eval_dict["W_n"]}_'
                                 f'wp_{self.eval_dict["w_p"]}_wn_{self.eval_dict["w_n"]}')
         if self.eval_dict["evaluate_task"] in ['subgraph', 'subgraph_gang_detection']:
-            self.train_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["train_data_path"])
-            self.eval_data = UinGangsDataIterablePyG(self.eval_dict, self.eval_dict["test_data_path"])
+            train_data_path = os.path.join(self.eval_dict["train_data_path"] + str(self.eval_dict["split_idx"]),
+                                           self.eval_dict["train_data_file"])
+            self.train_data = UinGangsDataIterablePyG(self.eval_dict, train_data_path)
+            test_data_path = os.path.join(self.eval_dict["test_data_path"] + str(self.eval_dict["split_idx"]),
+                                          self.eval_dict["test_data_file"])
+            self.eval_data = UinGangsDataIterablePyG(self.eval_dict, test_data_path)
             self.train_loader = Data.DataLoader(self.train_data,
                                                 batch_size=self.eval_dict["batch_size"],
                                                 num_workers=self.eval_dict["num_workers"],
@@ -172,8 +177,10 @@ class UinGangsModelTuning:
             self.criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor(self.loss_weight, device=self.device))
         # inference based on pretrained GNN model and classifier
         else:
-            self.eval_data = UinGangsDataIterablePyG(self.eval_dict,
-                                                     self.eval_dict["test_data_path"])
+            self.model.eval()
+            test_data_path = os.path.join(self.eval_dict["test_data_path"] + str(self.eval_dict["split_idx"]),
+                                          self.eval_dict["test_data_file"])
+            self.eval_data = UinGangsDataIterablePyG(self.eval_dict, test_data_path)
             self.eval_loader = Data.DataLoader(self.eval_data,
                                                batch_size=self.eval_dict["batch_size"],
                                                num_workers=self.eval_dict["num_workers"],
@@ -348,6 +355,9 @@ class UinGangsModelTuning:
         best_test_f1 = self.eval_dict['best_test_f1']
         best_test_roc_auc = 0
         best_test_cm = np.array([[0, 0], [0, 0]])
+        best_test_pos_jac = 0
+        best_test_neg_jac = 0
+        best_test_time = 0
         for epoch in range(1, self.eval_dict["n_epochs"] + 1):
             st = time.time()
             self.classifier.train()
@@ -418,9 +428,10 @@ class UinGangsModelTuning:
                     epoch_loss.append(loss.detach().cpu().item())
             current_loss = sum(epoch_loss) / len(epoch_loss)
             print(f"Epoch {epoch}, Loss: {current_loss: .4f}, Time: {time.time() - st: .4f} s")
-            test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm = self.evaluate_classifier(task="detect_gang",
-                                                                                                    save_results=True,
-                                                                                                    best_f1=best_test_f1)
+            (test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm,
+             test_pos_jac, test_neg_jac, test_time) = self.evaluate_classifier(task="detect_gang",
+                                                                               save_results=True,
+                                                                               best_f1=best_test_f1)
             if test_f1 > best_test_f1:
                 best_test_acc = test_acc
                 best_test_pre = test_pre
@@ -428,6 +439,9 @@ class UinGangsModelTuning:
                 best_test_f1 = test_f1
                 best_test_roc_auc = test_roc_auc
                 best_test_cm = test_cm
+                best_test_pos_jac = test_pos_jac
+                best_test_neg_jac = test_neg_jac
+                best_test_time = test_time
                 tp_tf = f'tn_{best_test_cm[0, 0]}_tp_{best_test_cm[1, 1]}_total_{best_test_cm[0, 0] + best_test_cm[1, 1]}'
                 is_finetune = '_finetune' if self.eval_dict["is_finetune"] else ''
                 is_supervised = '_supervised' if self.eval_dict["is_supervised"] else ''
@@ -439,7 +453,7 @@ class UinGangsModelTuning:
                 file_name = os.path.join(file_dir, file_name)
                 torch.save(self.classifier.state_dict(), file_name)
                 print(f"===== Best F1: {test_f1:.4f}, Save To: {file_name} =====")
-        return best_test_acc, best_test_pre, best_test_rec, best_test_f1, best_test_roc_auc, best_test_cm
+        return best_test_acc, best_test_pre, best_test_rec, best_test_f1, best_test_roc_auc, best_test_cm, best_test_pos_jac, best_test_neg_jac, best_test_time
 
     def evaluate_classifier(self, task="subgraph", save_results=False, best_f1=0):
         self.classifier.eval()
@@ -453,6 +467,7 @@ class UinGangsModelTuning:
             subgraph_y_list = []
             subgraph_uin_list = []
             jaccard_list = []
+        start_time = time.time()
         with torch.no_grad():
             for i, batch in enumerate(self.eval_loader):
                 batch = batch.to(self.device)
@@ -514,12 +529,18 @@ class UinGangsModelTuning:
             rec = recall_score(true_y_list, pred_y_list)
             roc_auc = roc_auc_score(true_y_list, prob_y_list)
             cm = confusion_matrix(true_y_list, pred_y_list)
+            pos_jaccard = np.array(jaccard_list)[true_y_list != 0].mean()
+            neg_jaccard = np.array(jaccard_list)[true_y_list == 0].mean()
+            eval_time = time.time() - start_time
             print(f"Test ACC: {acc: .4f}, "
                   f"Precision: {pre: .4f}, "
                   f"Recall: {rec: .4f}, "
                   f"F1: {f1: .4f}, "
                   f"ROC-AUC: {roc_auc: .4f}, "
-                  f"Confusion Matrix: {cm.tolist()}"
+                  f"Confusion Matrix: {cm.tolist()}, "
+                  f"Pos Jaccard: {pos_jaccard: .4f}, "
+                  f"Neg Jaccard: {neg_jaccard: .4f}, "
+                  f"Evaluate Time: {eval_time: .4f} s"
                   )
             if f1 > best_f1 and save_results:
                 file_name = os.path.join(self.pred_save_path, self.pt_info, self.ft_info)
@@ -528,9 +549,9 @@ class UinGangsModelTuning:
                 file_name = os.path.join(file_name, f"{self.info_type}_f1_{f1:.2f}.csv")
                 self.save_output_file(true_idx_list, pred_idx_list, subgraph_uin_list,
                                       subgraph_y_list, jaccard_list, file_name)
-            return acc, pre, rec, f1, roc_auc, cm
+            return acc, pre, rec, f1, roc_auc, cm, pos_jaccard, neg_jaccard, eval_time
 
-    def inference_gang_members_by_fraudar(self, save_results=False):
+    def inference_gang_members_by_fraudar(self, evaluate_time, save_results=False):
         start_time = time.time()
         jaccard_list = []
         true_idx_list = []
@@ -570,6 +591,7 @@ class UinGangsModelTuning:
             cm = confusion_matrix(true_y_list, pred_y_list)
             pos_jaccard = np.array(jaccard_list)[true_y_list != 0].mean()
             neg_jaccard = np.array(jaccard_list)[true_y_list == 0].mean()
+            run_time = time.time() - start_time
             print(f"Fraudar ACC: {acc: .4f}, "
                   f"Precision: {pre: .4f}, "
                   f"Recall: {rec: .4f}, "
@@ -578,20 +600,21 @@ class UinGangsModelTuning:
                   f"Confusion Matrix: {cm.tolist()}, "
                   f"Pos Jaccard Coefficient: {pos_jaccard: .4f}, "
                   f"Neg Jaccard Coefficient: {neg_jaccard: .4f}, "
-                  f"Time: {time.time() - start_time: .4f} s"
+                  f"Time: {run_time: .4f} s"
                   )
         if save_results:
             # save inference results
             save_path = os.path.join(self.pred_save_path, 'fraudar')
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
-            file_name = os.path.join(save_path, 'fraudar.csv')
+            file_name = os.path.join(save_path, f'fraudar_{evaluate_time}.csv')
             self.save_output_file(true_idx_list, pred_idx_list, subgraph_uin_list,
                                   subgraph_y_list, jaccard_list, file_name)
+            return acc, pre, rec, f1, roc_auc, pos_jaccard, neg_jaccard, run_time
         else:
-            return acc, pre, rec, f1, roc_auc, pos_jaccard, neg_jaccard
+            return acc, pre, rec, f1, roc_auc, pos_jaccard, neg_jaccard, run_time
 
-    def inference_gang_members(self, save_results=True):
+    def inference_gang_members(self, save_results=False):
         start_time = time.time()
         tp_tf = f'tn_{self.eval_dict["tn"]}_tp_{self.eval_dict["tp"]}_total_{self.eval_dict["tn"] + self.eval_dict["tp"]}'
         is_finetune = '_finetune' if self.eval_dict["is_finetune"] else ''
@@ -604,6 +627,14 @@ class UinGangsModelTuning:
         self.classifier.load_state_dict(model_weight)
         self.classifier.eval()
         jaccard_list = []
+        if self.eval_dict["is_debug"]:
+            true_ave_density = []
+            pred_ave_density = []
+            true_ave_score = []
+            pred_ave_score = []
+            true_num = []
+            pred_num = []
+            gang_label = []
         if save_results:
             true_idx_list = []
             pred_idx_list = []
@@ -642,6 +673,34 @@ class UinGangsModelTuning:
                     pred_y = pred_y.detach().cpu()
                     jaccard_coeff, true_idx, pred_idx = self.jaccard_batch(true_y, pred_y,
                                                                            batch['uin'].batch)
+                    if self.eval_dict["is_debug"]:
+                        adj = to_dense_adj(
+                            torch.concat([batch[edge_type].edge_index for edge_type in batch.edge_types], dim=1),
+                            max_num_nodes=batch.num_nodes).squeeze()
+                        score = batch['uin'].score.squeeze()
+                        pred_index = (pred_y == 1).nonzero().squeeze()
+                        true_index = (true_y == 1).nonzero().squeeze()
+                        if pred_index.shape == torch.Size([]):
+                            pred_adj = torch.tensor([])
+                            pred_score = torch.tensor([])
+                        else:
+                            pred_adj = adj[pred_index, :][:, pred_index]
+                            pred_score = score[pred_index]
+                        if true_index.shape == torch.Size([]):
+                            true_adj = torch.tensor([])
+                            true_score = torch.tensor([])
+                        else:
+                            true_adj = adj[true_index, :][:, true_index]
+                            true_score = score[true_index]
+                        pred_ave_density.append(
+                            pred_adj.sum() / pred_index.sum() if pred_index.sum().item() != 0 else torch.tensor(0))
+                        true_ave_density.append(
+                            true_adj.sum() / true_index.sum() if true_index.sum().item() != 0 else torch.tensor(0))
+                        pred_ave_score.append(pred_score.mean() if not pred_score.mean().isnan() else torch.tensor(0))
+                        true_ave_score.append(true_score.mean() if not true_score.mean().isnan() else torch.tensor(0))
+                        pred_num.append(pred_y.sum())
+                        true_num.append(true_y.sum())
+                        gang_label.append(batch['uin'].y.int())
                     jaccard_list.extend(jaccard_coeff)
                     if save_results:
                         true_idx_list.extend(true_idx)
@@ -655,6 +714,19 @@ class UinGangsModelTuning:
                         true_y_list.append(batch['uin'].gang_label.detach().cpu().long())
                         prob_y_list.append(prob_y.detach().cpu())
                         pred_y_list.append(pred_y.detach().cpu())
+            if self.eval_dict["is_debug"]:
+                pred_ave_density = [round(v, 4) for v in torch.stack(pred_ave_density).tolist()]
+                true_ave_density = [round(v, 4) for v in torch.stack(true_ave_density).tolist()]
+                pred_ave_score = [round(v, 4) for v in torch.stack(pred_ave_score).tolist()]
+                true_ave_score = [round(v, 4) for v in torch.stack(true_ave_score).tolist()]
+                pred_num = torch.stack(pred_num).tolist()
+                true_num = torch.stack(true_num).tolist()
+                gang_label = [v[0] for v in torch.stack(gang_label).tolist()]
+                df = pd.DataFrame({'gang_label': gang_label, 'jaccard': jaccard_list,
+                                   'pred_num': pred_num, 'true_num': true_num,
+                                   'pred_score': pred_ave_score, 'true_score': true_ave_score,
+                                   'pred_density': pred_ave_density, 'true_density': true_ave_density})
+                df.to_csv(os.path.join(self.pred_save_path, self.pt_info, self.ft_info, 'check.csv'), index=False)
             # compute metrics
             if save_results:
                 file_name = os.path.join(self.pred_save_path, self.pt_info, self.ft_info)
