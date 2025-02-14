@@ -59,6 +59,7 @@ class UinGangsModelPreTrainDDP:
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
                                   num_heads=args_dict['num_heads'],
+                                  num_bases=args_dict['num_relations'],
                                   num_relations=args_dict['num_relations'])
         elif self.conv_type in ['HAN', 'HGT']:
             self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),

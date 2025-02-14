@@ -42,7 +42,7 @@ class ArgsUinGangs:
         parser.add_argument('--batch_size', type=int, default=40)
         parser.add_argument('--data_buffer_size', type=int, default=40)
         parser.add_argument('--lr', type=float, default=0.003)
-        parser.add_argument('--lr_scheduler', type=str, default='stepLR',
+        parser.add_argument('--lr_scheduler', type=str, default=None,
                             choices=[None, 'stepLR', 'reduceLR', 'cosineLR'])
         parser.add_argument('--lr_adjust_step', type=int, default=2)
         parser.add_argument('--lr_gamma', type=float, default=0.5)
@@ -67,7 +67,7 @@ class ArgsUinGangs:
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--conv_type', type=str, default='HGT',
+        parser.add_argument('--conv_type', type=str, default='RGAT',
                             choices=['RGCN', 'RGAT', 'HAN', 'HGT'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
@@ -78,7 +78,7 @@ class ArgsUinGangs:
         parser.add_argument('--num_heads', type=int, default=2)
         parser.add_argument('--data_tag', type=str, default='order_1930_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--similarity_diff', type=float, default=0.15)
+        parser.add_argument('--similarity_diff', type=float, default=0.10)
         args = parser.parse_args()
         args_dict = vars(args)
         self.args_dict = args_dict
@@ -86,6 +86,11 @@ class ArgsUinGangs:
 
 def run_pretraining_graph(args):
     print(f"Training Parameters: {args.args_dict}")
+    if args.args_dict["is_debug"]:
+        args.args_dict["train_data_path"] = ("/chongqinggeminiceph1fs/geminicephfs/security-others-common/"
+                                             "jiujiuchen/projects/mmgog_long_term_sequence_model/data/"
+                                             "uin_gangs_full_graph_dataset/valid/processed/split_1/"
+                                             "uin_gangs_supervise_full_graph_dataset_train_241204_20241204.txt")
     train_model = UinGangsModelPreTrain(args.args_dict)
     if args.args_dict["sampling"] == 'fraudar':
         print("======Single Device Fraudar Pretraining======")

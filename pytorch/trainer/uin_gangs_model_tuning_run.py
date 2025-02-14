@@ -93,7 +93,7 @@ class ArgsUinGangs:
         parser.add_argument('--threshold', type=float, default=0.5)
         parser.add_argument('--test_times', type=int, default=5)
         parser.add_argument('--cls_lr', type=float, default=5e-5)
-        parser.add_argument('--best_test_f1', type=float, default=0.75)
+        parser.add_argument('--best_test_f1', type=float, default=0.7)
         # node classification weight
         parser.add_argument('--cls_loss_weight', type=str, default='1.0 2.0',
                             choices=['1.0 2.0', '1.0 3.0', '1.0 4.0'])

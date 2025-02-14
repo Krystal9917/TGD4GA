@@ -57,8 +57,9 @@ class UinGangsModelPreTrain:
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
                                   num_heads=args_dict['num_heads'],
+                                  num_bases=args_dict['num_relations'],
                                   num_relations=args_dict['num_relations'])
-        elif self.conv_type in ['HAN', 'HGT']:
+        else:
             self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
                                        ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
                                        ('uin', 'payee', 'uin'), ('uin', 'payer', 'uin'), ('uin', 'bankcard', 'uin'),
@@ -68,7 +69,7 @@ class UinGangsModelPreTrain:
                                  out_channels=args_dict['output_dim'],
                                  metadata=self.metadata,
                                  heads=args_dict['num_heads'])
-            elif self.conv_type == 'HGT':
+            else:
                 self.model = HeteroGraphTransformer(in_channels=args_dict['input_dim'],
                                                     hidden_channels=args_dict['hidden_dim'],
                                                     out_channels=args_dict['output_dim'],
@@ -557,7 +558,7 @@ class UinGangsModelPreTrain:
                                          f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
                 epoch_file_name = os.path.join(self.save_model_path,
-                                               f"uin_gangs_{self.conv_type}_model_epoch_{epoch}.pth")
+                                               f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
         if not self.train_dict["is_debug"]:

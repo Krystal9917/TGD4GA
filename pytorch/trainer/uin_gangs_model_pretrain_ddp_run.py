@@ -39,8 +39,8 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
         parser.add_argument('--best_loss', type=float, default=10)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
-        parser.add_argument('--batch_size', type=int, default=40)
-        parser.add_argument('--data_buffer_size', type=int, default=64)
+        parser.add_argument('--batch_size', type=int, default=32)
+        parser.add_argument('--data_buffer_size', type=int, default=32)
         parser.add_argument('--lr', type=float, default=0.001)
         parser.add_argument('--weight_decay', type=float, default=1e-5)
         parser.add_argument('--n_epochs', type=int, default=15)
@@ -63,11 +63,10 @@ class ArgsUinGangs:
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'RGAT', 'HAN', 'HGT'])
+        parser.add_argument('--conv_type', type=str, default='RGAT', choices=['RGCN', 'RGAT', 'HAN', 'HGT'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
-                            choices=['subgraph', 'batch_subgraph', 'cross_subgraph',
-                                     'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph',
-                                     'intra_subgraph'])
+                            choices=['subgraph', 'batch_subgraph', 'cross_subgraph', 'intra_subgraph',
+                                     'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph'])
         # RGCN
         parser.add_argument('--num_relations', type=int, default=10)
         # HAN/HGT
