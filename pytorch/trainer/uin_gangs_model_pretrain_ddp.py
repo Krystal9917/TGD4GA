@@ -242,7 +242,7 @@ class UinGangsModelPreTrainDDP:
         edge_type = torch.concat(
             [torch.ones(edge_counts[edge_type]) * edge_idx for edge_type, edge_idx in self.edge_types.items() if
              edge_type in batch.edge_types])
-        return edge_index, edge_type.long()
+        return edge_index.to(self.device), edge_type.long().to(self.device)
 
     def reset_batch_node(self, batch):
         batch_item = batch.unique().detach().cpu().tolist()
