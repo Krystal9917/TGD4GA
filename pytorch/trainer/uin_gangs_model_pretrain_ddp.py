@@ -244,14 +244,30 @@ class UinGangsModelPreTrainDDP:
              edge_type in batch.edge_types])
         return edge_index, edge_type.long()
 
+    def reset_batch_node(self, batch):
+        batch_item = batch.unique().detach().cpu().tolist()
+        batch_map = {batch_item[i]: i for i in range(len(batch_item))}
+        upgrade_batch = torch.tensor([batch_map[item] for item in batch.detach().cpu().tolist()], device=self.device)
+        return upgrade_batch
+
+    def reset_edge_index_by_map(self, node_map, edge_index):
+        reset_edge_index = []
+        for col in range(edge_index.shape[1]):
+            src_node, dst_node = edge_index[:, col]
+            reset_edge_index.append(torch.tensor([[node_map[src_node.item()]],
+                                                  [node_map[dst_node.item()]]]))
+        reset_edge_index = torch.concat(reset_edge_index, dim=1)
+        return reset_edge_index
+
     def extract_batch_subgraphs(self, batch, subgraph_node_indices=None):
         if subgraph_node_indices is None:
-            node_indices = batch['uin'].idx
-            subgraph_node_indices = (node_indices == 1).nonzero().squeeze()
-        x = torch.zeros_like(batch['uin'].x).to(batch['uin'].x.device)
-        x[subgraph_node_indices] = batch['uin'].x[subgraph_node_indices].clone()
-        new_batch = batch.clone()
-        new_batch['uin'].x = x
+            subgraph_node_indices = (batch['uin'].idx == 1).nonzero().squeeze()
+        batch_copy = batch.clone()
+        del batch_copy['uin']
+        batch_copy['uin'].x = batch['uin'].x[subgraph_node_indices]
+        subgraph_node_batch_idxes = batch['uin'].batch[subgraph_node_indices]
+        batch_copy['uin'].batch = self.reset_batch_node(subgraph_node_batch_idxes)
+        node_map = {subgraph_node_indices[i].detach().cpu().item(): i for i in range(subgraph_node_indices.shape[0])}
         subgraph_max_node_idx = subgraph_node_indices.max()
         for edge_type in batch.edge_types:
             try:
@@ -262,15 +278,17 @@ class UinGangsModelPreTrainDDP:
                 edge_index, _ = subgraph(subgraph_node_indices, batch[edge_type].edge_index)
             except Exception as e:
                 print(f"Extract Subgraph Error: <{e}>")
-                del new_batch[edge_type]
+                del batch_copy[edge_type]
                 continue
             else:
                 # no such type of edges
                 if edge_index.shape[1] != 0:
-                    new_batch[edge_type].edge_index = edge_index
+                    # reset the edge index
+                    reset_edge_index = self.reset_edge_index_by_map(node_map, edge_index)
+                    batch_copy[edge_type].edge_index = reset_edge_index
                 else:
-                    del new_batch[edge_type]
-        return new_batch
+                    del batch_copy[edge_type]
+        return batch_copy
 
     def random_sampling_pretraining(self):
         for epoch in range(self.start_epoch, self.end_epoch):
@@ -319,13 +337,18 @@ class UinGangsModelPreTrainDDP:
                                                                                 time.time() - epoch_start_time))
             if epoch_loss < self.best_loss:
                 self.best_loss = epoch_loss
-                file_name = os.path.join(self.save_model_path, "uin_gangs_RGCN_model_best_loss.pth")
+                file_name = os.path.join(self.save_model_path,
+                                         f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
+                                         f"{self.train_dict['temperature']}_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
-                epoch_file_name = os.path.join(self.save_model_path, f"uin_gangs_RGCN_model_epoch_{epoch}.pth")
+                epoch_file_name = os.path.join(self.save_model_path,
+                                               f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
+                                               f"{self.train_dict['temperature']}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
             if epoch % 10 == 0:
-                file_name = os.path.join(self.save_model_path, f"uin_gangs_RGCN_model_epoch_{epoch}.pth")
+                file_name = os.path.join(self.save_model_path,
+                                         f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), file_name)
                 print(f"Save model to {file_name}")
         self.writer.close()

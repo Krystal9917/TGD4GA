@@ -264,14 +264,30 @@ class UinGangsModelPreTrain:
              edge_type in batch.edge_types])
         return edge_index, edge_type.long()
 
+    def reset_batch_node(self, batch):
+        batch_item = batch.unique().detach().cpu().tolist()
+        batch_map = {batch_item[i]: i for i in range(len(batch_item))}
+        upgrade_batch = torch.tensor([batch_map[item] for item in batch.detach().cpu().tolist()], device=self.device)
+        return upgrade_batch
+
+    def reset_edge_index_by_map(self, node_map, edge_index):
+        reset_edge_index = []
+        for col in range(edge_index.shape[1]):
+            src_node, dst_node = edge_index[:, col]
+            reset_edge_index.append(torch.tensor([[node_map[src_node.item()]],
+                                                  [node_map[dst_node.item()]]]))
+        reset_edge_index = torch.concat(reset_edge_index, dim=1)
+        return reset_edge_index
+
     def extract_batch_subgraphs(self, batch, subgraph_node_indices=None):
         if subgraph_node_indices is None:
-            node_indices = batch['uin'].idx
-            subgraph_node_indices = (node_indices == 1).nonzero().squeeze()
-        x = torch.zeros_like(batch['uin'].x).to(batch['uin'].x.device)
-        x[subgraph_node_indices] = batch['uin'].x[subgraph_node_indices].clone()
-        new_batch = batch.clone()
-        new_batch['uin'].x = x
+            subgraph_node_indices = (batch['uin'].idx == 1).nonzero().squeeze()
+        batch_copy = batch.clone()
+        del batch_copy['uin']
+        batch_copy['uin'].x = batch['uin'].x[subgraph_node_indices]
+        subgraph_node_batch_idxes = batch['uin'].batch[subgraph_node_indices]
+        batch_copy['uin'].batch = self.reset_batch_node(subgraph_node_batch_idxes)
+        node_map = {subgraph_node_indices[i].detach().cpu().item(): i for i in range(subgraph_node_indices.shape[0])}
         subgraph_max_node_idx = subgraph_node_indices.max()
         for edge_type in batch.edge_types:
             try:
@@ -281,15 +297,18 @@ class UinGangsModelPreTrain:
                     subgraph_node_indices = subgraph_node_indices[subgraph_node_indices <= max_node_idx]
                 edge_index, _ = subgraph(subgraph_node_indices, batch[edge_type].edge_index)
             except Exception as e:
-                print(f"Extract Subgraph Error: {e}")
-                del new_batch[edge_type]
+                print(f"Extract Subgraph Error: <{e}>")
+                del batch_copy[edge_type]
+                continue
             else:
                 # no such type of edges
                 if edge_index.shape[1] != 0:
-                    new_batch[edge_type].edge_index = edge_index
+                    # reset the edge index
+                    reset_edge_index = self.reset_edge_index_by_map(node_map, edge_index)
+                    batch_copy[edge_type].edge_index = reset_edge_index
                 else:
-                    del new_batch[edge_type]
-        return new_batch
+                    del batch_copy[edge_type]
+        return batch_copy
 
     def random_sampling_pretraining(self):
         for epoch in range(self.start_epoch, self.end_epoch):
@@ -390,7 +409,7 @@ class UinGangsModelPreTrain:
                         print(f"Error: <{e}>; data: {pos_batch}")
                         batch_h = None
                     else:
-                        batch_h = self.hetero_fit(pos_batch.x_dict, pos_batch.edge_index_dict)
+                        batch_h = self.hetero_fit(pos_x_dict, pos_edge_index_dict)
                 else:
                     batch_h = self.relation_fit(pos_batch, batch_x)
                 if batch_h is not None:
@@ -416,13 +435,13 @@ class UinGangsModelPreTrain:
                                 print(f"Error: <{e}>; data: {pos_batch}")
                                 fraudar_batch_h = None
                             else:
-                                fraudar_batch_h = self.hetero_fit(fraudar_batch.x_dict, fraudar_batch.edge_index_dict)
+                                fraudar_batch_h = self.hetero_fit(x_dict, edge_index_dict)
                         else:
                             fraudar_batch_h = self.relation_fit(fraudar_batch, fraudar_batch['uin'].x)
 
                         if fraudar_batch_h is not None:
                             fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
-                            fraudar_batch_h_g = fraudar_batch_h_g[pos_batch_idx]
+                            # fraudar_batch_h_g = fraudar_batch_h_g[pos_batch_idx]
 
                             # readout for subgraph
                             pos_batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
@@ -491,13 +510,13 @@ class UinGangsModelPreTrain:
                                             set(batch_neg_samples_idx) - set(batch_exclude_normal_idx))
                                         upgrade_batch_neg_samples_idx_batch = pos_batch['uin'].batch[
                                             upgrade_batch_neg_samples_idx]
-                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h,
                                                                                  batch_h[batch_pos_samples_idx],
                                                                                  batch_h[upgrade_batch_neg_samples_idx],
                                                                                  batch_pos_samples_idx_batch,
                                                                                  upgrade_batch_neg_samples_idx_batch)
                                     else:
-                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h[batch_pos_samples_idx],
+                                        cross_loss = self.cross_contrastive_loss(fraudar_batch_h,
                                                                                  batch_h[batch_pos_samples_idx],
                                                                                  batch_h[batch_neg_samples_idx],
                                                                                  batch_pos_samples_idx_batch,
