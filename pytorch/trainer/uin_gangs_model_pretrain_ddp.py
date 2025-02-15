@@ -394,7 +394,7 @@ class UinGangsModelPreTrainDDP:
                 if self.conv_type in ['HAN', 'HGT']:
                     batch_h = self.hetero_fit(pos_batch.x_dict, pos_batch.edge_index_dict)
                 else:
-                    batch_h = self.relation_fit(pos_batch, batch_x)
+                    batch_h = self.relation_fit(pos_batch, pos_batch['uin'].x)
                 batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
 
                 pos_batch_idx = (pos_batch['uin'].flag == 1).nonzero().squeeze().detach().cpu().tolist()
