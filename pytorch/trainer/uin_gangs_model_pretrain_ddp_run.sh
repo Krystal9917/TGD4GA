@@ -16,4 +16,5 @@ export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 export MASTER_ADDR='localhost'
 export MASTER_PORT='10086'
 export TORCH_DISTRIBUTED_DEBUG=DETAIL
+export CUDA_LAUNCH_BLOCKING=1
 torchrun /mnt/cephfs/jiujiuchen/projects/mmgog_long_term_sequence_model/pytorch/trainer/uin_gangs_model_pretrain_ddp_run.py

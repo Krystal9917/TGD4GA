@@ -428,11 +428,11 @@ class UinGangsModelPreTrainDDP:
                     with autocast():
                         if fraudar_batch_h is not None and self.task_type != 'intra_subgraph':
                             fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
-                            fraudar_batch_h_g = fraudar_batch_h_g[pos_batch_idx]
+                            # fraudar_batch_h_g = fraudar_batch_h_g[pos_batch_idx]
 
                             # readout for subgraph
                             pos_batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
-                            # pos_batch_h_g = pos_batch_h_g[pos_batch_idx]
+                            pos_batch_h_g = pos_batch_h_g[pos_batch_idx]
 
                             if (type(neg_batch_idx) is list and len(neg_batch_idx) != 0) or type(neg_batch_idx) is int:
                                 neg_batch_h_g = batch_h_g[neg_batch_idx]
