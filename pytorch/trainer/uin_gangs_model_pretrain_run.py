@@ -39,8 +39,8 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
         parser.add_argument('--best_loss', type=float, default=1e2)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
-        parser.add_argument('--batch_size', type=int, default=8)
-        parser.add_argument('--data_buffer_size', type=int, default=8)
+        parser.add_argument('--batch_size', type=int, default=1)
+        parser.add_argument('--data_buffer_size', type=int, default=1)
         parser.add_argument('--lr', type=float, default=0.001)
         parser.add_argument('--lr_scheduler', type=str, default=None,
                             choices=[None, 'stepLR', 'reduceLR', 'cosineLR'])
@@ -57,18 +57,18 @@ class ArgsUinGangs:
         parser.add_argument('--onnx_opset', type=int, default=15)
         parser.add_argument('--seed', type=int, default=42)
         parser.add_argument('--num_workers', type=int, default=32)
-        parser.add_argument('--temperature', type=int, default=1)
+        parser.add_argument('--temperature', type=int, default=0.8)
         parser.add_argument('--input_dim', type=int, default=846)
-        parser.add_argument('--hidden_dim', type=int, default=512)
-        parser.add_argument('--output_dim', type=int, default=846)
+        parser.add_argument('--hidden_dim', type=int, default=1024)
+        parser.add_argument('--output_dim', type=int, default=128)
         parser.add_argument('--filter_node_num', type=int, default=3)
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--conv_type', type=str, default='RGAT',
-                            choices=['RGCN', 'RGAT', 'HAN', 'HGT'])
+        parser.add_argument('--conv_type', type=str, default='AttnRGCN',
+                            choices=['RGCN', 'AttnRGCN', 'RGAT', 'HAN', 'HGT'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_cross_subgraph', 'fine_grained_batch_subgraph'])
@@ -78,7 +78,7 @@ class ArgsUinGangs:
         parser.add_argument('--num_heads', type=int, default=2)
         parser.add_argument('--data_tag', type=str, default='order_1930_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--similarity_diff', type=float, default=0.10)
+        parser.add_argument('--similarity_diff', type=float, default=0.15)
         args = parser.parse_args()
         args_dict = vars(args)
         self.args_dict = args_dict

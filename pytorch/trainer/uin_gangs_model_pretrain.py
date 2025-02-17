@@ -12,9 +12,10 @@ import torch.utils.data as Data
 from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
 from torch.utils.tensorboard import SummaryWriter
+from torch.cuda.amp import GradScaler, autocast
 from transformers import BertModel
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, CosineAnnealingLR
-from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
+from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN, AttnRGCN
 from mmgog_long_term_sequence_model.pytorch.models.rgat_model import RGAT
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
@@ -42,7 +43,8 @@ class UinGangsModelPreTrain:
         # Initialize GNN Model for Graph
         self.conv_type = args_dict["conv_type"]
         self.task_type = args_dict["task_type"]
-        if self.conv_type in ['RGCN', 'RGAT']:
+        # self.scaler = GradScaler()
+        if self.conv_type in ['RGCN', 'AttnRGCN', 'RGAT']:
             self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
                                ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
                                ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
@@ -52,12 +54,18 @@ class UinGangsModelPreTrain:
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
                                   num_relations=args_dict['num_relations'])
+            elif self.conv_type == 'AttnRGCN':
+                self.attn_weight = torch.nn.Parameter(torch.sigmoid(torch.Tensor([0.6, 0.6, 0.3, 0.5, 1.3, 1.4, 0.4, 0.5, 1.5, 0.8])))
+                self.model = AttnRGCN(input_dim=args_dict['input_dim'],
+                                      hidden_dim=args_dict['hidden_dim'],
+                                      output_dim=args_dict['output_dim'],
+                                      attn_weight=self.attn_weight,
+                                      num_relations=args_dict['num_relations'])
             else:
                 self.model = RGAT(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
                                   num_heads=args_dict['num_heads'],
-                                  num_bases=args_dict['num_relations'],
                                   num_relations=args_dict['num_relations'])
         else:
             self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
@@ -115,7 +123,6 @@ class UinGangsModelPreTrain:
             self.start_epoch = 1
             self.end_epoch = self.train_dict["n_epochs"]
         self.model.to(self.device)
-
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         # lr scheduler
         if self.train_dict["lr_scheduler"] == "stepLR":
@@ -262,7 +269,7 @@ class UinGangsModelPreTrain:
         edge_type = torch.concat(
             [torch.ones(edge_counts[edge_type]) * edge_idx for edge_type, edge_idx in self.edge_types.items() if
              edge_type in batch.edge_types])
-        return edge_index, edge_type.long()
+        return edge_index, edge_type.long().to(self.device)
 
     def reset_batch_node(self, batch):
         batch_item = batch.unique().detach().cpu().tolist()
@@ -400,7 +407,7 @@ class UinGangsModelPreTrain:
                 # combine numerical, categorical and text attributes
                 batch_x = torch.concat([pos_batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
-                pos_batch['uin'].x = batch_x.to(self.device)
+                pos_batch['uin'].x = batch_x
                 if self.conv_type in ['HAN', 'HGT']:
                     try:
                         pos_x_dict = pos_batch.x_dict
@@ -411,7 +418,7 @@ class UinGangsModelPreTrain:
                     else:
                         batch_h = self.hetero_fit(pos_x_dict, pos_edge_index_dict)
                 else:
-                    batch_h = self.relation_fit(pos_batch, batch_x)
+                    batch_h = self.relation_fit(pos_batch, pos_batch['uin'].x)
                 if batch_h is not None:
                     batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
                     pos_batch_idx = (pos_batch['uin'].flag == 1).nonzero().squeeze().detach().cpu().tolist()
@@ -438,7 +445,6 @@ class UinGangsModelPreTrain:
                                 fraudar_batch_h = self.hetero_fit(x_dict, edge_index_dict)
                         else:
                             fraudar_batch_h = self.relation_fit(fraudar_batch, fraudar_batch['uin'].x)
-
                         if fraudar_batch_h is not None:
                             fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
                             # fraudar_batch_h_g = fraudar_batch_h_g[pos_batch_idx]
@@ -447,7 +453,8 @@ class UinGangsModelPreTrain:
                             pos_batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
                             pos_batch_h_g = pos_batch_h_g[pos_batch_idx]
 
-                            if (type(neg_batch_idx) is list and len(neg_batch_idx) != 0) or type(neg_batch_idx) is int:
+                            if (type(neg_batch_idx) is list and len(neg_batch_idx) != 0) or type(
+                                    neg_batch_idx) is int:
                                 neg_batch_h_g = batch_h_g[neg_batch_idx]
                             else:
                                 neg_batch_h_g = batch_h_g
@@ -467,7 +474,8 @@ class UinGangsModelPreTrain:
                             else:
                                 batch_pos_neg_samples_idx = (pos_batch[
                                                                  'uin'].batch == pos_batch_idx).nonzero().squeeze().detach().cpu().tolist()
-                            pos_samples_idx = (pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()
+                            pos_samples_idx = (
+                                    pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()
                             batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
                             batch_pos_samples_idx_batch = pos_batch['uin'].batch[batch_pos_samples_idx]
 
@@ -512,7 +520,8 @@ class UinGangsModelPreTrain:
                                             upgrade_batch_neg_samples_idx]
                                         cross_loss = self.cross_contrastive_loss(fraudar_batch_h,
                                                                                  batch_h[batch_pos_samples_idx],
-                                                                                 batch_h[upgrade_batch_neg_samples_idx],
+                                                                                 batch_h[
+                                                                                     upgrade_batch_neg_samples_idx],
                                                                                  batch_pos_samples_idx_batch,
                                                                                  upgrade_batch_neg_samples_idx_batch)
                                     else:
@@ -528,6 +537,9 @@ class UinGangsModelPreTrain:
                         else:
                             loss = subgraph_loss
                         if not torch.isnan(loss):
+                            # self.scaler.scale(loss).backward()
+                            # self.scaler.step(self.optimizer)
+                            # self.scaler.update()
                             loss.backward()
                             self.optimizer.step()
                             if self.train_dict["lr_scheduler"] == "cosineLR":
@@ -560,7 +572,6 @@ class UinGangsModelPreTrain:
                                             i + 1,
                                             loss_value,
                                             time.time() - start_time))
-
                         torch.cuda.empty_cache()
             epoch_loss = sum(epoch_loss) / len(epoch_loss)
             if not self.train_dict["is_debug"]:
