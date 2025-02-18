@@ -328,6 +328,45 @@ def batch_dense_loss_based_cross_entropy(batch, y_prob):
     return dense_loss
 
 
+def connect_loss(y_prob, adj, epsilon):
+    masked_adj = adj * y_prob.unsqueeze(1) * y_prob.unsqueeze(0)
+    degree = masked_adj.sum(dim=1) + torch.eye(masked_adj.shape[0], device=masked_adj.device)
+    L = torch.diag(degree) - masked_adj
+    L_sym = (L + L.T) / 2
+    try:
+        eig_value = torch.linalg.eigvalsh(L_sym.double())
+    except Exception as e:
+        print(f"Error: {e}")
+        lambda_2 = torch.tensor(0.0, device=L_sym.device)
+    else:
+        lambda_2 = eig_value[1] if len(eig_value) > 1 else torch.tensor(0.0, device=L_sym.device)
+    connectivity_penalty = torch.relu(-torch.log(epsilon + torch.relu(lambda_2)))
+    return connectivity_penalty
+
+def batch_connect_loss(batch, y_prob, filter_edge_types, epsilon=1e-3):
+    pos_sub_idx = (batch['uin'].gang_label == 1).nonzero().squeeze()
+    if pos_sub_idx.shape == torch.Size([]):
+        pos_sub_idx = torch.tensor([pos_sub_idx], device=pos_sub_idx.device)
+    if pos_sub_idx.shape[0] != 0:
+        cnt_loss = []
+        adj = to_dense_adj(torch.concat([batch[edge_type].edge_index for edge_type in batch.edge_types
+                                         if edge_type in filter_edge_types], dim=1),
+                           max_num_nodes=batch['uin'].num_nodes).squeeze()
+        for pos_idx in pos_sub_idx:
+            total_node_idx = (batch['uin'].batch == pos_idx).nonzero().squeeze()
+            node_idx = total_node_idx[y_prob[total_node_idx] >= 0.5]
+            pos_adj = adj[node_idx, :][:, node_idx]
+            pos_y_prob = y_prob[node_idx]
+            if node_idx.shape == torch.Size([]):
+                node_idx = torch.tensor([node_idx], device=node_idx.device)
+            if node_idx.shape[0] != 0:
+                i_cnt_loss = connect_loss(pos_y_prob, pos_adj, epsilon)
+                cnt_loss.append(i_cnt_loss)
+        cnt_loss = torch.stack(cnt_loss).mean()
+    else:
+        cnt_loss = torch.tensor(0, device=batch['uin'].x.device)
+    return cnt_loss
+
 if __name__ == '__main__':
     g_y = torch.tensor([0, 0, 0, 1, 1])
     g_batch = torch.tensor([0, 0, 0, 0, 0, 0,

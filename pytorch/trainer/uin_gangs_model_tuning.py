@@ -21,7 +21,7 @@ from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
 from mmgog_long_term_sequence_model.utils.utils import batch_subgraph_loss_based_cross_entropy, \
-    batch_dense_loss_based_cross_entropy
+    batch_dense_loss_based_cross_entropy, batch_connect_loss
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix
 
 
@@ -61,6 +61,9 @@ class UinGangsModelTuning:
                                ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
                                ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
                                ('uin', 'download_app', 'uin'): 9}
+            self.filter_edge_types = [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
+                                      ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
+                                      ('uin', 'bankcard', 'uin')]
         elif self.conv_type in ['HGT', 'HAN']:
             self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
                                        ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
@@ -145,11 +148,20 @@ class UinGangsModelTuning:
                 self.ft_info = (f'wp_{weights[1]}_wn_{weights[0]}_W_node_{self.eval_dict["W_node"]}_'
                                 f'W_penalty_{self.eval_dict["W_penalty"]}')
         elif self.eval_dict['ft_loss'] == 'subgraph_and_dense':
-            if not self.eval_dict['cls_dense']:
+            if self.eval_dict['cls_subgraph'] and not self.eval_dict['cls_dense'] and not self.eval_dict['cls_connect']:
                 self.ft_info = (f'Wp_{self.eval_dict["W_p"]}_Wn_{self.eval_dict["W_n"]}_'
+                                f'wp_{self.eval_dict["w_p"]}_wn_{self.eval_dict["w_n"]}')
+            elif self.eval_dict['cls_subgraph'] and self.eval_dict['cls_dense'] and not self.eval_dict['cls_connect']:
+                self.ft_info = (f'W_sub_{self.eval_dict["W_sub"]}_W_den_{self.eval_dict["W_den"]}_'
+                                f'Wp_{self.eval_dict["W_p"]}_Wn_{self.eval_dict["W_n"]}_'
+                                f'wp_{self.eval_dict["w_p"]}_wn_{self.eval_dict["w_n"]}')
+            elif self.eval_dict['cls_subgraph'] and self.eval_dict['cls_connect'] and not self.eval_dict['cls_dense']:
+                self.ft_info = (f'W_sub_{self.eval_dict["W_sub"]}_W_cnt_{self.eval_dict["W_cnt"]}_'
+                                f'Wp_{self.eval_dict["W_p"]}_Wn_{self.eval_dict["W_n"]}_'
                                 f'wp_{self.eval_dict["w_p"]}_wn_{self.eval_dict["w_n"]}')
             else:
                 self.ft_info = (f'W_sub_{self.eval_dict["W_sub"]}_W_den_{self.eval_dict["W_den"]}_'
+                                f'W_cnt_{self.eval_dict["W_cnt"]}_'
                                 f'Wp_{self.eval_dict["W_p"]}_Wn_{self.eval_dict["W_n"]}_'
                                 f'wp_{self.eval_dict["w_p"]}_wn_{self.eval_dict["w_n"]}')
         if self.eval_dict["evaluate_task"] in ['subgraph', 'subgraph_gang_detection']:
@@ -422,7 +434,12 @@ class UinGangsModelTuning:
                             dense_loss = batch_dense_loss_based_cross_entropy(batch, pred_y[:, 1])
                         else:
                             dense_loss = torch.tensor(0, device=self.device)
-                        loss = self.eval_dict["W_sub"] * sub_loss + self.eval_dict["W_den"] * dense_loss
+                        if self.eval_dict['cls_connect']:
+                            connect_loss = batch_connect_loss(batch, pred_y[:, 1], self.filter_edge_types)
+                        else:
+                            connect_loss = torch.tensor(0, device=self.device)
+                        loss = (self.eval_dict["W_sub"] * sub_loss + self.eval_dict["W_den"] * dense_loss +
+                                self.eval_dict["W_cnt"] * connect_loss)
                     loss.backward()
                     self.cls_optimizer.step()
                     epoch_loss.append(loss.detach().cpu().item())

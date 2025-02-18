@@ -109,10 +109,12 @@ class ArgsUinGangs:
         # proportion of subgraph and dense loss
         parser.add_argument('--W_sub', type=float, default=0.8)
         parser.add_argument('--W_den', type=float, default=0.2)
+        parser.add_argument('--W_cnt', type=float, default=0.2)
         parser.add_argument('--cls_node', type=bool, default=False)
         parser.add_argument('--cls_penalty', type=bool, default=False)
         parser.add_argument('--cls_subgraph', type=bool, default=True)
         parser.add_argument('--cls_dense', type=bool, default=False)
+        parser.add_argument('--cls_connect', type=bool, default=True)
         parser.add_argument('--ft_loss', type=str, default='subgraph_and_dense',
                             choices=['subgraph_and_dense', 'node_penalty'])
 
