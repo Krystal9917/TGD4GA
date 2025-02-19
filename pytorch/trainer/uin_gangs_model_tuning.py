@@ -16,7 +16,7 @@ from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
 from transformers import BertModel
 from torch_geometric.utils import to_dense_adj
-from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN
+from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN, AttnRGCN
 from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
@@ -45,13 +45,22 @@ class UinGangsModelTuning:
 
         self.conv_type = args_dict["conv_type"]
         self.device_tag = self.eval_dict["device_tag"]
-        if self.conv_type == 'RGCN':
-            if self.device_tag == '_GPU3':
+        if self.conv_type in ['RGCN', 'AttnRGCN']:
+            if self.device_tag == '_GPU3' and self.conv_type == 'RGCN':
                 self.model = RGCN(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
                                   num_relations=args_dict['num_relations'],
                                   num_bases=args_dict['num_relations'])
+            elif self.conv_type == 'AttnRGCN':
+                self.attn_weight = torch.nn.Parameter(
+                    torch.sigmoid(torch.Tensor([0.6, 0.6, 0.3, 0.5, 1.3, 1.4, 0.4, 0.5, 1.5, 0.8])))
+                self.model = AttnRGCN(input_dim=args_dict['input_dim'],
+                                      hidden_dim=args_dict['hidden_dim'],
+                                      output_dim=args_dict['output_dim'],
+                                      attn_weight=self.attn_weight,
+                                      num_relations=args_dict['num_relations'],
+                                      num_bases=args_dict['num_relations'])
             else:
                 self.model = RGCN(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
@@ -386,7 +395,7 @@ class UinGangsModelTuning:
                 batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 batch['uin'].x = batch_x
-                if self.conv_type == 'RGCN':
+                if self.conv_type in ['RGCN', 'AttnRGCN']:
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
                 else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
@@ -497,7 +506,7 @@ class UinGangsModelTuning:
                 batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 batch['uin'].x = batch_x
-                if self.conv_type == 'RGCN':
+                if self.conv_type in ['RGCN', 'AttnRGCN']:
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
                 else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
@@ -673,7 +682,7 @@ class UinGangsModelTuning:
                 batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 batch['uin'].x = batch_x
-                if self.conv_type == 'RGCN':
+                if self.conv_type in ['RGCN', 'AttnRGCN']:
                     batch_h = self.rgcn_fit(batch, batch['uin'].x)
                 else:
                     batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)

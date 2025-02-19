@@ -330,8 +330,9 @@ def batch_dense_loss_based_cross_entropy(batch, y_prob):
 
 def connect_loss(y_prob, adj, epsilon):
     masked_adj = adj * y_prob.unsqueeze(1) * y_prob.unsqueeze(0)
-    degree = masked_adj.sum(dim=1) + torch.eye(masked_adj.shape[0], device=masked_adj.device)
-    L = torch.diag(degree) - masked_adj
+    degree_adj, _ = torch.stack([masked_adj.sum(dim=1), masked_adj.sum(dim=0)], dim=0).max(dim=0)
+    degree_adj = degree_adj + torch.eye(masked_adj.shape[0], device=masked_adj.device)
+    L = torch.diag(degree_adj) - masked_adj
     L_sym = (L + L.T) / 2
     try:
         eig_value = torch.linalg.eigvalsh(L_sym.double())
@@ -343,57 +344,110 @@ def connect_loss(y_prob, adj, epsilon):
     connectivity_penalty = torch.relu(-torch.log(epsilon + torch.relu(lambda_2)))
     return connectivity_penalty
 
+
+def compute_fiedler_value(node_idx, adj, y_prob):
+    adj = adj[node_idx, :][:, node_idx]
+    y_prob = y_prob[node_idx]
+    y_1 = y_prob.unsqueeze(1)
+    y_0 = y_prob.unsqueeze(0)
+    adj_prob = adj * y_1 * y_0
+    degree_adj, _ = torch.stack([adj_prob.sum(dim=1), adj_prob.sum(dim=0)], dim=0).max(dim=0)
+    L = torch.diag(degree_adj) - adj_prob
+    L_sym = (L + L.T) / 2
+    try:
+        eig_value = torch.linalg.eigvalsh(L_sym.double())
+    except Exception as e:
+        print(f"Error: {e}")
+        lambda_2 = torch.tensor(-0.5, device=L_sym.device)
+    else:
+        lambda_2 = eig_value[1] if len(eig_value) > 1 else torch.tensor(-0.5, device=L_sym.device)
+    return lambda_2
+
+
 def batch_connect_loss(batch, y_prob, filter_edge_types, epsilon=1e-3):
+    device = y_prob.device
+    softmax = torch.nn.Softmax(dim=0)
     pos_sub_idx = (batch['uin'].gang_label == 1).nonzero().squeeze()
     if pos_sub_idx.shape == torch.Size([]):
         pos_sub_idx = torch.tensor([pos_sub_idx], device=pos_sub_idx.device)
     if pos_sub_idx.shape[0] != 0:
         cnt_loss = []
-        adj = to_dense_adj(torch.concat([batch[edge_type].edge_index for edge_type in batch.edge_types
-                                         if edge_type in filter_edge_types], dim=1),
-                           max_num_nodes=batch['uin'].num_nodes).squeeze()
+        multi_edge_index = torch.concat([batch[edge_type].edge_index for edge_type in batch.edge_types
+                                         if edge_type in filter_edge_types], dim=1)
+        adj = to_dense_adj(multi_edge_index, max_num_nodes=batch['uin'].num_nodes).squeeze()
         for pos_idx in pos_sub_idx:
             total_node_idx = (batch['uin'].batch == pos_idx).nonzero().squeeze()
-            node_idx = total_node_idx[y_prob[total_node_idx] >= 0.5]
-            pos_adj = adj[node_idx, :][:, node_idx]
-            pos_y_prob = y_prob[node_idx]
-            if node_idx.shape == torch.Size([]):
-                node_idx = torch.tensor([node_idx], device=node_idx.device)
-            if node_idx.shape[0] != 0:
-                i_cnt_loss = connect_loss(pos_y_prob, pos_adj, epsilon)
-                cnt_loss.append(i_cnt_loss)
+            true_node_idx = total_node_idx[batch['uin'].gang_mem[total_node_idx] == 1]
+            pred_node_idx = total_node_idx[y_prob[total_node_idx] >= 0.5]
+            fiedler_true = compute_fiedler_value(true_node_idx, adj, y_prob)
+            if pred_node_idx.shape == torch.Size([]):
+                pred_node_idx = torch.tensor([pred_node_idx], device=device)
+            if pred_node_idx.shape[0] != 0:
+                fiedler_pred = compute_fiedler_value(pred_node_idx, adj, y_prob)
+            else:
+                fiedler_pred = torch.tensor(0.0, device=device)
+            fielder_vec = torch.tensor([fiedler_true, fiedler_pred], device=device)
+            fielder_vec = softmax(fielder_vec)
+            i_cnt_loss = torch.relu(-torch.log(1 - (fielder_vec[1] - fielder_vec[0]) ** 2 + epsilon))
+            cnt_loss.append(i_cnt_loss)
         cnt_loss = torch.stack(cnt_loss).mean()
     else:
-        cnt_loss = torch.tensor(0, device=batch['uin'].x.device)
+        cnt_loss = torch.tensor(0, device=device)
     return cnt_loss
 
-if __name__ == '__main__':
-    g_y = torch.tensor([0, 0, 0, 1, 1])
-    g_batch = torch.tensor([0, 0, 0, 0, 0, 0,
-                            1, 1, 1, 1, 1,
-                            2, 2, 2, 2,
-                            3, 3, 3, 3, 3, 3, 3,
-                            4, 4, 4, 4, 4, 4])
-    node_y_pred1 = torch.tensor([0.1, 0.15, 0.1, 0.4, 0.8, 0.2,
-                                0.1, 0.25, 0.0, 0.1, 0.15,
-                                0.23, 0.24, 0.2, 0.01,
-                                0.07, 0.34, 0.56, 0.45, 0.69, 0.63, 0.55,
-                                0.24, 0.62, 0.54, 0.48, 0.46, 0.71], requires_grad=True)
-    node_y_pred2 = torch.tensor([0.01, 0.02, 0.03, 0.01, 0.02, 0.05,
-                                 0.01, 0.0, 0.0, 0.0, 0.02,
-                                 0.03, 0.04, 0.01, 0.005,
-                                 0.97, 0.92, 0.88, 0.12, 0.15, 0.78, 0.86,
-                                 0.68, 0.93, 0.08, 0.79, 0.37, 0.92], requires_grad=True)
-    node_y_true = torch.tensor([0, 0, 0, 0, 0, 0,
-                                0, 0, 0, 0, 0,
-                                0, 0, 0, 0,
-                                1, 1, 1, 0, 0, 1, 1,
-                                1, 1, 0, 1, 0, 1])
-    loss1 = batch_subgraph_loss_based_cross_entropy(g_y, g_batch, node_y_pred1, node_y_true)
-    loss2 = batch_subgraph_loss_based_cross_entropy(g_y, g_batch, node_y_pred2, node_y_true)
-    print(f"Loss 1: {loss1: .4f}, Loss 2: {loss2: .4f}")
 
-    y_prob = torch.tensor([[0.1, 0.9], [0.2, 0.8], [0.3, 0.7]])
-    print(y_prob)
-    print(y_prob[:, 1])
+if __name__ == '__main__':
+    # g_y = torch.tensor([0, 0, 0, 1, 1])
+    # g_batch = torch.tensor([0, 0, 0, 0, 0, 0,
+    #                         1, 1, 1, 1, 1,
+    #                         2, 2, 2, 2,
+    #                         3, 3, 3, 3, 3, 3, 3,
+    #                         4, 4, 4, 4, 4, 4])
+    # node_y_pred1 = torch.tensor([0.1, 0.15, 0.1, 0.4, 0.8, 0.2,
+    #                             0.1, 0.25, 0.0, 0.1, 0.15,
+    #                             0.23, 0.24, 0.2, 0.01,
+    #                             0.07, 0.34, 0.56, 0.45, 0.69, 0.63, 0.55,
+    #                             0.24, 0.62, 0.54, 0.48, 0.46, 0.71], requires_grad=True)
+    # node_y_pred2 = torch.tensor([0.01, 0.02, 0.03, 0.01, 0.02, 0.05,
+    #                              0.01, 0.0, 0.0, 0.0, 0.02,
+    #                              0.03, 0.04, 0.01, 0.005,
+    #                              0.97, 0.92, 0.88, 0.12, 0.15, 0.78, 0.86,
+    #                              0.68, 0.93, 0.08, 0.79, 0.37, 0.92], requires_grad=True)
+    # node_y_true = torch.tensor([0, 0, 0, 0, 0, 0,
+    #                             0, 0, 0, 0, 0,
+    #                             0, 0, 0, 0,
+    #                             1, 1, 1, 0, 0, 1, 1,
+    #                             1, 1, 0, 1, 0, 1])
+    # loss1 = batch_subgraph_loss_based_cross_entropy(g_y, g_batch, node_y_pred1, node_y_true)
+    # loss2 = batch_subgraph_loss_based_cross_entropy(g_y, g_batch, node_y_pred2, node_y_true)
+    # print(f"Loss 1: {loss1: .4f}, Loss 2: {loss2: .4f}")
+    #
+    # y_prob = torch.tensor([[0.1, 0.9], [0.2, 0.8], [0.3, 0.7]])
+    # print(y_prob)
+    # print(y_prob[:, 1])
+    adj = torch.tensor([[0, 1, 0, 1, 0],
+                        [1, 0, 1, 1, 0],
+                        [0, 1, 0, 1, 1],
+                        [1, 1, 1, 0, 0],
+                        [0, 0, 1, 0, 0]])
+    y_true = torch.tensor([1, 1, 1, 1, 0])
+    y_prob_1 = torch.tensor([0.7, 0.6, 0.5, 0.8, 0.5])
+    y_prob_2 = torch.tensor([0.7, 0.6, 0.3, 0.8, 0.3])
+    y_prob_3 = torch.tensor([0.7, 0.6, 0.5, 0.8, 0.3])
+    selected_node_idx_1 = (y_true == 1).nonzero().squeeze()
+    fielder_value_1 = compute_fiedler_value(selected_node_idx_1, adj, y_prob_1)
+
+    selected_node_idx_2 = (y_prob_1 >= 0.5).nonzero().squeeze()
+    fielder_value_2 = compute_fiedler_value(selected_node_idx_2, adj, y_prob_1)
+
+    fielder_value_3 = compute_fiedler_value(selected_node_idx_1, adj, y_prob_2)
+
+    selected_node_idx_4 = (y_prob_2 >= 0.5).nonzero().squeeze()
+    fielder_value_4 = compute_fiedler_value(selected_node_idx_4, adj, y_prob_2)
+
+    fielder_value_5 = compute_fiedler_value(selected_node_idx_1, adj, y_prob_3)
+    selected_node_idx_6 = (y_prob_3 >= 0.5).nonzero().squeeze()
+    fielder_value_6 = compute_fiedler_value(selected_node_idx_6, adj, y_prob_3)
+    print()
+
 

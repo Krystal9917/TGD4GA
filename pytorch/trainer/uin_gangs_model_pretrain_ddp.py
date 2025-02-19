@@ -56,7 +56,8 @@ class UinGangsModelPreTrainDDP:
                                   num_relations=args_dict['num_relations'],
                                   num_bases=args_dict['num_relations'])
             elif self.conv_type == 'AttnRGCN':
-                self.attn_weight = torch.nn.Parameter(torch.sigmoid(torch.Tensor([0.6, 0.6, 0.3, 0.5, 1.3, 1.4, 0.4, 0.5, 1.5, 0.8])))
+                self.attn_weight = torch.nn.Parameter(
+                    torch.sigmoid(torch.Tensor([0.6, 0.6, 0.3, 0.5, 1.3, 1.4, 0.4, 0.5, 1.5, 0.8])))
                 self.model = AttnRGCN(input_dim=args_dict['input_dim'],
                                       hidden_dim=args_dict['hidden_dim'],
                                       output_dim=args_dict['output_dim'],
@@ -565,11 +566,18 @@ class UinGangsModelPreTrainDDP:
                 file_name = os.path.join(self.save_model_path,
                                          f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
                                          f"{self.train_dict['temperature']}_model_best_loss.pth")
-                torch.save(self.model.state_dict(), file_name)
+                if self.conv_type == 'AttnRGCN':
+                    save_parameter = {
+                        'model': self.model.state_dict(),
+                        'attn_weight': self.attn_weight,
+                    }
+                else:
+                    save_parameter = self.model.state_dict()
+                torch.save(save_parameter, file_name)
                 epoch_file_name = os.path.join(self.save_model_path,
                                                f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
                                                f"{self.train_dict['temperature']}_model_epoch_{epoch}.pth")
-                torch.save(self.model.state_dict(), epoch_file_name)
+                torch.save(save_parameter, epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
         if self.rank == 0:
             self.writer.close()
