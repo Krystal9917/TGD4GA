@@ -55,6 +55,8 @@ class UinGangsModelPreTrain:
                                   output_dim=args_dict['output_dim'],
                                   num_relations=args_dict['num_relations'])
             elif self.conv_type == 'AttnRGCN':
+                self.W_node = torch.nn.Parameter(torch.tensor(self.train_dict["W_node"]))
+                self.W_subgraph = torch.nn.Parameter(torch.tensor(self.train_dict["W_subgraph"]))
                 self.attn_weight = torch.nn.Parameter(torch.sigmoid(torch.Tensor([0.6, 0.6, 0.3, 0.5, 1.3, 1.4, 0.4, 0.5, 1.5, 0.8])))
                 self.model = AttnRGCN(input_dim=args_dict['input_dim'],
                                       hidden_dim=args_dict['hidden_dim'],
@@ -123,7 +125,12 @@ class UinGangsModelPreTrain:
             self.start_epoch = 1
             self.end_epoch = self.train_dict["n_epochs"]
         self.model.to(self.device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        params = [
+            {'params': self.model.parameters(), 'lr': lr},
+            {'params': self.W_node, 'lr': lr * 1e-1},
+            {'params': self.W_subgraph, 'lr': lr * 1e-1}
+        ]
+        self.optimizer = torch.optim.Adam(params)
         # lr scheduler
         if self.train_dict["lr_scheduler"] == "stepLR":
             self.scheduler = StepLR(self.optimizer,
@@ -189,7 +196,7 @@ class UinGangsModelPreTrain:
             print(f"Norm Error {e}, h1 shape: {h1.shape}, h3 shape: {h3.shape}")
         else:
             loss = pos_sim / (sim_matrix.sum(dim=1) + 1e-4)
-            loss = -torch.log(loss).mean()
+            loss = torch.relu(-torch.log(loss)).mean()
         return loss
 
     def node_contrastive_loss(self, h1, h2):
@@ -206,7 +213,7 @@ class UinGangsModelPreTrain:
         neg_matrix = torch.einsum('ij,jk->ik', h1, h2.T) / (torch.einsum('i,j->ij', h1_abs, h2_abs) + 1e-4)
         neg_matrix = torch.exp(neg_matrix / t)
         loss = pos_matrix.sum(dim=1) / (pos_matrix.sum(dim=1) + neg_matrix.sum(dim=1) + 1e-4)
-        loss = -torch.log(loss).mean()
+        loss = torch.relu(-torch.log(loss)).mean()
         return loss
 
     def batch_contrastive_loss(self, pos_h, neg_h, pos_batch, neg_batch):
@@ -503,7 +510,7 @@ class UinGangsModelPreTrain:
                                                                              batch_h[batch_neg_samples_idx],
                                                                              batch_pos_samples_idx_batch,
                                                                              batch_neg_samples_idx_batch)
-                                loss = batch_loss + subgraph_loss
+                                loss = self.W_node * batch_loss + self.W_subgraph * subgraph_loss
                             else:
                                 if fraudar_batch_h is not None:
                                     if self.task_type == 'fine_grained_cross_subgraph':
@@ -530,7 +537,7 @@ class UinGangsModelPreTrain:
                                                                                  batch_h[batch_neg_samples_idx],
                                                                                  batch_pos_samples_idx_batch,
                                                                                  batch_neg_samples_idx_batch)
-                                    loss = cross_loss + subgraph_loss
+                                    loss = self.W_node * cross_loss + self.W_subgraph * subgraph_loss
                                 else:
                                     loss = subgraph_loss
 
@@ -546,7 +553,11 @@ class UinGangsModelPreTrain:
                                 self.scheduler.step()
                             loss_value = loss.detach().cpu().item()
                             epoch_loss.append(loss_value)
-                            if (i + 1) % 50 == 0:
+                            if (i + 1) % 5 == 0:
+                                if self.conv_type == 'AttnRGCN':
+                                    print(f"Current Edge Attention Weight: {self.attn_weight}, "
+                                          f"Inter Subgraph Loss Weight: {self.W_subgraph}, "
+                                          f"Intra Subgraph Loss Weight: {self.W_node}")
                                 if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
                                     print(
                                         "Batch: {}, Loss: {:.6f}, "
@@ -585,11 +596,21 @@ class UinGangsModelPreTrain:
             if epoch_loss < self.best_loss:
                 self.best_loss = epoch_loss
                 file_name = os.path.join(self.save_model_path,
-                                         f"uin_gangs_{self.conv_type}_{self.task_type}_model_best_loss.pth")
-                torch.save(self.model.state_dict(), file_name)
+                                         f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
+                                         f"{self.train_dict['temperature']}_model_best_loss.pth")
+                if self.conv_type == 'AttnRGCN':
+                    save_parameter = {
+                        'model': self.model.state_dict(),
+                        'attn_weight': self.attn_weight,
+                        'intra_weight': self.W_node,
+                        'inter_weight': self.W_subgraph,
+                    }
+                else:
+                    save_parameter = self.model.state_dict()
+                torch.save(save_parameter, file_name)
                 epoch_file_name = os.path.join(self.save_model_path,
                                                f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch}.pth")
-                torch.save(self.model.state_dict(), epoch_file_name)
+                torch.save(save_parameter, epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
         if not self.train_dict["is_debug"]:
             self.writer.close()

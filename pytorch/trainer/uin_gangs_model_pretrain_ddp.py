@@ -56,6 +56,8 @@ class UinGangsModelPreTrainDDP:
                                   num_relations=args_dict['num_relations'],
                                   num_bases=args_dict['num_relations'])
             elif self.conv_type == 'AttnRGCN':
+                self.W_node = torch.nn.Parameter(torch.tensor(self.train_dict["W_node"], device=self.device))
+                self.W_subgraph = torch.nn.Parameter(torch.tensor(self.train_dict["W_subgraph"], device=self.device))
                 self.attn_weight = torch.nn.Parameter(
                     torch.sigmoid(torch.Tensor([0.6, 0.6, 0.3, 0.5, 1.3, 1.4, 0.4, 0.5, 1.5, 0.8])))
                 self.model = AttnRGCN(input_dim=args_dict['input_dim'],
@@ -129,7 +131,12 @@ class UinGangsModelPreTrainDDP:
                                                     batch_size=self.train_dict["batch_size"],
                                                     num_workers=self.train_dict["num_workers"],
                                                     collate_fn=self.train_data.pos_collate_fn_for_fraudar)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=self.train_dict["weight_decay"])
+        params = [
+            {'params': self.model.parameters(), 'lr': lr},
+            {'params': self.W_node, 'lr': lr * 1e-1},
+            {'params': self.W_subgraph, 'lr': lr * 1e-1}
+        ]
+        self.optimizer = torch.optim.Adam(params)
         self.best_loss = self.train_dict["best_loss"]
         self.setup_seed()
 
@@ -172,7 +179,7 @@ class UinGangsModelPreTrainDDP:
             print(f"Norm error <{e}>, h1 shape: {h1.shape}, h3 shape: {h3.shape}")
         else:
             loss = pos_sim / (sim_matrix.sum(dim=1) + 1e-4)
-            loss = -torch.log(loss).mean()
+            loss = torch.relu(-torch.log(loss)).mean()
         return loss
 
     def node_contrastive_loss(self, h1, h2):
@@ -189,7 +196,7 @@ class UinGangsModelPreTrainDDP:
         neg_matrix = torch.einsum('ij,jk->ik', h1, h2.T) / (torch.einsum('i,j->ij', h1_abs, h2_abs) + 1e-4)
         neg_matrix = torch.exp(neg_matrix / t)
         loss = pos_matrix.sum(dim=1) / (pos_matrix.sum(dim=1) + neg_matrix.sum(dim=1) + 1e-4)
-        loss = -torch.log(loss).mean()
+        loss = torch.relu(-torch.log(loss)).mean()
         return loss
 
     def batch_contrastive_loss(self, pos_h, neg_h, pos_batch, neg_batch):
@@ -486,7 +493,7 @@ class UinGangsModelPreTrainDDP:
                                                                              batch_h[batch_neg_samples_idx],
                                                                              batch_pos_samples_idx_batch,
                                                                              batch_neg_samples_idx_batch)
-                                loss = batch_loss + subgraph_loss
+                                loss = self.W_node * batch_loss + self.W_subgraph * subgraph_loss
                             else:
                                 if fraudar_batch_h is not None:
                                     if self.task_type in ['fine_grained_cross_subgraph', 'intra_subgraph']:
@@ -512,7 +519,7 @@ class UinGangsModelPreTrainDDP:
                                                                                  batch_h[batch_neg_samples_idx],
                                                                                  batch_pos_samples_idx_batch,
                                                                                  batch_neg_samples_idx_batch)
-                                    loss = cross_loss + subgraph_loss
+                                    loss = self.W_node * cross_loss + self.W_subgraph * subgraph_loss
                                 else:
                                     loss = subgraph_loss
                         else:
@@ -526,6 +533,10 @@ class UinGangsModelPreTrainDDP:
                         loss_value = loss.detach().cpu().item()
                         epoch_loss.append(loss_value)
                         if (i + 1) % 50 == 0:
+                            if self.conv_type == 'AttnRGCN':
+                                print(f"Current Edge Attention Weight: {self.attn_weight}, "
+                                      f"Inter Subgraph Loss Weight: {self.W_subgraph}, "
+                                      f"Intra Subgraph Loss Weight: {self.W_node}")
                             if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
                                 print(
                                     "Rank: {}, Batch: {}, Loss: {:.6f}, "
@@ -570,6 +581,8 @@ class UinGangsModelPreTrainDDP:
                     save_parameter = {
                         'model': self.model.state_dict(),
                         'attn_weight': self.attn_weight,
+                        'intra_weight': self.W_node.detach().cpu(),
+                        'inter_weight': self.W_subgraph.detach().cpu(),
                     }
                 else:
                     save_parameter = self.model.state_dict()
