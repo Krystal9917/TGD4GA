@@ -10,12 +10,15 @@ logger = logging.getLogger("my_logger")
 os.environ['DGLBACKEND'] = 'pytorch'
 
 import numpy as np
+import networkx as nx
 from collections import OrderedDict
 import torch.utils.data as Data
 from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
 from transformers import BertModel
 from torch_geometric.utils import to_dense_adj
+from torch_geometric.data import HeteroData
+from mmgog_long_term_sequence_model.pytorch.dataprocess.fraudar import fraudar
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN, AttnRGCN
 from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
@@ -228,14 +231,10 @@ class UinGangsModelTuning:
              edge_type in batch.edge_types])
         return edge_index, edge_type.long()
 
-    def extract_batch_subgraphs(self, batch, subgraph_node_indices=None):
-        if subgraph_node_indices is None:
-            node_indices = batch['uin'].idx
-            subgraph_node_indices = (node_indices == 1).nonzero().squeeze()
-        x = torch.zeros_like(batch['uin'].x).to(batch['uin'].x.device)
-        x[subgraph_node_indices] = batch['uin'].x[subgraph_node_indices].clone()
-        new_batch = batch.clone()
-        new_batch['uin'].x = x
+    def extract_single_subgraph(self, batch, subgraph_node_indices=None):
+        graph_data = HeteroData()
+        graph_data['uin'].x = batch['uin'].x[subgraph_node_indices].clone()
+        graph_data['uin'].score = batch['uin'].score[subgraph_node_indices].clone()
         subgraph_max_node_idx = subgraph_node_indices.max()
         for edge_type in batch.edge_types:
             try:
@@ -243,17 +242,14 @@ class UinGangsModelTuning:
                 max_node_idx = min(subgraph_max_node_idx, current_max_node_idx)
                 if max_node_idx < subgraph_max_node_idx:
                     subgraph_node_indices = subgraph_node_indices[subgraph_node_indices <= max_node_idx]
-                edge_index, _ = subgraph(subgraph_node_indices, batch[edge_type].edge_index)
+                edge_index, _ = subgraph(subgraph_node_indices, batch[edge_type].edge_index, relabel_nodes=True)
             except Exception as e:
                 print(f"Extract Subgraph Error: <{e}>")
-                del new_batch[edge_type]
             else:
                 # no such type of edges
                 if edge_index.shape[1] != 0:
-                    new_batch[edge_type].edge_index = edge_index
-                else:
-                    del new_batch[edge_type]
-        return new_batch
+                    graph_data[edge_type].edge_index = edge_index
+        return graph_data
 
     def rgcn_fit(self, pos_batch, batch_x):
         try:
@@ -444,7 +440,7 @@ class UinGangsModelTuning:
                         else:
                             dense_loss = torch.tensor(0, device=self.device)
                         if self.eval_dict['cls_connect']:
-                            connect_loss = batch_connect_loss(batch, pred_y[:, 1], self.filter_edge_types)
+                            connect_loss = batch_connect_loss(batch, pred_y[:, 1])
                         else:
                             connect_loss = torch.tensor(0, device=self.device)
                         loss = (self.eval_dict["W_sub"] * sub_loss + self.eval_dict["W_den"] * dense_loss +
@@ -640,7 +636,29 @@ class UinGangsModelTuning:
         else:
             return acc, pre, rec, f1, roc_auc, pos_jaccard, neg_jaccard, run_time
 
-    def inference_gang_members(self, save_results=False):
+    def filter_by_fraudar(self, graph_data):
+        G = nx.DiGraph()
+        # 添加节点
+        for i in range(graph_data['uin'].num_nodes):
+            G.add_node(i, evil_score=graph_data['uin'].score[i].item())
+        idx = torch.zeros(graph_data['uin'].num_nodes, dtype=torch.int)
+        edge_index = [graph_data[edge_type].edge_index for edge_type in graph_data.edge_types]
+        if len(edge_index) > 0:
+            edge_index = torch.concat(edge_index, dim=1)
+            unique_edge_index, indices = torch.unique(edge_index, dim=1, return_inverse=True)
+            adj = to_dense_adj(edge_index, max_num_nodes=graph_data['uin'].score.shape[0]).squeeze()
+
+            # 添加边
+            for i in range(unique_edge_index.shape[1]):
+                srt = unique_edge_index[0, i].item()
+                dst = unique_edge_index[1, i].item()
+                G.add_edge(srt, dst, edge_type_cnt=adj[srt, dst].item())
+            best_graph, best_density, best_weight = fraudar(G)
+            if len(best_graph.nodes) >= self.control_node_num:
+                idx[sorted(best_graph.nodes)] = 1
+        return idx
+
+    def inference_gang_members(self, fraudar_filter=True):
         start_time = time.time()
         tp_tf = f'tn_{self.eval_dict["tn"]}_tp_{self.eval_dict["tp"]}_total_{self.eval_dict["tn"] + self.eval_dict["tp"]}'
         is_finetune = '_finetune' if self.eval_dict["is_finetune"] else ''
@@ -661,15 +679,13 @@ class UinGangsModelTuning:
             true_num = []
             pred_num = []
             gang_label = []
-        if save_results:
-            true_idx_list = []
-            pred_idx_list = []
-            subgraph_y_list = []
-            subgraph_uin_list = []
-        else:
-            true_y_list = []
-            prob_y_list = []
-            pred_y_list = []
+        true_idx_list = []
+        pred_idx_list = []
+        subgraph_y_list = []
+        subgraph_uin_list = []
+        true_y_list = []
+        prob_y_list = []
+        pred_y_list = []
         with torch.no_grad():
             for i, batch in enumerate(self.eval_loader):
                 batch = batch.to(self.device)
@@ -693,7 +709,18 @@ class UinGangsModelTuning:
                         diff_h = expand_batch_h_g - batch_h
                         batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
                     prob_y = self.classifier(batch_h)
-                    pred_y = prob_y.argmax(dim=1)
+                    if fraudar_filter:
+                        batch['uin'].score = prob_y[:, 1]
+                        batch_idx, _ = batch['uin'].batch.unique().sort()
+                        pred_y = []
+                        for i in batch_idx:
+                            node_idx_in_subgraph_i = (batch['uin'].batch == i).nonzero().squeeze()
+                            graph_data = self.extract_single_subgraph(batch, node_idx_in_subgraph_i)
+                            i_pred_y = self.filter_by_fraudar(graph_data)
+                            pred_y.append(i_pred_y)
+                        pred_y = torch.concat(pred_y, dim=0)
+                    else:
+                        pred_y = prob_y.argmax(dim=1)
                     batch_y = batch['uin'].gang_mem.int()
                     true_y = batch_y.detach().cpu()
                     pred_y = pred_y.detach().cpu()
@@ -728,18 +755,16 @@ class UinGangsModelTuning:
                         true_num.append(true_y.sum())
                         gang_label.append(batch['uin'].y.int())
                     jaccard_list.extend(jaccard_coeff)
-                    if save_results:
-                        true_idx_list.extend(true_idx)
-                        pred_idx_list.extend(pred_idx)
-                        subgraph_y_list.extend(batch['uin'].y.detach().cpu().tolist())
-                        subgraph_uin_list.extend(batch['uin'].nodeid2uin_map)
-                    else:
-                        prob_y = torch.tensor(jaccard_coeff, device=self.device)
-                        pred_y = torch.zeros(prob_y.shape[0], device=self.device)
-                        pred_y[prob_y >= self.eval_dict["threshold"]] = 1
-                        true_y_list.append(batch['uin'].gang_label.detach().cpu().long())
-                        prob_y_list.append(prob_y.detach().cpu())
-                        pred_y_list.append(pred_y.detach().cpu())
+                    true_idx_list.extend(true_idx)
+                    pred_idx_list.extend(pred_idx)
+                    subgraph_y_list.extend(batch['uin'].y.detach().cpu().tolist())
+                    subgraph_uin_list.extend(batch['uin'].nodeid2uin_map)
+                    prob_y = torch.tensor(jaccard_coeff, device=self.device)
+                    pred_y = torch.zeros(prob_y.shape[0], device=self.device)
+                    pred_y[prob_y >= self.eval_dict["threshold"]] = 1
+                    true_y_list.append(batch['uin'].gang_label.detach().cpu().long())
+                    prob_y_list.append(prob_y.detach().cpu())
+                    pred_y_list.append(pred_y.detach().cpu())
             if self.eval_dict["is_debug"]:
                 pred_ave_density = [round(v, 4) for v in torch.stack(pred_ave_density).tolist()]
                 true_ave_density = [round(v, 4) for v in torch.stack(true_ave_density).tolist()]
@@ -754,33 +779,37 @@ class UinGangsModelTuning:
                                    'pred_density': pred_ave_density, 'true_density': true_ave_density})
                 df.to_csv(os.path.join(self.pred_save_path, self.pt_info, self.ft_info, 'check.csv'), index=False)
             # compute metrics
-            if save_results:
-                file_name = os.path.join(self.pred_save_path, self.pt_info, self.ft_info)
-                if not os.path.exists(file_name):
-                    os.makedirs(file_name)
-                file_name = os.path.join(file_name, f"{self.info_type}_f1_{self.eval_dict['best_f1']}_"
-                                                    f"{tp_tf}{is_finetune}{is_supervised}.csv")
-                self.save_output_file(true_idx_list, pred_idx_list, subgraph_uin_list,
-                                      subgraph_y_list, jaccard_list, file_name)
+            file_name = os.path.join(self.pred_save_path, self.pt_info, self.ft_info)
+            if not os.path.exists(file_name):
+                os.makedirs(file_name)
+            if fraudar_filter:
+                filter_tag = '_fraudar'
             else:
-                true_y_list = torch.concat(true_y_list, dim=0).numpy()
-                prob_y_list = torch.concat(prob_y_list, dim=0).numpy()
-                pred_y_list = torch.concat(pred_y_list, dim=0).numpy()
-                acc = accuracy_score(true_y_list, pred_y_list)
-                f1 = f1_score(true_y_list, pred_y_list)
-                pre = precision_score(true_y_list, pred_y_list)
-                rec = recall_score(true_y_list, pred_y_list)
-                roc_auc = roc_auc_score(true_y_list, prob_y_list)
-                cm = confusion_matrix(true_y_list, pred_y_list)
-                pos_jaccard = np.array(jaccard_list)[true_y_list != 0].mean()
-                neg_jaccard = np.array(jaccard_list)[true_y_list == 0].mean()
-                print(f"{self.conv_type} ACC: {acc: .4f}, "
-                      f"Precision: {pre: .4f}, "
-                      f"Recall: {rec: .4f}, "
-                      f"F1: {f1: .4f}, "
-                      f"ROC-AUC: {roc_auc: .4f}, "
-                      f"Confusion Matrix: {cm.tolist()}, "
-                      f"Pos Jaccard Coefficient: {pos_jaccard: .4f}, "
-                      f"Neg Jaccard Coefficient: {neg_jaccard: .4f}, "
-                      f"Time: {time.time() - start_time: .4f} s"
-                      )
+                filter_tag = ''
+            file_name = os.path.join(file_name, f"{self.info_type}_f1_{self.eval_dict['best_f1']}_"
+                                                f"{tp_tf}{is_finetune}{is_supervised}{filter_tag}.csv")
+            self.save_output_file(true_idx_list, pred_idx_list, subgraph_uin_list,
+                                  subgraph_y_list, jaccard_list, file_name)
+            true_y_list = torch.concat(true_y_list, dim=0).numpy()
+            prob_y_list = torch.concat(prob_y_list, dim=0).numpy()
+            pred_y_list = torch.concat(pred_y_list, dim=0).numpy()
+            acc = accuracy_score(true_y_list, pred_y_list)
+            f1 = f1_score(true_y_list, pred_y_list)
+            pre = precision_score(true_y_list, pred_y_list)
+            rec = recall_score(true_y_list, pred_y_list)
+            roc_auc = roc_auc_score(true_y_list, prob_y_list)
+            cm = confusion_matrix(true_y_list, pred_y_list)
+            pos_jaccard = np.array(jaccard_list)[true_y_list != 0].mean()
+            neg_jaccard = np.array(jaccard_list)[true_y_list == 0].mean()
+            run_time = time.time() - start_time
+            print(f"{self.conv_type} ACC: {acc: .4f}, "
+                  f"Precision: {pre: .4f}, "
+                  f"Recall: {rec: .4f}, "
+                  f"F1: {f1: .4f}, "
+                  f"ROC-AUC: {roc_auc: .4f}, "
+                  f"Confusion Matrix: {cm.tolist()}, "
+                  f"Pos Jaccard Coefficient: {pos_jaccard: .4f}, "
+                  f"Neg Jaccard Coefficient: {neg_jaccard: .4f}, "
+                  f"Time: {run_time: .4f} s"
+                  )
+            return acc, f1, pre, rec, roc_auc, pos_jaccard, neg_jaccard, run_time
