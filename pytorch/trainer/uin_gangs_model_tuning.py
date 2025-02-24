@@ -55,16 +55,7 @@ class UinGangsModelTuning:
                                   output_dim=args_dict['output_dim'],
                                   num_relations=args_dict['num_relations'],
                                   num_bases=args_dict['num_relations'])
-            elif self.conv_type == 'AttnRGCN':
-                self.attn_weight = torch.nn.Parameter(
-                    torch.sigmoid(torch.Tensor([0.6, 0.6, 0.3, 0.5, 1.3, 1.4, 0.4, 0.5, 1.5, 0.8])))
-                self.model = AttnRGCN(input_dim=args_dict['input_dim'],
-                                      hidden_dim=args_dict['hidden_dim'],
-                                      output_dim=args_dict['output_dim'],
-                                      attn_weight=self.attn_weight,
-                                      num_relations=args_dict['num_relations'],
-                                      num_bases=args_dict['num_relations'])
-            else:
+            elif self.conv_type == 'RGCN':
                 self.model = RGCN(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
@@ -130,11 +121,25 @@ class UinGangsModelTuning:
             model_weight = torch.load(file_name, map_location=self.device)
             if self.device_tag != '':
                 rename_key_model_weight = OrderedDict()
-                for key in model_weight.keys():
-                    key_weight = model_weight[key]
-                    key = key.replace('module.', '')
-                    rename_key_model_weight[key] = key_weight
-                self.model.load_state_dict(rename_key_model_weight)
+                if self.conv_type == 'AttnRGCN':
+                    self.attn_weight = model_weight['attn_weight']
+                    for key in model_weight['model'].keys():
+                        key_weight = model_weight['model'][key]
+                        key = key.replace('module.', '')
+                        rename_key_model_weight[key] = key_weight
+                    self.model = AttnRGCN(input_dim=args_dict['input_dim'],
+                                          hidden_dim=args_dict['hidden_dim'],
+                                          output_dim=args_dict['output_dim'],
+                                          attn_weight=self.attn_weight,
+                                          num_relations=args_dict['num_relations'],
+                                          num_bases=args_dict['num_relations'])
+                    self.model.load_state_dict(rename_key_model_weight)
+                else:
+                    for key in model_weight.keys():
+                        key_weight = model_weight[key]
+                        key = key.replace('module.', '')
+                        rename_key_model_weight[key] = key_weight
+                    self.model.load_state_dict(rename_key_model_weight)
             else:
                 self.model.load_state_dict(model_weight)
             print(f"Load: {file_name}")
