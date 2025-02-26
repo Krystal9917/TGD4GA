@@ -429,15 +429,18 @@ if __name__ == '__main__':
     # print(y_prob[:, 1])
     adj = torch.tensor([[0, 2, 3, 3, 0],
                         [2, 0, 0, 2, 1],
-                        [3, 0, 0, 1, 0],
+                        [3, 0, 0, 0, 1],
                         [1, 2, 1, 0, 0],
-                        [0, 3, 0, 0, 0]])
+                        [0, 2, 0, 0, 0]])
+    adj_ = torch.where(adj >= 1, 1, 0)
     y_true = torch.tensor([1, 1, 1, 1, 0])
     y_prob_1 = torch.tensor([0.8, 0.5, 0.6, 0.7, 0.5])
     cross_entropy = -torch.log(torch.tensor([0.8, 0.5, 0.6, 0.7, 0.5])).sum() / y_true.shape[0]
     selected_node_idx_1 = (y_true == 1).nonzero().squeeze()
     fielder_value_1 = compute_fiedler_value(selected_node_idx_1, adj)
+    fielder_value_1_ = compute_fiedler_value(selected_node_idx_1, adj_)
 
     selected_node_idx_2 = (y_prob_1 >= 0.5).nonzero().squeeze()
     fielder_value_2 = compute_fiedler_value(selected_node_idx_2, adj, y_prob_1)
+    fielder_value_2_ = compute_fiedler_value(selected_node_idx_2, adj_, y_prob_1)
     print()

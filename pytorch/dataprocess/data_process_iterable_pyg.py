@@ -195,6 +195,10 @@ class UinGangsDataIterablePyG(IterableDataset):
                                         (int(edge_info["dst_nodeid"]), int(edge_info["src_nodeid"])))
                             except KeyError:
                                 print("Key error")
+                # add self loops
+                graph_data[('uin', 'self_loop', 'uin')].edge_index = (
+                    torch.concat([torch.tensor([[i], [i]]) for i in range(uin_acs_numberical_feat.shape[0])], dim=1))
+                # other edge types
                 for edge_type in all_edge_type_list:
                     edge_index_set[edge_type] = list(set(edge_index_set[edge_type]))
                     edge_index = [[src, dst] for (src, dst) in edge_index_set[edge_type]]
@@ -221,7 +225,7 @@ class UinGangsDataIterablePyG(IterableDataset):
                 else:
                     graph_data['uin'].y = 1
                 if 'gangs_label' in json_data.keys():
-                    if "存在异常团伙" in json_data['gangs_label'].strip():
+                    if "异常" in json_data['gangs_label'].strip():
                         graph_data['uin'].gang_label = 1
                     else:
                         graph_data['uin'].gang_label = 0
@@ -363,7 +367,7 @@ class UinGangsDataIterablePyG(IterableDataset):
         else:
             idx = torch.zeros(graph_data['uin'].num_nodes, dtype=torch.int)
             flag = torch.tensor([0], dtype=torch.int)
-            # 筛选掉fraudar生成子图节点数小于5的样本
+            # 筛选掉fraudar生成子图节点数小于3的样本
             if len(best_graph.nodes) >= self.control_node_num:
                 idx[sorted(best_graph.nodes)] = 1
                 flag = torch.tensor([1], dtype=torch.int)

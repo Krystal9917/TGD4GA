@@ -28,7 +28,7 @@ class ArgsUinGangs:
                          "config", "yml", "uin_gangs_enum.yaml")))
         parser.add_argument('--model_states_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "saved_model", "AttnRGCN_models", "pretraining_filter_subgraph_cl")))
+                         "saved_model", "pretrained_models")))
         parser.add_argument('--export_requirements_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, "data", "config", "requirements" + ".txt")))
         parser.add_argument('--log_dir', type=str, default=os.path.abspath(
@@ -63,14 +63,12 @@ class ArgsUinGangs:
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--conv_type', type=str, default='AttnRGCN', choices=['RGCN', 'AttnRGCN', 'RGAT', 'HAN', 'HGT'])
+        parser.add_argument('--conv_type', type=str, default='MaskRGCN', choices=['RGCN', 'MaskRGCN', 'RGAT', 'HAN', 'HGT'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'intra_subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph'])
-        parser.add_argument('--W_subgraph', type=float, default=0.6)
-        parser.add_argument('--W_node', type=float, default=0.4)
         # RGCN
-        parser.add_argument('--num_relations', type=int, default=10)
+        parser.add_argument('--num_relations', type=int, default=11)
         # HAN/HGT
         parser.add_argument('--num_heads', type=int, default=2)
         parser.add_argument('--world_size', type=int, default=2)

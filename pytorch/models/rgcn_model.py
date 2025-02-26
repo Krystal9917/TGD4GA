@@ -1,6 +1,6 @@
 import torch
 from torch_geometric.nn import RGCNConv
-from .rgcn_conv import AttnRGCNConv
+from .rgcn_conv import MaskRGCNConv
 
 
 class RGCN(torch.nn.Module):
@@ -14,14 +14,14 @@ class RGCN(torch.nn.Module):
         x = self.conv2(x, edge_index, edge_type)
         return x
 
-
-class AttnRGCN(torch.nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_relations, attn_weight, num_bases=30):
+class MaskRGCN(torch.nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_relations, num_bases=10):
         super().__init__()
-        self.conv1 = AttnRGCNConv(input_dim, hidden_dim, num_relations, attn_weight, num_bases=num_bases)
-        self.conv2 = AttnRGCNConv(hidden_dim, output_dim, num_relations, attn_weight, num_bases=num_bases)
+        self.conv1 = MaskRGCNConv(input_dim, hidden_dim, num_relations, num_bases=num_bases)
+        self.conv2 = MaskRGCNConv(hidden_dim, output_dim, num_relations, num_bases=num_bases)
 
     def forward(self, x, edge_index, edge_type):
         x = self.conv1(x, edge_index, edge_type)
         x = self.conv2(x, edge_index, edge_type)
         return x
+

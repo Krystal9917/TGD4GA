@@ -12,10 +12,9 @@ import torch.utils.data as Data
 from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
 from torch.utils.tensorboard import SummaryWriter
-from torch.cuda.amp import GradScaler, autocast
 from transformers import BertModel
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, CosineAnnealingLR
-from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN, AttnRGCN
+from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN, MaskRGCN
 from mmgog_long_term_sequence_model.pytorch.models.rgat_model import RGAT
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
@@ -44,25 +43,22 @@ class UinGangsModelPreTrain:
         self.conv_type = args_dict["conv_type"]
         self.task_type = args_dict["task_type"]
         # self.scaler = GradScaler()
-        if self.conv_type in ['RGCN', 'AttnRGCN', 'RGAT']:
-            self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
-                               ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
-                               ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
-                               ('uin', 'download_app', 'uin'): 9}
+        if self.conv_type in ['RGCN', 'MaskRGCN', 'RGAT']:
+            self.edge_types = {('uin', 'self_loop', 'uin'): 0, ('uin', 'ipv6', 'uin'): 1, ('uin', 'wifi', 'uin'): 2,
+                               ('uin', 'room', 'uin'): 3, ('uin', 'friend', 'uin'): 4, ('uin', 'idcardid', 'uin'): 5,
+                               ('uin', 'device', 'uin'): 6, ('uin', 'payee', 'uin'): 7, ('uin', 'payer', 'uin'): 8,
+                               ('uin', 'bankcard', 'uin'): 9, ('uin', 'download_app', 'uin'): 10}
             if self.conv_type == 'RGCN':
                 self.model = RGCN(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
                                   num_relations=args_dict['num_relations'])
-            elif self.conv_type == 'AttnRGCN':
-                self.W_node = torch.nn.Parameter(torch.tensor(self.train_dict["W_node"]))
-                self.W_subgraph = torch.nn.Parameter(torch.tensor(self.train_dict["W_subgraph"]))
-                self.attn_weight = torch.nn.Parameter(torch.sigmoid(torch.Tensor([0.6, 0.6, 0.3, 0.5, 1.3, 1.4, 0.4, 0.5, 1.5, 0.8])))
-                self.model = AttnRGCN(input_dim=args_dict['input_dim'],
+            elif self.conv_type == 'MaskRGCN':
+                self.model = MaskRGCN(input_dim=args_dict['input_dim'],
                                       hidden_dim=args_dict['hidden_dim'],
                                       output_dim=args_dict['output_dim'],
-                                      attn_weight=self.attn_weight,
-                                      num_relations=args_dict['num_relations'])
+                                      num_relations=args_dict['num_relations'],
+                                      num_bases=args_dict['num_relations'])
             else:
                 self.model = RGAT(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
@@ -125,12 +121,7 @@ class UinGangsModelPreTrain:
             self.start_epoch = 1
             self.end_epoch = self.train_dict["n_epochs"]
         self.model.to(self.device)
-        params = [
-            {'params': self.model.parameters(), 'lr': lr},
-            {'params': self.W_node, 'lr': lr * 1e-1},
-            {'params': self.W_subgraph, 'lr': lr * 1e-1}
-        ]
-        self.optimizer = torch.optim.Adam(params)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         # lr scheduler
         if self.train_dict["lr_scheduler"] == "stepLR":
             self.scheduler = StepLR(self.optimizer,
@@ -233,6 +224,16 @@ class UinGangsModelPreTrain:
             i_fraudar_pos_h = fraudar_pos_h[pos_batch == i]
             i_subgraph_pos_h = subgraph_pos_h[pos_batch == i]
             i_subgraph_neg_h = subgraph_neg_h[neg_batch == i]
+            min_num = min(i_fraudar_pos_h.shape[0], i_subgraph_neg_h.shape[0])
+            if i_fraudar_pos_h.shape[0] > min_num:
+                pos_select_idx = [i for i in range(i_fraudar_pos_h.shape[0])]
+                random.shuffle(pos_select_idx)
+                i_fraudar_pos_h = i_fraudar_pos_h[pos_select_idx[:min_num]]
+                i_subgraph_pos_h = i_subgraph_pos_h[pos_select_idx[:min_num]]
+            if i_subgraph_neg_h.shape[0] > min_num:
+                neg_select_idx = [i for i in range(i_subgraph_neg_h.shape[0])]
+                random.shuffle(neg_select_idx)
+                i_subgraph_neg_h = i_subgraph_neg_h[neg_select_idx[:min_num]]
             cross_loss = self.preference_contrastive_loss(i_subgraph_pos_h, i_fraudar_pos_h, i_subgraph_neg_h)
             batch_loss_list.append(cross_loss)
         return torch.stack([item for item in batch_loss_list if not torch.isnan(item)]).mean()
@@ -510,7 +511,7 @@ class UinGangsModelPreTrain:
                                                                              batch_h[batch_neg_samples_idx],
                                                                              batch_pos_samples_idx_batch,
                                                                              batch_neg_samples_idx_batch)
-                                loss = self.W_node * batch_loss + self.W_subgraph * subgraph_loss
+                                loss = batch_loss + subgraph_loss
                             else:
                                 if fraudar_batch_h is not None:
                                     if self.task_type == 'fine_grained_cross_subgraph':
@@ -527,8 +528,7 @@ class UinGangsModelPreTrain:
                                             upgrade_batch_neg_samples_idx]
                                         cross_loss = self.cross_contrastive_loss(fraudar_batch_h,
                                                                                  batch_h[batch_pos_samples_idx],
-                                                                                 batch_h[
-                                                                                     upgrade_batch_neg_samples_idx],
+                                                                                 batch_h[upgrade_batch_neg_samples_idx],
                                                                                  batch_pos_samples_idx_batch,
                                                                                  upgrade_batch_neg_samples_idx_batch)
                                     else:
@@ -537,7 +537,7 @@ class UinGangsModelPreTrain:
                                                                                  batch_h[batch_neg_samples_idx],
                                                                                  batch_pos_samples_idx_batch,
                                                                                  batch_neg_samples_idx_batch)
-                                    loss = self.W_node * cross_loss + self.W_subgraph * subgraph_loss
+                                    loss = cross_loss + subgraph_loss
                                 else:
                                     loss = subgraph_loss
 
@@ -554,10 +554,6 @@ class UinGangsModelPreTrain:
                             loss_value = loss.detach().cpu().item()
                             epoch_loss.append(loss_value)
                             if (i + 1) % 5 == 0:
-                                if self.conv_type == 'AttnRGCN':
-                                    print(f"Current Edge Attention Weight: {self.attn_weight}, "
-                                          f"Inter Subgraph Loss Weight: {self.W_subgraph}, "
-                                          f"Intra Subgraph Loss Weight: {self.W_node}")
                                 if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
                                     print(
                                         "Batch: {}, Loss: {:.6f}, "
@@ -598,19 +594,10 @@ class UinGangsModelPreTrain:
                 file_name = os.path.join(self.save_model_path,
                                          f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
                                          f"{self.train_dict['temperature']}_model_best_loss.pth")
-                if self.conv_type == 'AttnRGCN':
-                    save_parameter = {
-                        'model': self.model.state_dict(),
-                        'attn_weight': self.attn_weight,
-                        'intra_weight': self.W_node,
-                        'inter_weight': self.W_subgraph,
-                    }
-                else:
-                    save_parameter = self.model.state_dict()
-                torch.save(save_parameter, file_name)
+                torch.save(self.model.state_dict(), file_name)
                 epoch_file_name = os.path.join(self.save_model_path,
                                                f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch}.pth")
-                torch.save(save_parameter, epoch_file_name)
+                torch.save(self.model.state_dict(), epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
         if not self.train_dict["is_debug"]:
             self.writer.close()

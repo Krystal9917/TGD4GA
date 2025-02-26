@@ -6,6 +6,7 @@ from torch.nn import Parameter
 
 import torch_geometric.backend
 import torch_geometric.typing
+from torch_scatter import scatter
 from torch_geometric import is_compiling
 from torch_geometric.index import index2ptr
 from torch_geometric.nn.conv import MessagePassing
@@ -26,13 +27,12 @@ def masked_edge_index(edge_index: Adj, edge_mask: Tensor) -> Adj:
     return torch_sparse.masked_select_nnz(edge_index, edge_mask, layout='coo')
 
 
-class AttnRGCNConv(MessagePassing):
+class MaskRGCNConv(MessagePassing):
     def __init__(
         self,
         in_channels: Union[int, Tuple[int, int]],
         out_channels: int,
         num_relations: int,
-        attn_weight: Tensor,
         num_bases: Optional[int] = None,
         num_blocks: Optional[int] = None,
         aggr: str = 'mean',
@@ -51,10 +51,17 @@ class AttnRGCNConv(MessagePassing):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_relations = num_relations
-        self.attn_weight = attn_weight
         self.num_bases = num_bases
         self.num_blocks = num_blocks
         self.is_sorted = is_sorted
+        self.mask_generators = torch.nn.ModuleList([
+            torch.nn.Sequential(
+                torch.nn.Linear(2 * in_channels, in_channels),
+                torch.nn.ReLU(),
+                torch.nn.Linear(in_channels, 1),
+                torch.nn.ReLU()
+            ) for _ in range(num_relations)
+        ])
 
         if isinstance(in_channels, int):
             in_channels = (in_channels, in_channels)
@@ -188,11 +195,8 @@ class AttnRGCNConv(MessagePassing):
                             size=size,
                         )
                     else:
-                        h = self.propagate(tmp, x=x_l, edge_type_ptr=None,
-                                           size=size)
+                        h = self.propagate(tmp, x=x_l, edge_type=i, size=size)
                         out = out + (h @ weight[i])
-                        # add attention
-                        out = self.attn_weight[i] * out
 
         root = self.root
         if root is not None:
@@ -205,6 +209,19 @@ class AttnRGCNConv(MessagePassing):
             out = out + self.bias
 
         return out
+
+    def propagate(self, edge_index: Adj, x: Tensor, edge_type: int,
+                  edge_type_ptr: Optional[Tensor] = None,
+                  size: Optional[Tensor] = None) -> Tensor:
+        x_out, x_in = x[edge_index[0, :]], x[edge_index[1, :]]
+        x_pair = torch.concat([x_out, x_in], dim=1)
+        passing_weight = self.mask_generators[edge_type](x_pair)
+        weighted_x_out = passing_weight * x_out
+        h_out = scatter(weighted_x_out, edge_index[1, :], dim=0, reduce='sum')
+        h = torch.zeros_like(x, device=x.device)
+        h_out_index = edge_index[1, :].unique()
+        h[h_out_index] = h_out[h_out_index]
+        return h
 
     def message(self, x_j: Tensor, edge_type_ptr: OptTensor) -> Tensor:
         if (torch_geometric.typing.WITH_SEGMM and not is_compiling()

@@ -30,7 +30,7 @@ class ArgsUinGangs:
                          "config", "yml", "uin_gangs_enum.yaml")))
         parser.add_argument('--model_states_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "saved_model", "AttnRGCN_models", "pretraining_filter_subgraph_cl")))
+                         "saved_model", "RGCN_models", "pretraining_filter_subgraph_cl")))
         parser.add_argument('--cls_model_states_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "saved_model", "cls_models")))
@@ -50,7 +50,7 @@ class ArgsUinGangs:
         parser.add_argument('--pretrain_lr', type=float, default=0.001)
         parser.add_argument('--lr_scheduler', type=str, default='',
                             choices=['', '_stepLR', '_reduceLR', '_cosineLR'])
-        parser.add_argument('--n_epochs', type=int, default=50)
+        parser.add_argument('--n_epochs', type=int, default=30)
         parser.add_argument('--uin_in_size', type=int, default=846)
         parser.add_argument('--uin_acs_numberical_feat_dim', type=int, default=290)
         parser.add_argument('--uin_acs_text_feat_dim', type=int, default=256)
@@ -76,30 +76,30 @@ class ArgsUinGangs:
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--data_tag', type=str, default='order_1930_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--device_tag', type=str, default='_GPU4', choices=['', '_GPU2', '_GPU3', '_GPU4'])
-        parser.add_argument('--eval_epoch', type=int, default=3)
+        parser.add_argument('--device_tag', type=str, default='_GPU3', choices=['', '_GPU2', '_GPU3', '_GPU4'])
+        parser.add_argument('--eval_epoch', type=int, default=13)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_gang_detection',
                             choices=['subgraph_gang_detection', 'inference_gang_members',
                                      'inference_gang_members_by_fraudar'])
         parser.add_argument('--is_finetune', type=bool, default=True)
-        parser.add_argument('--conv_type', type=str, default='AttnRGCN', choices=['RGCN', 'AttnRGCN', 'HGT', 'HAN'])
+        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'AttnRGCN', 'HGT', 'HAN'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph',
                                      'intra_subgraph'])
         parser.add_argument('--is_supervised', type=bool, default=False)
-        parser.add_argument('--info_insertion_type', type=str, default='combine_subgraph',
-                            choices=[None, 'combine_subgraph', 'concat_subgraph'])
+        parser.add_argument('--info_insertion_type', type=str, default='sag_pooling',
+                            choices=[None, 'combine_subgraph', 'concat_subgraph', 'sag_pooling'])
         parser.add_argument('--threshold', type=float, default=0.5)
         parser.add_argument('--test_times', type=int, default=5)
         parser.add_argument('--cls_lr', type=float, default=5e-5)
-        parser.add_argument('--best_test_f1', type=float, default=0.65)
+        parser.add_argument('--best_test_f1', type=float, default=0.6)
         # node classification weight
         parser.add_argument('--cls_loss_weight', type=str, default='1.0 2.0',
                             choices=['1.0 2.0', '1.0 3.0', '1.0 4.0'])
         # inner weight for positive subgraph
-        parser.add_argument('--w_p', type=float, default=0.6)
-        parser.add_argument('--w_n', type=float, default=0.4)
+        parser.add_argument('--w_p', type=float, default=1.5)
+        parser.add_argument('--w_n', type=float, default=1.0)
         # proportion of positive and negative
         parser.add_argument('--W_p', type=float, default=0.6)
         parser.add_argument('--W_n', type=float, default=0.4)
@@ -114,9 +114,10 @@ class ArgsUinGangs:
         parser.add_argument('--cls_penalty', type=bool, default=False)
         parser.add_argument('--cls_subgraph', type=bool, default=True)
         parser.add_argument('--cls_dense', type=bool, default=False)
-        parser.add_argument('--cls_connect', type=bool, default=True)
+        parser.add_argument('--cls_connect', type=bool, default=False)
         parser.add_argument('--ft_loss', type=str, default='subgraph_and_dense',
                             choices=['subgraph_and_dense', 'node_penalty'])
+        parser.add_argument('--top_ratio', type=float, default=0.1)
 
         parser.add_argument('--tn', type=int, default=76)
         parser.add_argument('--tp', type=int, default=47)
@@ -165,7 +166,7 @@ if __name__ == '__main__':
             tuning_model = UinGangsModelTuning(args.args_dict)
             print(f"*****Start {times_list[i-1]} Time Testing*****")
             (test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm,
-             pos_jac, neg_jac, run_time) = tuning_model.detect_subgraph_gang_members()
+             pos_jac, neg_jac, run_time) = tuning_model.detect_subgraph_gang_members(flag=i)
             acc_list.append(test_acc)
             pre_list.append(test_pre)
             rec_list.append(test_rec)
@@ -199,10 +200,74 @@ if __name__ == '__main__':
         pos_jac_list = []
         neg_jac_list = []
         run_time_list = []
+        fraudar_filter = True
         for i in range(1, args.args_dict["test_times"] + 1):
             print(f"*****Start {times_list[i-1]} Model Inference*****")
+            if args.args_dict["info_insertion_type"] is None and not args.args_dict["cls_connect"]:
+                if i == 1:
+                    args.args_dict['tn'] = 58
+                    args.args_dict['tp'] = 49
+                    args.args_dict['best_f1'] = '0.73'
+                elif i == 2:
+                    args.args_dict['tn'] = 66
+                    args.args_dict['tp'] = 41
+                    args.args_dict['best_f1'] = '0.73'
+                elif i == 3:
+                    args.args_dict['tn'] = 68
+                    args.args_dict['tp'] = 48
+                    args.args_dict['best_f1'] = '0.77'
+                elif i == 4:
+                    args.args_dict['tn'] = 62
+                    args.args_dict['tp'] = 45
+                    args.args_dict['best_f1'] = '0.69'
+                else:
+                    args.args_dict['tn'] = 66
+                    args.args_dict['tp'] = 42
+                    args.args_dict['best_f1'] = '0.69'
+            elif not args.args_dict["cls_connect"]:
+                if i == 1:
+                    args.args_dict['tn'] = 71
+                    args.args_dict['tp'] = 44
+                    args.args_dict['best_f1'] = '0.75'
+                elif i == 2:
+                    args.args_dict['tn'] = 74
+                    args.args_dict['tp'] = 36
+                    args.args_dict['best_f1'] = '0.73'
+                elif i == 3:
+                    args.args_dict['tn'] = 77
+                    args.args_dict['tp'] = 45
+                    args.args_dict['best_f1'] = '0.80'
+                elif i == 4:
+                    args.args_dict['tn'] = 71
+                    args.args_dict['tp'] = 45
+                    args.args_dict['best_f1'] = '0.74'
+                else:
+                    args.args_dict['tn'] = 73
+                    args.args_dict['tp'] = 43
+                    args.args_dict['best_f1'] = '0.75'
+            else:
+                if i == 1:
+                    args.args_dict['tn'] = 66
+                    args.args_dict['tp'] = 39
+                    args.args_dict['best_f1'] = '0.67'
+                elif i == 2:
+                    args.args_dict['tn'] = 67
+                    args.args_dict['tp'] = 34
+                    args.args_dict['best_f1'] = '0.65'
+                elif i == 3:
+                    args.args_dict['tn'] = 71
+                    args.args_dict['tp'] = 44
+                    args.args_dict['best_f1'] = '0.75'
+                elif i == 4:
+                    args.args_dict['tn'] = 64
+                    args.args_dict['tp'] = 43
+                    args.args_dict['best_f1'] = '0.68'
+                else:
+                    args.args_dict['tn'] = 65
+                    args.args_dict['tp'] = 43
+                    args.args_dict['best_f1'] = '0.70'
             tuning_model = UinGangsModelTuning(args.args_dict)
-            acc, pre, rec, f1, roc_auc, pos_jaccard, neg_jaccard, run_time = tuning_model.inference_gang_members()
+            acc, pre, rec, f1, roc_auc, pos_jaccard, neg_jaccard, run_time = tuning_model.inference_gang_members(flag=i, fraudar_filter=fraudar_filter)
             acc_list.append(acc)
             pre_list.append(pre)
             rec_list.append(rec)

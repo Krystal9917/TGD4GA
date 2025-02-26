@@ -18,8 +18,10 @@ from torch_scatter import scatter_mean
 from transformers import BertModel
 from torch_geometric.utils import to_dense_adj
 from torch_geometric.data import HeteroData
+from torch_geometric.nn.conv import GATConv
+from torch_geometric.nn.pool.sag_pool import SAGPooling
 from mmgog_long_term_sequence_model.pytorch.dataprocess.fraudar import fraudar
-from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN, AttnRGCN
+from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN, MaskRGCN
 from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
 from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
@@ -48,18 +50,27 @@ class UinGangsModelTuning:
 
         self.conv_type = args_dict["conv_type"]
         self.device_tag = self.eval_dict["device_tag"]
-        if self.conv_type in ['RGCN', 'AttnRGCN']:
+        if self.conv_type in ['RGCN', 'MaskRGCN']:
             if self.device_tag == '_GPU3' and self.conv_type == 'RGCN':
                 self.model = RGCN(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
                                   num_relations=args_dict['num_relations'],
                                   num_bases=args_dict['num_relations'])
+            elif self.conv_type == 'MaskRGCN':
+                self.model = MaskRGCN(input_dim=args_dict['input_dim'],
+                                      hidden_dim=args_dict['hidden_dim'],
+                                      output_dim=args_dict['output_dim'],
+                                      num_relations=args_dict['num_relations'],
+                                      num_bases=args_dict['num_relations'])
             elif self.conv_type == 'RGCN':
                 self.model = RGCN(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
                                   num_relations=args_dict['num_relations'])
+            self.sag_pooling = SAGPooling(in_channels=args_dict['output_dim'],
+                                          ratio=args_dict['top_ratio'],
+                                          GNN=GATConv).to(self.device)
             self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
                                ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
                                ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
@@ -145,7 +156,7 @@ class UinGangsModelTuning:
             print(f"Load: {file_name}")
         self.model.to(self.device)
         # set classifier
-        if self.info_type in ['combine_subgraph', 'combine_difference']:
+        if self.info_type in ['combine_subgraph', 'combine_difference', 'sag_pooling']:
             cls_input = args_dict['output_dim'] * 2
         else:
             cls_input = args_dict['output_dim']
@@ -200,6 +211,7 @@ class UinGangsModelTuning:
             if self.eval_dict["is_finetune"] or self.eval_dict["is_supervised"]:
                 params.append({'params': self.model.parameters(), 'lr': self.pretrain_lr})
             params.append({'params': self.classifier.parameters(), 'lr': self.eval_dict['cls_lr']})
+            params.append({'params': self.sag_pooling.parameters(), 'lr': self.eval_dict['cls_lr']})
             self.cls_optimizer = torch.optim.Adam(params)
             self.loss_weight = self.eval_dict['cls_loss_weight'].split(' ')
             self.loss_weight = [float(item) for item in self.loss_weight]
@@ -285,7 +297,7 @@ class UinGangsModelTuning:
         true_idx_list = []
         pred_idx_list = []
         for i in range(N):
-            subgraph_i_idx = (batch == i).nonzero().squeeze()
+            subgraph_i_idx = (batch == i).nonzero().squeeze().detach().cpu()
             i_y_true = y_true[subgraph_i_idx]
             i_y_pred = y_pred[subgraph_i_idx]
             y_true_idx = (i_y_true == 1).nonzero().squeeze().detach().cpu().tolist()
@@ -360,7 +372,7 @@ class UinGangsModelTuning:
         df.to_csv(file_name, index=False)
         print(f"===== Save Prediction File To: {file_name} =====")
 
-    def detect_subgraph_gang_members(self):
+    def detect_subgraph_gang_members(self, flag):
         if self.eval_dict["is_finetune"] or self.eval_dict["is_supervised"]:
             self.model.train()
             for param in self.model.parameters():
@@ -383,6 +395,7 @@ class UinGangsModelTuning:
         for epoch in range(1, self.eval_dict["n_epochs"] + 1):
             st = time.time()
             self.classifier.train()
+            self.sag_pooling.train()
             epoch_loss = []
             for i, batch in enumerate(self.train_loader):
                 self.cls_optimizer.zero_grad()
@@ -412,6 +425,14 @@ class UinGangsModelTuning:
                         batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                         expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
                         batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
+                    else:
+                        batch_edge_index, batch_edge_types = self.get_edge_info(batch)
+                        h_pool, edge_index_pool, edge_attr_pool, perm, mask, score = (
+                            self.sag_pooling(batch_h, batch_edge_index, batch=batch['uin'].batch))
+                        batch_h_g = scatter_mean(h_pool, perm, dim=0)
+                        expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                        diff_h = expand_batch_h_g - batch_h
+                        batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
                     pred_y = self.classifier(batch_h)
                     if self.eval_dict['ft_loss'] == 'node_penalty':
                         if self.eval_dict['cls_node']:
@@ -456,7 +477,8 @@ class UinGangsModelTuning:
             current_loss = sum(epoch_loss) / len(epoch_loss)
             print(f"Epoch {epoch}, Loss: {current_loss: .4f}, Time: {time.time() - st: .4f} s")
             (test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm,
-             test_pos_jac, test_neg_jac, test_time) = self.evaluate_classifier(task="detect_gang",
+             test_pos_jac, test_neg_jac, test_time) = self.evaluate_classifier(flag=flag,
+                                                                               task="detect_gang",
                                                                                save_results=True,
                                                                                best_f1=best_test_f1)
             if test_f1 > best_test_f1:
@@ -472,19 +494,29 @@ class UinGangsModelTuning:
                 tp_tf = f'tn_{best_test_cm[0, 0]}_tp_{best_test_cm[1, 1]}_total_{best_test_cm[0, 0] + best_test_cm[1, 1]}'
                 is_finetune = '_finetune' if self.eval_dict["is_finetune"] else ''
                 is_supervised = '_supervised' if self.eval_dict["is_supervised"] else ''
-                file_name = f"{self.info_type}_f1_{best_test_f1:.2f}_{tp_tf}{is_finetune}{is_supervised}.pth" \
-                    if self.info_type is not None else f"f1_{best_test_f1}_{tp_tf}{is_finetune}{is_supervised}.pth"
+                is_sag_pool = '_sag_pool' if self.info_type == 'sag_pooling' else ''
+                file_name = (f"{self.info_type}_ratio_{self.eval_dict['top_ratio']}_f1_{best_test_f1:.2f}_{tp_tf}"
+                             f"{is_finetune}{is_supervised}{is_sag_pool}_sample_{flag}.pth") if self.info_type is not None else \
+                    f"f1_{best_test_f1:.2f}_{tp_tf}{is_finetune}{is_supervised}{is_sag_pool}_sample_{flag}.pth"
                 file_dir = os.path.join(self.eval_dict["cls_model_states_path"], self.pt_info, self.ft_info)
                 if not os.path.exists(file_dir):
                     os.makedirs(file_dir)
                 file_name = os.path.join(file_dir, file_name)
-                torch.save(self.classifier.state_dict(), file_name)
+                if self.info_type == 'sag_pooling':
+                    params = {
+                        'cls': self.classifier.state_dict(),
+                        'pooling': self.sag_pooling.state_dict()
+                    }
+                else:
+                    params = self.classifier.state_dict()
+                torch.save(params, file_name)
                 print(f"===== Best F1: {test_f1:.4f}, Save To: {file_name} =====")
         return best_test_acc, best_test_pre, best_test_rec, best_test_f1, best_test_roc_auc, best_test_cm, best_test_pos_jac, best_test_neg_jac, best_test_time
 
-    def evaluate_classifier(self, task="subgraph", save_results=False, best_f1=0):
+    def evaluate_classifier(self, flag, task="subgraph", save_results=False, best_f1=0):
         self.classifier.eval()
         self.model.eval()
+        self.sag_pooling.eval()
         true_y_list = []
         pred_y_list = []
         prob_y_list = []
@@ -529,6 +561,14 @@ class UinGangsModelTuning:
                             batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
                             batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
+                        else:
+                            batch_edge_index, batch_edge_types = self.get_edge_info(batch)
+                            h_pool, edge_index_pool, edge_attr_pool, perm, mask, score = (
+                                self.sag_pooling(batch_h, batch_edge_index, batch=batch['uin'].batch))
+                            batch_h_g = scatter_mean(h_pool, perm, dim=0)
+                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                            diff_h = expand_batch_h_g - batch_h
+                            batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
                         pred_gang_member = self.classifier(batch_h).argmax(dim=1)
                         jaccard_coeff, true_idx, pred_idx = self.jaccard_batch(true_gang_member, pred_gang_member,
                                                                                batch['uin'].batch)
@@ -573,7 +613,8 @@ class UinGangsModelTuning:
                 file_name = os.path.join(self.pred_save_path, self.pt_info, self.ft_info)
                 if not os.path.exists(file_name):
                     os.makedirs(file_name)
-                file_name = os.path.join(file_name, f"{self.info_type}_f1_{f1:.2f}.csv")
+                file_name = os.path.join(file_name, f"{self.info_type}_ratio_{self.eval_dict['top_ratio']}"
+                                                    f"_f1_{f1:.2f}_sample_{flag}.csv")
                 self.save_output_file(true_idx_list, pred_idx_list, subgraph_uin_list,
                                       subgraph_y_list, jaccard_list, file_name)
             return acc, pre, rec, f1, roc_auc, cm, pos_jaccard, neg_jaccard, eval_time
@@ -663,13 +704,13 @@ class UinGangsModelTuning:
                 idx[sorted(best_graph.nodes)] = 1
         return idx
 
-    def inference_gang_members(self, fraudar_filter=True):
+    def inference_gang_members(self, flag, fraudar_filter=True):
         start_time = time.time()
         tp_tf = f'tn_{self.eval_dict["tn"]}_tp_{self.eval_dict["tp"]}_total_{self.eval_dict["tn"] + self.eval_dict["tp"]}'
         is_finetune = '_finetune' if self.eval_dict["is_finetune"] else ''
         is_supervised = '_supervised' if self.eval_dict["is_supervised"] else ''
-        file_name = f"{self.info_type}_f1_{self.eval_dict['best_f1']}_{tp_tf}{is_finetune}{is_supervised}.pth" \
-            if self.info_type is not None else f"f1_{self.eval_dict['best_f1']}_{tp_tf}{is_finetune}{is_supervised}.pth"
+        file_name = f"{self.info_type}_f1_{self.eval_dict['best_f1']}_{tp_tf}{is_finetune}{is_supervised}_sample_{flag}.pth" \
+            if self.info_type is not None else f"f1_{self.eval_dict['best_f1']}_{tp_tf}{is_finetune}{is_supervised}_sample_{flag}.pth"
         file_name = os.path.join(self.eval_dict["cls_model_states_path"], self.pt_info, self.ft_info, file_name)
         print(f"Load Classifier: {file_name}")
         model_weight = torch.load(file_name, map_location=self.device)
@@ -791,8 +832,10 @@ class UinGangsModelTuning:
                 filter_tag = '_fraudar'
             else:
                 filter_tag = ''
-            file_name = os.path.join(file_name, f"{self.info_type}_f1_{self.eval_dict['best_f1']}_"
-                                                f"{tp_tf}{is_finetune}{is_supervised}{filter_tag}.csv")
+            # file_name = os.path.join(file_name, f"{self.info_type}_f1_{self.eval_dict['best_f1']}_"
+            #                                     f"{tp_tf}{is_finetune}{is_supervised}{filter_tag}_sample_{flag}.csv")
+            file_name = os.path.join(file_name, f"{self.info_type}_f1_{self.eval_dict['best_f1']}_update"
+                                                f"{filter_tag}_sample_{flag}.csv")
             self.save_output_file(true_idx_list, pred_idx_list, subgraph_uin_list,
                                   subgraph_y_list, jaccard_list, file_name)
             true_y_list = torch.concat(true_y_list, dim=0).numpy()
