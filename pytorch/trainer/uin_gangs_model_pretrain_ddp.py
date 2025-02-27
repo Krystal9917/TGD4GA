@@ -9,6 +9,7 @@ os.environ['DGLBACKEND'] = 'pytorch'
 
 import numpy as np
 import torch.utils.data as Data
+from collections import OrderedDict
 from torch_geometric.utils import subgraph
 from torch_scatter import scatter_mean
 from torch.utils.tensorboard import SummaryWriter
@@ -103,9 +104,19 @@ class UinGangsModelPreTrainDDP:
             os.makedirs(self.save_model_path)
         if self.train_dict["re_train"]:
             epoch_num = self.train_dict["start_epoch"]
-            file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
+            file_name = os.path.join(self.save_model_path,
+                                     f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
+                                     f"{self.train_dict['temperature']}_model_epoch_{epoch_num}.pth")
             model_weight = torch.load(file_name, map_location=self.device)
-            self.model.load_state_dict(model_weight)
+            if '_GPU' in file_name:
+                rename_key_model_weight = OrderedDict()
+                for key in model_weight.keys():
+                    key_weight = model_weight[key]
+                    key = key.replace('module.', '')
+                    rename_key_model_weight[key] = key_weight
+                self.model.load_state_dict(rename_key_model_weight)
+            else:
+                self.model.load_state_dict(model_weight)
             self.start_epoch = epoch_num + 1
             self.end_epoch = self.start_epoch + self.train_dict["n_epochs"]
         else:
@@ -218,7 +229,8 @@ class UinGangsModelPreTrainDDP:
                 i_subgraph_neg_h = i_subgraph_neg_h[neg_select_idx[:min_num]]
             cross_loss = self.preference_contrastive_loss(i_fraudar_pos_h, i_subgraph_pos_h, i_subgraph_neg_h)
             batch_loss_list.append(cross_loss)
-        return torch.stack([item for item in batch_loss_list if not torch.isnan(item)]).mean()
+        batch_loss_list = [item for item in batch_loss_list if not torch.isnan(item)]
+        return torch.stack(batch_loss_list).mean() if len(batch_loss_list) != 0 else torch.tensor(0, device=self.device)
 
     def compute_anomalous_subgraph_anchor(self, raw_feature_x, batch):
         idx_list = batch.unique().detach().cpu().tolist()
