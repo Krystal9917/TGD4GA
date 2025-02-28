@@ -138,7 +138,7 @@ class ModelPreTrain:
              edge_type in batch.edge_types])
         return edge_index, edge_type.long()
 
-    def rgcn_fit(self, batch):
+    def relation_fit(self, batch):
         try:
             batch_edge_index, batch_edge_types = self.get_edge_info(batch)
             normalized_x = torch.nn.functional.normalize(batch[self.target_node_name].x, dim=1)
@@ -300,7 +300,7 @@ class ModelPreTrain:
                     ave_types.append(len(batch_subgraph.edge_types))
 
                 # raw subgraph
-                batch_h = self.rgcn_fit(batch_subgraph)
+                batch_h = self.relation_fit(batch_subgraph)
                 batch_h_g = scatter_mean(batch_h, batch_subgraph[self.target_node_name].batch, dim=0)
 
                 pos_subgraph_idx = (
@@ -321,7 +321,7 @@ class ModelPreTrain:
                     fraudar_batch_subgraph = self.extract_smaller_batch_subgraph(batch_subgraph)
                     fraudar_batch_subgraph = fraudar_batch_subgraph.to(self.device)
 
-                    fraudar_batch_h = self.rgcn_fit(fraudar_batch_subgraph)
+                    fraudar_batch_h = self.relation_fit(fraudar_batch_subgraph)
                     if fraudar_batch_h is not None:
                         fraudar_batch_h_g = scatter_mean(fraudar_batch_h,
                                                          fraudar_batch_subgraph[self.target_node_name].batch, dim=0)
@@ -504,7 +504,7 @@ class ModelPreTrain:
                 batch_subgraph = Batch.from_data_list(batch_subgraph).to(self.device)
 
                 # raw subgraph
-                batch_h = self.rgcn_fit(batch_subgraph)
+                batch_h = self.relation_fit(batch_subgraph)
                 batch_y = batch_subgraph[self.target_node_name].y.float()
 
                 pred_y = self.classifier(batch_h)
@@ -547,7 +547,7 @@ class ModelPreTrain:
                 batch_subgraph = Batch.from_data_list(batch_subgraph).to(self.device)
 
                 # raw subgraph
-                batch_h = self.rgcn_fit(batch_subgraph)
+                batch_h = self.relation_fit(batch_subgraph)
                 batch_y = batch_subgraph[self.target_node_name].y.argmax(dim=1).long()
 
                 prob_y = self.classifier(batch_h)

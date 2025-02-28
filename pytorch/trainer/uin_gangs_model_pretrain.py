@@ -43,44 +43,25 @@ class UinGangsModelPreTrain:
         self.conv_type = args_dict["conv_type"]
         self.task_type = args_dict["task_type"]
         # self.scaler = GradScaler()
-        if self.conv_type in ['RGCN', 'MaskRGCN', 'RGAT']:
+        if self.conv_type == 'RGCN':
+            self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
+                               ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
+                               ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
+                               ('uin', 'download_app', 'uin'): 9}
+            self.model = RGCN(input_dim=args_dict['input_dim'],
+                              hidden_dim=args_dict['hidden_dim'],
+                              output_dim=args_dict['output_dim'],
+                              num_relations=args_dict['num_relations'])
+        else:
             self.edge_types = {('uin', 'self_loop', 'uin'): 0, ('uin', 'ipv6', 'uin'): 1, ('uin', 'wifi', 'uin'): 2,
                                ('uin', 'room', 'uin'): 3, ('uin', 'friend', 'uin'): 4, ('uin', 'idcardid', 'uin'): 5,
                                ('uin', 'device', 'uin'): 6, ('uin', 'payee', 'uin'): 7, ('uin', 'payer', 'uin'): 8,
                                ('uin', 'bankcard', 'uin'): 9, ('uin', 'download_app', 'uin'): 10}
-            if self.conv_type == 'RGCN':
-                self.model = RGCN(input_dim=args_dict['input_dim'],
+            self.model = MaskRGCN(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
-                                  num_relations=args_dict['num_relations'])
-            elif self.conv_type == 'MaskRGCN':
-                self.model = MaskRGCN(input_dim=args_dict['input_dim'],
-                                      hidden_dim=args_dict['hidden_dim'],
-                                      output_dim=args_dict['output_dim'],
-                                      num_relations=args_dict['num_relations'],
-                                      num_bases=args_dict['num_relations'])
-            else:
-                self.model = RGAT(input_dim=args_dict['input_dim'],
-                                  hidden_dim=args_dict['hidden_dim'],
-                                  output_dim=args_dict['output_dim'],
-                                  num_heads=args_dict['num_heads'],
-                                  num_relations=args_dict['num_relations'])
-        else:
-            self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
-                                       ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
-                                       ('uin', 'payee', 'uin'), ('uin', 'payer', 'uin'), ('uin', 'bankcard', 'uin'),
-                                       ('uin', 'download_app', 'uin')])
-            if self.conv_type == 'HAN':
-                self.model = HAN(in_channels=args_dict['input_dim'],
-                                 out_channels=args_dict['output_dim'],
-                                 metadata=self.metadata,
-                                 heads=args_dict['num_heads'])
-            else:
-                self.model = HeteroGraphTransformer(in_channels=args_dict['input_dim'],
-                                                    hidden_channels=args_dict['hidden_dim'],
-                                                    out_channels=args_dict['output_dim'],
-                                                    metadata=self.metadata,
-                                                    heads=args_dict['num_heads'])
+                                  num_relations=args_dict['num_relations'],
+                                  num_bases=args_dict['num_relations'])
 
         lr = self.train_dict["lr"]
         control_node_num = self.train_dict["filter_node_num"]
@@ -97,24 +78,35 @@ class UinGangsModelPreTrain:
                                                     batch_size=self.train_dict["batch_size"],
                                                     num_workers=self.train_dict["num_workers"],
                                                     collate_fn=self.train_data.pos_collate_fn_for_fraudar)
+        self.log_file_path = (f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_"
+                              f"{control_node_num}_lr_{str(lr)}_{self.train_dict['lr_scheduler']}")
+        log_path = os.path.abspath(os.path.join(args_dict['log_dir'],
+                                                self.train_dict["model_states_path"].split('/')[-1],
+                                                self.log_file_path))
+        self.save_model_path = os.path.join(self.train_dict["model_states_path"], self.log_file_path)
         if not self.train_dict["is_debug"]:
-            self.log_file_path = (f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_"
-                                  f"{control_node_num}_lr_{str(lr)}_{self.train_dict['lr_scheduler']}")
-            log_path = os.path.abspath(
-                os.path.join(args_dict['log_dir'], self.train_dict["model_states_path"].split('/')[-1],
-                             self.log_file_path))
             if not os.path.exists(log_path):
                 os.makedirs(log_path)
             self.writer = SummaryWriter(log_dir=log_path)
-            self.save_model_path = os.path.join(self.train_dict["model_states_path"], self.log_file_path)
             if not os.path.exists(self.save_model_path):
                 os.makedirs(self.save_model_path)
         # Retrain Setting
         if self.train_dict["re_train"]:
             epoch_num = self.train_dict["start_epoch"]
-            file_name = os.path.join(self.save_model_path, f"uin_gangs_{self.conv_type}_model_epoch_{epoch_num}.pth")
+            file_name = os.path.join(self.save_model_path,
+                                     f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
+                                     f"{self.train_dict['temperature']}_model_epoch_{epoch_num}.pth")
             model_weight = torch.load(file_name, map_location=self.device)
-            self.model.load_state_dict(model_weight)
+            if 'GPU' in file_name:
+                rename_key_model_weight = OrderedDict()
+                for key in model_weight.keys():
+                    key_weight = model_weight[key]
+                    key = key.replace('module.', '')
+                    rename_key_model_weight[key] = key_weight
+                self.model.load_state_dict(rename_key_model_weight)
+            else:
+                self.model.load_state_dict(model_weight)
+            print(f"Load: {file_name}")
             self.start_epoch = epoch_num + 1
             self.end_epoch = self.start_epoch + self.train_dict["n_epochs"]
         else:

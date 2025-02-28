@@ -22,8 +22,6 @@ from torch_geometric.nn.conv import GATConv
 from torch_geometric.nn.pool.sag_pool import SAGPooling
 from mmgog_long_term_sequence_model.pytorch.dataprocess.fraudar import fraudar
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN, MaskRGCN
-from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
-from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
 from mmgog_long_term_sequence_model.utils.utils import batch_subgraph_loss_based_cross_entropy, \
     batch_dense_loss_based_cross_entropy, batch_connect_loss
@@ -48,54 +46,42 @@ class UinGangsModelTuning:
         print(f"minirbt_model params size: {minirbt_model_params_size}")
         self.minirbt_model.to(self.device)
 
-        self.conv_type = args_dict["conv_type"]
+        self.conv_type = self.eval_dict["conv_type"]
         self.device_tag = self.eval_dict["device_tag"]
-        if self.conv_type in ['RGCN', 'MaskRGCN']:
+        self.pooling = self.eval_dict["pooling"]
+        self.prompt_type = self.eval_dict["prompt_type"]
+        if self.pooling == 'sag_pool':
+            self.sag_pooling = SAGPooling(in_channels=args_dict['output_dim'],
+                                          ratio=args_dict['top_ratio'],
+                                          GNN=GATConv).to(self.device)
+        if self.prompt_type == 'single_token':
+            self.prompt = torch.nn.Parameter(torch.rand(1, args_dict['input_dim'], requires_grad=True))
+        if self.conv_type == 'RGCN':
+            self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1,
+                               ('uin', 'room', 'uin'): 2, ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4,
+                               ('uin', 'device', 'uin'): 5, ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7,
+                               ('uin', 'bankcard', 'uin'): 8, ('uin', 'download_app', 'uin'): 9}
             if self.device_tag == '_GPU3' and self.conv_type == 'RGCN':
                 self.model = RGCN(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
                                   num_relations=args_dict['num_relations'],
                                   num_bases=args_dict['num_relations'])
-            elif self.conv_type == 'MaskRGCN':
-                self.model = MaskRGCN(input_dim=args_dict['input_dim'],
-                                      hidden_dim=args_dict['hidden_dim'],
-                                      output_dim=args_dict['output_dim'],
-                                      num_relations=args_dict['num_relations'],
-                                      num_bases=args_dict['num_relations'])
-            elif self.conv_type == 'RGCN':
+            else:
                 self.model = RGCN(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
                                   num_relations=args_dict['num_relations'])
-            self.sag_pooling = SAGPooling(in_channels=args_dict['output_dim'],
-                                          ratio=args_dict['top_ratio'],
-                                          GNN=GATConv).to(self.device)
-            self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
-                               ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
-                               ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
-                               ('uin', 'download_app', 'uin'): 9}
-            self.filter_edge_types = [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
-                                      ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
-                                      ('uin', 'bankcard', 'uin')]
-        elif self.conv_type in ['HGT', 'HAN']:
-            self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
-                                       ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
-                                       ('uin', 'payee', 'uin'), ('uin', 'payer', 'uin'), ('uin', 'bankcard', 'uin'),
-                                       ('uin', 'download_app', 'uin')])
-            if self.conv_type == 'HGT':
-                self.model = HeteroGraphTransformer(
-                    in_channels=args_dict['input_dim'],
-                    hidden_channels=args_dict['hidden_dim'],
-                    out_channels=args_dict['output_dim'],
-                    metadata=self.metadata,
-                    heads=args_dict['num_heads']
-                )
-            else:
-                self.model = HAN(in_channels=args_dict['input_dim'],
-                                 out_channels=args_dict['output_dim'],
-                                 metadata=self.metadata,
-                                 heads=args_dict['num_heads'])
+        else:
+            self.edge_types = {('uin', 'self_loop', 'uin'): 0, ('uin', 'ipv6', 'uin'): 1, ('uin', 'wifi', 'uin'): 2,
+                               ('uin', 'room', 'uin'): 3, ('uin', 'friend', 'uin'): 4, ('uin', 'idcardid', 'uin'): 5,
+                               ('uin', 'device', 'uin'): 6, ('uin', 'payee', 'uin'): 7, ('uin', 'payer', 'uin'): 8,
+                               ('uin', 'bankcard', 'uin'): 9, ('uin', 'download_app', 'uin'): 10}
+            self.model = MaskRGCN(input_dim=args_dict['input_dim'],
+                                  hidden_dim=args_dict['hidden_dim'],
+                                  output_dim=args_dict['output_dim'],
+                                  num_relations=args_dict['num_relations'],
+                                  num_bases=args_dict['num_relations'])
         self.pretrain_lr = self.eval_dict['pretrain_lr']
         self.control_node_num = self.eval_dict["filter_node_num"]
         self.task_type = self.eval_dict["task_type"]
@@ -142,7 +128,7 @@ class UinGangsModelTuning:
             print(f"Load: {file_name}")
         self.model.to(self.device)
         # set classifier
-        if self.info_type in ['combine_subgraph', 'combine_difference', 'sag_pooling']:
+        if self.info_type in ['combine_subgraph', 'combine_difference']:
             cls_input = args_dict['output_dim'] * 2
         else:
             cls_input = args_dict['output_dim']
@@ -197,7 +183,10 @@ class UinGangsModelTuning:
             if self.eval_dict["is_finetune"] or self.eval_dict["is_supervised"]:
                 params.append({'params': self.model.parameters(), 'lr': self.pretrain_lr})
             params.append({'params': self.classifier.parameters(), 'lr': self.eval_dict['cls_lr']})
-            params.append({'params': self.sag_pooling.parameters(), 'lr': self.eval_dict['cls_lr']})
+            if self.pooling == 'sag_pool':
+                params.append({'params': self.sag_pooling.parameters(), 'lr': self.eval_dict['cls_lr']})
+            if self.prompt_type == 'single_token':
+                params.append({'params': self.prompt, 'lr': self.eval_dict['cls_lr']})
             self.cls_optimizer = torch.optim.Adam(params)
             self.loss_weight = self.eval_dict['cls_loss_weight'].split(' ')
             self.loss_weight = [float(item) for item in self.loss_weight]
@@ -254,7 +243,7 @@ class UinGangsModelTuning:
                     graph_data[edge_type].edge_index = edge_index
         return graph_data
 
-    def rgcn_fit(self, pos_batch, batch_x):
+    def relation_fit(self, pos_batch, batch_x):
         try:
             batch_edge_index, batch_edge_types = self.get_edge_info(pos_batch)
             batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
@@ -263,14 +252,6 @@ class UinGangsModelTuning:
             return None
         else:
             return batch_h
-
-    def hetero_fit(self, x_dict, edge_index_dict):
-        filter_edge_dict = {}
-        for edge_type in list(edge_index_dict.keys()):
-            if edge_type in self.metadata[1]:
-                filter_edge_dict[edge_type] = edge_index_dict[edge_type]
-        out = self.model(x_dict, filter_edge_dict)
-        return out
 
     def jaccard(self, set_a, set_b):
         intersection = torch.sum(set_a & set_b)
@@ -381,7 +362,10 @@ class UinGangsModelTuning:
         for epoch in range(1, self.eval_dict["n_epochs"] + 1):
             st = time.time()
             self.classifier.train()
-            self.sag_pooling.train()
+            if self.pooling == 'sag_pool':
+                self.sag_pooling.train()
+            if self.prompt_type is not None:
+                self.prompt.requires_grad_(True)
             epoch_loss = []
             for i, batch in enumerate(self.train_loader):
                 self.cls_optimizer.zero_grad()
@@ -394,31 +378,28 @@ class UinGangsModelTuning:
                 # combine numerical, categorical and text attributes
                 batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
+                if self.prompt_type == 'single_token':
+                    batch_x = batch_x + self.prompt.to(self.device)
                 batch['uin'].x = batch_x
-                if self.conv_type in ['RGCN', 'AttnRGCN']:
-                    batch_h = self.rgcn_fit(batch, batch['uin'].x)
-                else:
-                    batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
+                batch_h = self.relation_fit(batch, batch['uin'].x)
                 # get edge information
                 if batch_h is not None:
                     batch_y = batch['uin'].gang_mem.long()
-                    if self.info_type == 'combine_subgraph':
-                        batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                    if self.info_type in ['combine_subgraph', 'concat_subgraph']:
+                        if self.pooling == 'sag_pool':
+                            batch_edge_index, batch_edge_types = self.get_edge_info(batch)
+                            h_pool, edge_index_pool, edge_attr_pool, perm, mask, score = (
+                                self.sag_pooling(batch_h, batch_edge_index, batch=batch['uin'].batch))
+                            batch_h_g = scatter_mean(h_pool, perm, dim=0)
+                        else:
+                            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
                         expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                        diff_h = expand_batch_h_g - batch_h
-                        batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
-                    elif self.info_type == 'concat_subgraph':
-                        batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                        expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                        batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
-                    else:
-                        batch_edge_index, batch_edge_types = self.get_edge_info(batch)
-                        h_pool, edge_index_pool, edge_attr_pool, perm, mask, score = (
-                            self.sag_pooling(batch_h, batch_edge_index, batch=batch['uin'].batch))
-                        batch_h_g = scatter_mean(h_pool, perm, dim=0)
-                        expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                        diff_h = expand_batch_h_g - batch_h
-                        batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
+                        if self.info_type == 'combine_subgraph':
+                            diff_h = expand_batch_h_g - batch_h
+                            batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
+                        else:
+                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                            batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
                     pred_y = self.classifier(batch_h)
                     if self.eval_dict['ft_loss'] == 'node_penalty':
                         if self.eval_dict['cls_node']:
@@ -488,13 +469,11 @@ class UinGangsModelTuning:
                 if not os.path.exists(file_dir):
                     os.makedirs(file_dir)
                 file_name = os.path.join(file_dir, file_name)
+                params = {'cls': self.classifier.state_dict()}
                 if self.info_type == 'sag_pooling':
-                    params = {
-                        'cls': self.classifier.state_dict(),
-                        'pooling': self.sag_pooling.state_dict()
-                    }
-                else:
-                    params = self.classifier.state_dict()
+                    params['pooling'] = self.sag_pooling.state_dict()
+                if self.prompt_type is not None:
+                    params['prompt'] = self.prompt
                 torch.save(params, file_name)
                 print(f"===== Best F1: {test_f1:.4f}, Save To: {file_name} =====")
         return best_test_acc, best_test_pre, best_test_rec, best_test_f1, best_test_roc_auc, best_test_cm, best_test_pos_jac, best_test_neg_jac, best_test_time
@@ -502,7 +481,10 @@ class UinGangsModelTuning:
     def evaluate_classifier(self, flag, task="subgraph", save_results=False, best_f1=0):
         self.classifier.eval()
         self.model.eval()
-        self.sag_pooling.eval()
+        if self.pooling == 'sag_pool':
+            self.sag_pooling.eval()
+        if self.prompt_type is not None:
+            self.prompt.requires_grad_(False)
         true_y_list = []
         pred_y_list = []
         prob_y_list = []
@@ -524,37 +506,33 @@ class UinGangsModelTuning:
                 # combine numerical, categorical and text attributes
                 batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
+                if self.prompt_type == 'single_token':
+                    batch_x = batch_x + self.prompt.to(self.device)
                 batch['uin'].x = batch_x
-                if self.conv_type in ['RGCN', 'AttnRGCN']:
-                    batch_h = self.rgcn_fit(batch, batch['uin'].x)
-                else:
-                    batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
+                batch_h = self.relation_fit(batch, batch['uin'].x)
                 if batch_h is not None:
-                    if task == "subgraph":
+                    if self.pooling == 'sag_pool':
+                        batch_edge_index, batch_edge_types = self.get_edge_info(batch)
+                        h_pool, edge_index_pool, edge_attr_pool, perm, mask, score = (
+                            self.sag_pooling(batch_h, batch_edge_index, batch=batch['uin'].batch))
+                        batch_h_g = scatter_mean(h_pool, perm, dim=0)
+                    else:
                         batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                    if task == "subgraph":
                         batch_y = batch['uin'].gang_label
                         prob_y = self.classifier(batch_h_g)[:, 1]
                         pred_y = self.classifier(batch_h_g).argmax(dim=1)
                     else:
                         batch_y = batch['uin'].gang_label.long()
                         true_gang_member = batch['uin'].gang_mem.int()
-                        if self.info_type == 'combine_subgraph':
-                            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
+                        if self.info_type in ['combine_subgraph', 'concat_subgraph']:
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                            diff_h = expand_batch_h_g - batch_h
-                            batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
-                        elif self.info_type == 'concat_subgraph':
-                            batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                            batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
-                        else:
-                            batch_edge_index, batch_edge_types = self.get_edge_info(batch)
-                            h_pool, edge_index_pool, edge_attr_pool, perm, mask, score = (
-                                self.sag_pooling(batch_h, batch_edge_index, batch=batch['uin'].batch))
-                            batch_h_g = scatter_mean(h_pool, perm, dim=0)
-                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                            diff_h = expand_batch_h_g - batch_h
-                            batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
+                            if self.info_type == 'combine_subgraph':
+                                diff_h = expand_batch_h_g - batch_h
+                                batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
+                            else:
+                                expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                                batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
                         pred_gang_member = self.classifier(batch_h).argmax(dim=1)
                         jaccard_coeff, true_idx, pred_idx = self.jaccard_batch(true_gang_member, pred_gang_member,
                                                                                batch['uin'].batch)
@@ -700,8 +678,15 @@ class UinGangsModelTuning:
         file_name = os.path.join(self.eval_dict["cls_model_states_path"], self.pt_info, self.ft_info, file_name)
         print(f"Load Classifier: {file_name}")
         model_weight = torch.load(file_name, map_location=self.device)
-        self.classifier.load_state_dict(model_weight)
+        self.classifier.load_state_dict(model_weight['cls'])
         self.classifier.eval()
+        self.model.eval()
+        if self.pooling == 'sag_pool':
+            self.sag_pooling.eval()
+        if self.prompt_type is not None:
+            self.prompt = model_weight['prompt']
+            self.prompt.to(self.device)
+            self.prompt.requires_grad_(False)
         jaccard_list = []
         if self.eval_dict["is_debug"]:
             true_ave_density = []
@@ -729,17 +714,25 @@ class UinGangsModelTuning:
                 # combine numerical, categorical and text attributes
                 batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
+                if self.prompt_type == 'single_token':
+                    batch_x = batch_x + self.prompt
                 batch['uin'].x = batch_x
-                if self.conv_type in ['RGCN', 'AttnRGCN']:
-                    batch_h = self.rgcn_fit(batch, batch['uin'].x)
-                else:
-                    batch_h = self.hetero_fit(batch.x_dict, batch.edge_index_dict)
+                batch_h = self.relation_fit(batch, batch['uin'].x)
                 if batch_h is not None:
-                    if self.info_type == 'combine_subgraph':
+                    if self.pooling == 'sag_pool':
+                        batch_edge_index, batch_edge_types = self.get_edge_info(batch)
+                        h_pool, edge_index_pool, edge_attr_pool, perm, mask, score = (
+                            self.sag_pooling(batch_h, batch_edge_index, batch=batch['uin'].batch))
+                        batch_h_g = scatter_mean(h_pool, perm, dim=0)
+                    else:
                         batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                        expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                    expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                    if self.info_type == 'combine_subgraph':
                         diff_h = expand_batch_h_g - batch_h
                         batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
+                    else:
+                        expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                        batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
                     prob_y = self.classifier(batch_h)
                     if fraudar_filter:
                         batch['uin'].score = prob_y[:, 1]

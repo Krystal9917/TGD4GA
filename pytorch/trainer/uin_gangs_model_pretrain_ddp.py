@@ -45,46 +45,26 @@ class UinGangsModelPreTrainDDP:
         self.scaler = GradScaler()
         self.conv_type = args_dict["conv_type"]
         self.task_type = args_dict["task_type"]
-        if self.conv_type in ['RGCN', 'MaskRGCN', 'RGAT']:
+        if self.conv_type == 'RGCN':
+            self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
+                               ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
+                               ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
+                               ('uin', 'download_app', 'uin'): 9}
+            self.model = RGCN(input_dim=args_dict['input_dim'],
+                              hidden_dim=args_dict['hidden_dim'],
+                              output_dim=args_dict['output_dim'],
+                              num_relations=args_dict['num_relations'],
+                              num_bases=args_dict['num_relations'])
+        else:
             self.edge_types = {('uin', 'self_loop', 'uin'): 0, ('uin', 'ipv6', 'uin'): 1, ('uin', 'wifi', 'uin'): 2,
                                ('uin', 'room', 'uin'): 3, ('uin', 'friend', 'uin'): 4, ('uin', 'idcardid', 'uin'): 5,
                                ('uin', 'device', 'uin'): 6, ('uin', 'payee', 'uin'): 7, ('uin', 'payer', 'uin'): 8,
                                ('uin', 'bankcard', 'uin'): 9, ('uin', 'download_app', 'uin'): 10}
-            if self.conv_type == 'RGCN':
-                self.model = RGCN(input_dim=args_dict['input_dim'],
+            self.model = MaskRGCN(input_dim=args_dict['input_dim'],
                                   hidden_dim=args_dict['hidden_dim'],
                                   output_dim=args_dict['output_dim'],
                                   num_relations=args_dict['num_relations'],
                                   num_bases=args_dict['num_relations'])
-            elif self.conv_type == 'MaskRGCN':
-                self.model = MaskRGCN(input_dim=args_dict['input_dim'],
-                                      hidden_dim=args_dict['hidden_dim'],
-                                      output_dim=args_dict['output_dim'],
-                                      num_relations=args_dict['num_relations'],
-                                      num_bases=args_dict['num_relations'])
-            else:
-                self.model = RGAT(input_dim=args_dict['input_dim'],
-                                  hidden_dim=args_dict['hidden_dim'],
-                                  output_dim=args_dict['output_dim'],
-                                  num_heads=args_dict['num_heads'],
-                                  num_bases=args_dict['num_relations'],
-                                  num_relations=args_dict['num_relations'])
-        elif self.conv_type in ['HAN', 'HGT']:
-            self.metadata = (['uin'], [('uin', 'ipv6', 'uin'), ('uin', 'wifi', 'uin'), ('uin', 'room', 'uin'),
-                                       ('uin', 'friend', 'uin'), ('uin', 'idcardid', 'uin'), ('uin', 'device', 'uin'),
-                                       ('uin', 'payee', 'uin'), ('uin', 'payer', 'uin'), ('uin', 'bankcard', 'uin'),
-                                       ('uin', 'download_app', 'uin')])
-            if self.conv_type == 'HAN':
-                self.model = HAN(in_channels=args_dict['input_dim'],
-                                 out_channels=args_dict['output_dim'],
-                                 metadata=self.metadata,
-                                 heads=args_dict['num_heads'])
-            else:
-                self.model = HeteroGraphTransformer(in_channels=args_dict['input_dim'],
-                                                    hidden_channels=args_dict['hidden_dim'],
-                                                    out_channels=args_dict['output_dim'],
-                                                    metadata=self.metadata,
-                                                    heads=args_dict['num_heads'])
         lr = self.train_dict["lr"]
         control_node_num = self.train_dict["filter_node_num"]
         sampling_type = self.train_dict["sampling"]
@@ -536,6 +516,8 @@ class UinGangsModelPreTrainDDP:
                                     loss = subgraph_loss
                         else:
                             loss = subgraph_loss
+                    print("Rank: {}, Batch: {}, Cross Loss: {:.6f}, Subgraph Loss: {:.6f}".format(
+                        self.rank, i + 1, cross_loss.detach().cpu().item(), subgraph_loss.detach().cpu().item()))
                     if not torch.isnan(loss) and loss != torch.tensor(0):
                         self.scaler.scale(loss).backward()
                         self.scaler.step(self.optimizer)
@@ -544,7 +526,7 @@ class UinGangsModelPreTrainDDP:
                         # self.optimizer.step()
                         loss_value = loss.detach().cpu().item()
                         epoch_loss.append(loss_value)
-                        if (i + 1) % 50 == 0:
+                        if (i + 1) % 100 == 0:
                             if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
                                 print(
                                     "Rank: {}, Batch: {}, Loss: {:.6f}, "

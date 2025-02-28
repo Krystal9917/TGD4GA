@@ -81,15 +81,19 @@ class ArgsUinGangs:
         parser.add_argument('--evaluate_task', type=str, default='subgraph_gang_detection',
                             choices=['subgraph_gang_detection', 'inference_gang_members',
                                      'inference_gang_members_by_fraudar'])
-        parser.add_argument('--is_finetune', type=bool, default=True)
-        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'AttnRGCN', 'HGT', 'HAN'])
+        parser.add_argument('--is_finetune', type=bool, default=False)
+        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'MaskRGCN'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph',
                                      'intra_subgraph'])
         parser.add_argument('--is_supervised', type=bool, default=False)
-        parser.add_argument('--info_insertion_type', type=str, default='sag_pooling',
-                            choices=[None, 'combine_subgraph', 'concat_subgraph', 'sag_pooling'])
+        parser.add_argument('--pooling', default='mean', choices=['mean', 'sag_pool'])
+        parser.add_argument('--top_ratio', type=float, default=0.1)
+        parser.add_argument('--info_insertion_type', type=str, default='combine_subgraph',
+                            choices=[None, 'combine_subgraph', 'concat_subgraph'])
+        parser.add_argument('--prompt_type', type=str, default='single_token',
+                            choices=[None, 'single_token'])
         parser.add_argument('--threshold', type=float, default=0.5)
         parser.add_argument('--test_times', type=int, default=5)
         parser.add_argument('--cls_lr', type=float, default=5e-5)
@@ -117,7 +121,6 @@ class ArgsUinGangs:
         parser.add_argument('--cls_connect', type=bool, default=False)
         parser.add_argument('--ft_loss', type=str, default='subgraph_and_dense',
                             choices=['subgraph_and_dense', 'node_penalty'])
-        parser.add_argument('--top_ratio', type=float, default=0.1)
 
         parser.add_argument('--tn', type=int, default=76)
         parser.add_argument('--tp', type=int, default=47)

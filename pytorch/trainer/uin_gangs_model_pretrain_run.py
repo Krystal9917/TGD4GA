@@ -68,7 +68,7 @@ class ArgsUinGangs:
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--conv_type', type=str, default='RGCN',
-                            choices=['RGCN', 'MaskRGCN', 'RGAT', 'HAN', 'HGT'])
+                            choices=['RGCN', 'MaskRGCN'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_cross_subgraph', 'fine_grained_batch_subgraph'])
