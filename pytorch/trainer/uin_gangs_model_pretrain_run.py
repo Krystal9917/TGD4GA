@@ -15,7 +15,7 @@ class ArgsUinGangs:
         parser.add_argument('--train_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "train", "raw",
-                         "uin_gangs_full_graph_dataset_train_241119_241130.txt")))
+                         "uin_gangs_full_graph_dataset_train_241119_241121.txt")))
         parser.add_argument('--test_data_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "eval", "raw",
@@ -39,8 +39,8 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
         parser.add_argument('--best_loss', type=float, default=1e2)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
-        parser.add_argument('--batch_size', type=int, default=64)
-        parser.add_argument('--data_buffer_size', type=int, default=64)
+        parser.add_argument('--batch_size', type=int, default=32)
+        parser.add_argument('--data_buffer_size', type=int, default=32)
         parser.add_argument('--lr', type=float, default=0.001)
         parser.add_argument('--lr_scheduler', type=str, default=None,
                             choices=[None, 'stepLR', 'reduceLR', 'cosineLR'])
@@ -57,7 +57,7 @@ class ArgsUinGangs:
         parser.add_argument('--onnx_opset', type=int, default=15)
         parser.add_argument('--seed', type=int, default=42)
         parser.add_argument('--num_workers', type=int, default=32)
-        parser.add_argument('--temperature', type=int, default=0.8)
+        parser.add_argument('--temperature', type=int, default=1)
         parser.add_argument('--input_dim', type=int, default=846)
         parser.add_argument('--hidden_dim', type=int, default=1024)
         parser.add_argument('--output_dim', type=int, default=128)
@@ -67,7 +67,7 @@ class ArgsUinGangs:
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--conv_type', type=str, default='RGCN',
+        parser.add_argument('--conv_type', type=str, default='MaskRGCN',
                             choices=['RGCN', 'MaskRGCN'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
@@ -78,7 +78,7 @@ class ArgsUinGangs:
         parser.add_argument('--num_relations', type=int, default=11)
         # RGAT/HAN/HGT
         parser.add_argument('--num_heads', type=int, default=2)
-        parser.add_argument('--data_tag', type=str, default='order_1930_',
+        parser.add_argument('--data_tag', type=str, default='1921_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
         parser.add_argument('--similarity_diff', type=float, default=0.15)
         args = parser.parse_args()
@@ -88,10 +88,11 @@ class ArgsUinGangs:
 
 def run_pretraining_graph(args):
     print(f"Training Parameters: {args.args_dict}")
-    args.args_dict["train_data_path"] = ("/chongqinggeminiceph1fs/geminicephfs/security-others-common/"
-                                         "jiujiuchen/projects/mmgog_long_term_sequence_model/data/"
-                                         "uin_gangs_full_graph_dataset/valid/processed/split_1/"
-                                         "uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt")
+    if args.args_dict["is_debug"]:
+        args.args_dict["train_data_path"] = ("/chongqinggeminiceph1fs/geminicephfs/security-others-common/"
+                                             "jiujiuchen/projects/mmgog_long_term_sequence_model/data/"
+                                             "uin_gangs_full_graph_dataset/valid/processed/split_1/"
+                                             "uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt")
     train_model = UinGangsModelPreTrain(args.args_dict)
     if args.args_dict["sampling"] == 'fraudar':
         print("======Single Device Fraudar Pretraining======")

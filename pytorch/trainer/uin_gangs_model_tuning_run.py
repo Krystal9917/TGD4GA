@@ -30,7 +30,7 @@ class ArgsUinGangs:
                          "config", "yml", "uin_gangs_enum.yaml")))
         parser.add_argument('--model_states_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "saved_model", "RGCN_models", "pretraining_filter_subgraph_cl")))
+                         "saved_model", "pretrained_models")))
         parser.add_argument('--cls_model_states_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "saved_model", "cls_models")))
@@ -68,7 +68,7 @@ class ArgsUinGangs:
         parser.add_argument('--hidden_dim', type=int, default=1024)
         parser.add_argument('--output_dim', type=int, default=846)
         parser.add_argument('--node_types', type=int, default=19)
-        parser.add_argument('--num_relations', type=int, default=10)
+        parser.add_argument('--num_relations', type=int, default=11)
         parser.add_argument('--num_heads', type=int, default=2)
         parser.add_argument('--filter_node_num', type=int, default=3)
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
@@ -76,13 +76,13 @@ class ArgsUinGangs:
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--data_tag', type=str, default='order_1930_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--device_tag', type=str, default='_GPU3', choices=['', '_GPU2', '_GPU3', '_GPU4'])
-        parser.add_argument('--eval_epoch', type=int, default=13)
+        parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2', '_GPU3', '_GPU4'])
+        parser.add_argument('--eval_epoch', type=int, default=10)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_gang_detection',
                             choices=['subgraph_gang_detection', 'inference_gang_members',
                                      'inference_gang_members_by_fraudar'])
         parser.add_argument('--is_finetune', type=bool, default=False)
-        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'MaskRGCN'])
+        parser.add_argument('--conv_type', type=str, default='MaskRGCN', choices=['RGCN', 'MaskRGCN'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph',
@@ -92,7 +92,7 @@ class ArgsUinGangs:
         parser.add_argument('--top_ratio', type=float, default=0.1)
         parser.add_argument('--info_insertion_type', type=str, default='combine_subgraph',
                             choices=[None, 'combine_subgraph', 'concat_subgraph'])
-        parser.add_argument('--prompt_type', type=str, default='single_token',
+        parser.add_argument('--prompt_type', type=str, default=None,
                             choices=[None, 'single_token'])
         parser.add_argument('--threshold', type=float, default=0.5)
         parser.add_argument('--test_times', type=int, default=5)

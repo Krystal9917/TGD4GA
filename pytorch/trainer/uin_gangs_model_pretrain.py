@@ -15,9 +15,6 @@ from torch.utils.tensorboard import SummaryWriter
 from transformers import BertModel
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, CosineAnnealingLR
 from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN, MaskRGCN
-from mmgog_long_term_sequence_model.pytorch.models.rgat_model import RGAT
-from mmgog_long_term_sequence_model.pytorch.models.graph_transformer import GraphTransformer, HeteroGraphTransformer
-from mmgog_long_term_sequence_model.pytorch.models.han_model import HAN
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
 
 
@@ -57,11 +54,15 @@ class UinGangsModelPreTrain:
                                ('uin', 'room', 'uin'): 3, ('uin', 'friend', 'uin'): 4, ('uin', 'idcardid', 'uin'): 5,
                                ('uin', 'device', 'uin'): 6, ('uin', 'payee', 'uin'): 7, ('uin', 'payer', 'uin'): 8,
                                ('uin', 'bankcard', 'uin'): 9, ('uin', 'download_app', 'uin'): 10}
-            self.model = MaskRGCN(input_dim=args_dict['input_dim'],
-                                  hidden_dim=args_dict['hidden_dim'],
-                                  output_dim=args_dict['output_dim'],
-                                  num_relations=args_dict['num_relations'],
-                                  num_bases=args_dict['num_relations'])
+            self.model = MaskRGCN(
+                numerical_dim=args_dict['uin_acs_numberical_feat_dim'],
+                categorical_dim=args_dict['uin_acs_categorical_feat_hasher_dim'],
+                text_dim=args_dict['uin_acs_text_feat_dim'],
+                input_dim=args_dict['input_dim'],
+                hidden_dim=args_dict['hidden_dim'],
+                output_dim=args_dict['output_dim'],
+                num_relations=args_dict['num_relations'],
+                num_bases=args_dict['num_relations'])
 
         lr = self.train_dict["lr"]
         control_node_num = self.train_dict["filter_node_num"]
@@ -142,12 +143,6 @@ class UinGangsModelPreTrain:
         random.seed(self.train_dict["seed"])
         torch.backends.cudnn.deterministic = True
 
-    def cosine_similarity(self, h1, h2):
-        h1_abs = h1.norm(dim=1)
-        h2_abs = h2.norm(dim=1)
-        sim_matrix = torch.einsum('ik,jk->ij', h1, h2) / torch.einsum('i,j->ij', h1_abs, h2_abs)
-        return sim_matrix
-
     def contrastive_loss(self, h1, h2):
         r"""Compute contrastive InfoNCE loss"""
         # hyperparameter: temperature
@@ -162,7 +157,7 @@ class UinGangsModelPreTrain:
         loss = -torch.log(loss).mean()
         return loss
 
-    def preference_contrastive_loss(self, h1, h2, h3):
+    def preference_contrastive_loss(self, h1, h2, h3, tag):
         t = self.train_dict["temperature"]
         try:
             if len(h1.shape) == 1:
@@ -172,14 +167,19 @@ class UinGangsModelPreTrain:
             h1_abs = h1.norm(dim=1)
             h3_abs = h3.norm(dim=1)
             pos_sim = torch.exp(torch.cosine_similarity(h1, h2) / t)
-            sim_matrix = torch.einsum('ik,jk->ij', h1, h3) / (torch.einsum('i,j->ij', h1_abs, h3_abs) + 1e-4)
-            sim_matrix = torch.exp(sim_matrix / t)
+            neg_sim_mat = torch.einsum('ik,jk->ij', h1, h3) / (torch.einsum('i,j->ij', h1_abs, h3_abs) + 1e-4)
+            neg_sim = torch.exp(neg_sim_mat / t)
         except Exception as e:
-            loss = torch.tensor(5.0, requires_grad=True).to(h1.device)
-            print(f"Norm Error {e}, h1 shape: {h1.shape}, h3 shape: {h3.shape}")
+            loss = torch.tensor(torch.nan).to(h1.device)
+            print(f"Norm error <{e}>, h1 shape: {h1.shape}, h3 shape: {h3.shape}")
         else:
-            loss = pos_sim / (sim_matrix.sum(dim=1) + 1e-4)
-            loss = torch.relu(-torch.log(loss)).mean()
+            _loss = pos_sim / (neg_sim.sum(dim=1) + 1e-4)
+            loss = torch.relu(-torch.log(_loss)).mean()
+            if loss.isnan():
+                print(tag, "h1 and h2 similarity: ", torch.cosine_similarity(h1, h2),
+                      "h1 and h2 exp similarity: ", pos_sim, "h1 and h3 similarity: ", neg_sim_mat,
+                      "h1 and h3 exp similarity: ", neg_sim, "total vec loss: ", _loss)
+                loss = torch.tensor(0, device=self.device)
         return loss
 
     def node_contrastive_loss(self, h1, h2):
@@ -226,7 +226,7 @@ class UinGangsModelPreTrain:
                 neg_select_idx = [i for i in range(i_subgraph_neg_h.shape[0])]
                 random.shuffle(neg_select_idx)
                 i_subgraph_neg_h = i_subgraph_neg_h[neg_select_idx[:min_num]]
-            cross_loss = self.preference_contrastive_loss(i_subgraph_pos_h, i_fraudar_pos_h, i_subgraph_neg_h)
+            cross_loss = self.preference_contrastive_loss(i_subgraph_pos_h, i_fraudar_pos_h, i_subgraph_neg_h, tag='intra')
             batch_loss_list.append(cross_loss)
         return torch.stack([item for item in batch_loss_list if not torch.isnan(item)]).mean()
 
@@ -461,7 +461,7 @@ class UinGangsModelPreTrain:
 
                             # subgraph-level contrastive learning
                             subgraph_loss = self.preference_contrastive_loss(fraudar_batch_h_g, pos_batch_h_g,
-                                                                             neg_batch_h_g)
+                                                                             neg_batch_h_g, tag='inter')
                         else:
                             subgraph_loss = torch.tensor(torch.nan).to(self.device)
                         if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph',
