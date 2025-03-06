@@ -55,9 +55,6 @@ class UinGangsModelPreTrain:
                                ('uin', 'device', 'uin'): 6, ('uin', 'payee', 'uin'): 7, ('uin', 'payer', 'uin'): 8,
                                ('uin', 'bankcard', 'uin'): 9, ('uin', 'download_app', 'uin'): 10}
             self.model = MaskRGCN(
-                numerical_dim=args_dict['uin_acs_numberical_feat_dim'],
-                categorical_dim=args_dict['uin_acs_categorical_feat_hasher_dim'],
-                text_dim=args_dict['uin_acs_text_feat_dim'],
                 input_dim=args_dict['input_dim'],
                 hidden_dim=args_dict['hidden_dim'],
                 output_dim=args_dict['output_dim'],
@@ -588,7 +585,8 @@ class UinGangsModelPreTrain:
                                          f"{self.train_dict['temperature']}_model_best_loss.pth")
                 torch.save(self.model.state_dict(), file_name)
                 epoch_file_name = os.path.join(self.save_model_path,
-                                               f"uin_gangs_{self.conv_type}_{self.task_type}_model_epoch_{epoch}.pth")
+                                               f"uin_gangs_{self.conv_type}_{self.task_type}_t_"
+                                               f"{self.train_dict['temperature']}_model_epoch_{epoch}.pth")
                 torch.save(self.model.state_dict(), epoch_file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {epoch_file_name}")
         if not self.train_dict["is_debug"]:

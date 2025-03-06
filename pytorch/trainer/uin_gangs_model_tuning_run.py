@@ -63,7 +63,7 @@ class ArgsUinGangs:
         parser.add_argument('--onnx_opset', type=int, default=15)
         parser.add_argument('--seed', type=int, default=42)
         parser.add_argument('--num_workers', type=int, default=32)
-        parser.add_argument('--temperature', type=int, default=0.5)
+        parser.add_argument('--temperature', type=int, default=1)
         parser.add_argument('--input_dim', type=int, default=846)
         parser.add_argument('--hidden_dim', type=int, default=1024)
         parser.add_argument('--output_dim', type=int, default=846)
@@ -74,14 +74,14 @@ class ArgsUinGangs:
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--is_debug', type=bool, default=False)
-        parser.add_argument('--data_tag', type=str, default='order_1930_',
+        parser.add_argument('--data_tag', type=str, default='1921_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_GPU2', '_GPU3', '_GPU4'])
-        parser.add_argument('--eval_epoch', type=int, default=10)
+        parser.add_argument('--device_tag', type=str, default='_None', choices=['_None', '', '_GPU2', '_GPU3', '_GPU4'])
+        parser.add_argument('--eval_epoch', type=int, default=0)
         parser.add_argument('--evaluate_task', type=str, default='subgraph_gang_detection',
                             choices=['subgraph_gang_detection', 'inference_gang_members',
                                      'inference_gang_members_by_fraudar'])
-        parser.add_argument('--is_finetune', type=bool, default=False)
+        parser.add_argument('--is_finetune', type=bool, default=True)
         parser.add_argument('--conv_type', type=str, default='MaskRGCN', choices=['RGCN', 'MaskRGCN'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',

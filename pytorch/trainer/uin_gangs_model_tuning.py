@@ -77,11 +77,15 @@ class UinGangsModelTuning:
                                ('uin', 'room', 'uin'): 3, ('uin', 'friend', 'uin'): 4, ('uin', 'idcardid', 'uin'): 5,
                                ('uin', 'device', 'uin'): 6, ('uin', 'payee', 'uin'): 7, ('uin', 'payer', 'uin'): 8,
                                ('uin', 'bankcard', 'uin'): 9, ('uin', 'download_app', 'uin'): 10}
-            self.model = MaskRGCN(input_dim=args_dict['input_dim'],
-                                  hidden_dim=args_dict['hidden_dim'],
-                                  output_dim=args_dict['output_dim'],
-                                  num_relations=args_dict['num_relations'],
-                                  num_bases=args_dict['num_relations'])
+            self.model = MaskRGCN(
+                numerical_dim=args_dict['uin_acs_numberical_feat_dim'],
+                categorical_dim=args_dict['uin_acs_categorical_feat_hasher_dim'],
+                text_dim=args_dict['uin_acs_text_feat_dim'],
+                input_dim=args_dict['input_dim'],
+                hidden_dim=args_dict['hidden_dim'],
+                output_dim=args_dict['output_dim'],
+                num_relations=args_dict['num_relations'],
+                num_bases=args_dict['num_relations'])
         self.pretrain_lr = self.eval_dict['pretrain_lr']
         self.control_node_num = self.eval_dict["filter_node_num"]
         self.task_type = self.eval_dict["task_type"]

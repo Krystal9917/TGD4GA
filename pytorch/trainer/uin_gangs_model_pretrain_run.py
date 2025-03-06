@@ -60,7 +60,7 @@ class ArgsUinGangs:
         parser.add_argument('--temperature', type=int, default=1)
         parser.add_argument('--input_dim', type=int, default=846)
         parser.add_argument('--hidden_dim', type=int, default=1024)
-        parser.add_argument('--output_dim', type=int, default=128)
+        parser.add_argument('--output_dim', type=int, default=846)
         parser.add_argument('--filter_node_num', type=int, default=3)
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
@@ -80,7 +80,7 @@ class ArgsUinGangs:
         parser.add_argument('--num_heads', type=int, default=2)
         parser.add_argument('--data_tag', type=str, default='1921_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--similarity_diff', type=float, default=0.15)
+        parser.add_argument('--similarity_diff', type=float, default=0.2)
         args = parser.parse_args()
         args_dict = vars(args)
         self.args_dict = args_dict
