@@ -46,7 +46,7 @@ class ArgsUinGangs:
                             choices=[None, 'stepLR', 'reduceLR', 'cosineLR'])
         parser.add_argument('--lr_adjust_step', type=int, default=2)
         parser.add_argument('--lr_gamma', type=float, default=0.5)
-        parser.add_argument('--n_epochs', type=int, default=100)
+        parser.add_argument('--n_epochs', type=int, default=30)
         parser.add_argument('--uin_in_size', type=int, default=846)
         parser.add_argument('--uin_acs_numberical_feat_dim', type=int, default=290)
         parser.add_argument('--uin_acs_text_feat_dim', type=int, default=256)
@@ -67,8 +67,8 @@ class ArgsUinGangs:
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--conv_type', type=str, default='MaskRGCN',
-                            choices=['RGCN', 'MaskRGCN'])
+        parser.add_argument('--conv_type', type=str, default='RGCN',
+                            choices=['RGCN', 'MaskRGCN', 'AttnRGCN'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_cross_subgraph', 'fine_grained_batch_subgraph'])

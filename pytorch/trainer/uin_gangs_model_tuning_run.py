@@ -30,7 +30,7 @@ class ArgsUinGangs:
                          "config", "yml", "uin_gangs_enum.yaml")))
         parser.add_argument('--model_states_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "saved_model", "pretrained_models")))
+                         "saved_model", "GNN_models")))
         parser.add_argument('--cls_model_states_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "saved_model", "cls_models")))
@@ -68,29 +68,29 @@ class ArgsUinGangs:
         parser.add_argument('--hidden_dim', type=int, default=1024)
         parser.add_argument('--output_dim', type=int, default=846)
         parser.add_argument('--node_types', type=int, default=19)
-        parser.add_argument('--num_relations', type=int, default=11)
+        parser.add_argument('--num_relations', type=int, default=10)
         parser.add_argument('--num_heads', type=int, default=2)
         parser.add_argument('--filter_node_num', type=int, default=3)
         parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--is_debug', type=bool, default=False)
-        parser.add_argument('--data_tag', type=str, default='1921_',
+        parser.add_argument('--data_tag', type=str, default='order_1930_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--device_tag', type=str, default='_None', choices=['_None', '', '_GPU2', '_GPU3', '_GPU4'])
-        parser.add_argument('--eval_epoch', type=int, default=0)
-        parser.add_argument('--evaluate_task', type=str, default='subgraph_gang_detection',
+        parser.add_argument('--device_tag', type=str, default='_GPU2', choices=['', '_None', '_GPU2', '_GPU3', '_GPU4'])
+        parser.add_argument('--eval_epoch', type=int, default=10)
+        parser.add_argument('--evaluate_task', type=str, default='subgraph',
                             choices=['subgraph_gang_detection', 'inference_gang_members',
-                                     'inference_gang_members_by_fraudar'])
-        parser.add_argument('--is_finetune', type=bool, default=True)
-        parser.add_argument('--conv_type', type=str, default='MaskRGCN', choices=['RGCN', 'MaskRGCN'])
+                                     'inference_gang_members_by_fraudar', 'subgraph'])
+        parser.add_argument('--is_finetune', type=bool, default=False)
+        parser.add_argument('--conv_type', type=str, default='RGCN', choices=['RGCN', 'MaskRGCN', 'AttnRGCN'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_batch_subgraph', 'fine_grained_cross_subgraph',
                                      'intra_subgraph'])
         parser.add_argument('--is_supervised', type=bool, default=False)
-        parser.add_argument('--pooling', default='mean', choices=['mean', 'sag_pool'])
+        parser.add_argument('--pooling', default='sag_pool', choices=['mean', 'sag_pool'])
         parser.add_argument('--top_ratio', type=float, default=0.1)
-        parser.add_argument('--info_insertion_type', type=str, default='combine_subgraph',
+        parser.add_argument('--info_insertion_type', type=str, default=None,
                             choices=[None, 'combine_subgraph', 'concat_subgraph'])
         parser.add_argument('--prompt_type', type=str, default=None,
                             choices=[None, 'single_token'])
@@ -111,7 +111,7 @@ class ArgsUinGangs:
         parser.add_argument('--W_node', type=float, default=0.6)
         parser.add_argument('--W_penalty', type=float, default=0.4)
         # proportion of subgraph and dense loss
-        parser.add_argument('--W_sub', type=float, default=0.8)
+        parser.add_argument('--W_sub', type=float, default=1.0)
         parser.add_argument('--W_den', type=float, default=0.2)
         parser.add_argument('--W_cnt', type=float, default=0.2)
         parser.add_argument('--cls_node', type=bool, default=False)
@@ -119,8 +119,8 @@ class ArgsUinGangs:
         parser.add_argument('--cls_subgraph', type=bool, default=True)
         parser.add_argument('--cls_dense', type=bool, default=False)
         parser.add_argument('--cls_connect', type=bool, default=False)
-        parser.add_argument('--ft_loss', type=str, default='subgraph_and_dense',
-                            choices=['subgraph_and_dense', 'node_penalty'])
+        parser.add_argument('--ft_loss', type=str, default='subgraph_cls',
+                            choices=['subgraph_and_dense', 'node_penalty', 'subgraph_cls'])
 
         parser.add_argument('--tn', type=int, default=76)
         parser.add_argument('--tp', type=int, default=47)
@@ -152,7 +152,39 @@ def compute_metrics_std(acc, pre, rec, f1, roc_auc, pos_jaccard=None, neg_jaccar
 if __name__ == '__main__':
     args = ArgsUinGangs()
     print(f"Tuning Parameters: {args.args_dict}")
-    if args.args_dict["evaluate_task"] in ['subgraph', 'subgraph_gang_detection']:
+    if args.args_dict["evaluate_task"] == 'subgraph':
+        print(f"======Labelled {args.args_dict['evaluate_task']} Evaluation======")
+        times_list = ['1st', '2nd', '3rd', '4th', '5th']
+        acc_list = []
+        pre_list = []
+        rec_list = []
+        f1_list = []
+        roc_auc_list = []
+        ave_cfm = np.array([[0, 0], [0, 0]])
+        pos_jac_list = []
+        neg_jac_list = []
+        run_time_list = []
+        for i in range(1, args.args_dict["test_times"]+1):
+            args.args_dict["split_idx"] = i
+            tuning_model = UinGangsModelTuning(args.args_dict)
+            print(f"*****Start {times_list[i-1]} Time Testing*****")
+            test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cfm = tuning_model.detect_subgraph(flag=i)
+            acc_list.append(test_acc)
+            pre_list.append(test_pre)
+            rec_list.append(test_rec)
+            f1_list.append(test_f1)
+            roc_auc_list.append(test_roc_auc)
+            ave_cfm += test_cfm
+            print(f"*****End {times_list[i-1]} Time Testing*****")
+        acc_std, pre_std, rec_std, f1_std, roc_auc_std = (
+            compute_metrics_std(acc_list, pre_list, rec_list, f1_list, roc_auc_list))
+        print(f"{len(acc_list)} Times Average Best Test ACC: {sum(acc_list) / len(acc_list): .4f}, std: {acc_std: .4f}, "
+              f"Precision: {sum(pre_list) / len(pre_list): .4f}, std: {pre_std: .4f}, "
+              f"Recall: {sum(rec_list) / len(rec_list): .4f}, std: {rec_std: .4f}, "
+              f"F1: {sum(f1_list) / len(f1_list): .4f}, std: {f1_std: .4f}, "
+              f"ROC-AUC: {sum(roc_auc_list) / len(roc_auc_list): .4f}, std: {roc_auc_std: .4f}, "
+              f"Confusion Matrix: {ave_cfm / len(times_list)}")
+    if args.args_dict["evaluate_task"] == 'subgraph_gang_detection':
         print(f"======Labelled {args.args_dict['evaluate_task']} Evaluation======")
         times_list = ['1st', '2nd', '3rd', '4th', '5th']
         acc_list = []

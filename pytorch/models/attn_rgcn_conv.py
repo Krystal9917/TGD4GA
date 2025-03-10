@@ -27,7 +27,7 @@ def masked_edge_index(edge_index: Adj, edge_mask: Tensor) -> Adj:
     return torch_sparse.masked_select_nnz(edge_index, edge_mask, layout='coo')
 
 
-class MaskRGCNConv(MessagePassing):
+class AttnRGCNConv(MessagePassing):
     def __init__(
         self,
         in_channels: Union[int, Tuple[int, int]],
@@ -53,27 +53,27 @@ class MaskRGCNConv(MessagePassing):
         self.in_channels = in_channels
         self.mlp_n_in_channels = mlp_n_in_channels
         self.mlp_c_in_channels = mlp_c_in_channels
+        self.W_q = torch.nn.Parameter(torch.randn(in_channels, in_channels))
+        self.W_k_n = torch.nn.Parameter(torch.randn(in_channels, in_channels))
+        self.W_k_c = torch.nn.Parameter(torch.randn(in_channels, in_channels))
+        self.W_k_t = torch.nn.Parameter(torch.randn(in_channels, in_channels))
+        self.W_v_c = torch.nn.Parameter(torch.randn(in_channels, in_channels))
+        self.W_v_n = torch.nn.Parameter(torch.randn(in_channels, in_channels))
+        self.W_v_t = torch.nn.Parameter(torch.randn(in_channels, in_channels))
+        self.d = torch.sqrt(torch.tensor(self.in_channels))
+        self.softmax = torch.nn.Softmax(dim=0)
+        self.n_mask = torch.zeros(in_channels)
+        self.n_mask[:self.mlp_n_in_channels] = 1
+        self.c_mask = torch.zeros(in_channels)
+        self.c_mask[self.mlp_c_in_channels:(self.mlp_n_in_channels+self.mlp_c_in_channels)] = 1
+        self.t_mask = torch.zeros(in_channels)
+        self.t_mask[(self.mlp_n_in_channels+self.mlp_c_in_channels):] = 1
         self.out_channels = out_channels
         self.num_relations = num_relations
         self.num_bases = num_bases
         self.num_blocks = num_blocks
         self.is_sorted = is_sorted
-        self.mask_n_generators = torch.nn.ModuleList([
-            torch.nn.Sequential(
-                torch.nn.Linear(mlp_n_in_channels, mlp_n_in_channels),
-                torch.nn.ReLU(),
-                torch.nn.Linear(mlp_n_in_channels, 1),
-                torch.nn.ReLU()
-            ) for _ in range(num_relations)
-        ])
-        self.mask_c_generators = torch.nn.ModuleList([
-            torch.nn.Sequential(
-                torch.nn.Linear(mlp_c_in_channels, mlp_c_in_channels),
-                torch.nn.ReLU(),
-                torch.nn.Linear(mlp_c_in_channels, 1),
-                torch.nn.ReLU()
-            ) for _ in range(num_relations)
-        ])
+
 
         if isinstance(in_channels, int):
             in_channels = (in_channels, in_channels)
@@ -129,7 +129,10 @@ class MaskRGCNConv(MessagePassing):
             x_l = x
         if x_l is None:
             x_l = torch.arange(self.in_channels_l, device=self.weight.device)
-
+        self.n_mask = self.n_mask.to(x.device)
+        self.c_mask = self.c_mask.to(x.device)
+        self.t_mask = self.t_mask.to(x.device)
+        self.d = self.d.to(x.device)
         x_r: Tensor = x_l
         if isinstance(x, tuple):
             x_r = x[1]
@@ -226,10 +229,11 @@ class MaskRGCNConv(MessagePassing):
                   edge_type_ptr: Optional[Tensor] = None,
                   size: Optional[Tensor] = None) -> Tensor:
         x_out, x_in = x[edge_index[0, :]], x[edge_index[1, :]]
-        x_n_pair = (x_in - x_out)[:, :self.mlp_n_in_channels]
-        x_c_pair = (x_in - x_out)[:, self.mlp_n_in_channels:(self.mlp_n_in_channels + self.mlp_c_in_channels)]
-        passing_weight = self.mask_n_generators[edge_type](x_n_pair) + self.mask_c_generators[edge_type](x_c_pair)
-        weighted_x_out = passing_weight * x_out
+        H_q = torch.matmul(x_out, self.W_q)
+        H_k = torch.matmul(self.n_mask * x_out, self.W_k_n) + torch.matmul(self.c_mask * x_out, self.W_k_c) + torch.matmul(self.t_mask * x_out,  self.W_k_t)
+        H_v = torch.matmul(self.n_mask * x_in, self.W_k_n) + torch.matmul(self.c_mask * x_in, self.W_k_c) + torch.matmul(self.t_mask * x_in,  self.W_k_t)
+        passing_weight = self.softmax(torch.matmul(H_k, H_v.T) / self.d)
+        weighted_x_out = torch.matmul(passing_weight, H_q)
         h_out = scatter(weighted_x_out, edge_index[1, :], dim=0, reduce='sum')
         h = torch.zeros_like(x, device=x.device)
         h_out_index = edge_index[1, :].unique()

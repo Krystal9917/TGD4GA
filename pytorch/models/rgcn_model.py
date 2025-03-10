@@ -1,6 +1,7 @@
 import torch
 from torch_geometric.nn import RGCNConv
 from .rgcn_conv import MaskRGCNConv
+from .attn_rgcn_conv import AttnRGCNConv
 
 
 class RGCN(torch.nn.Module):
@@ -15,14 +16,34 @@ class RGCN(torch.nn.Module):
         return x
 
 class MaskRGCN(torch.nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_relations, num_bases=10):
+    def __init__(self, input_dim, mlp_n_in_dim, mlp_c_in_dim, hidden_dim, output_dim, num_relations, num_bases=10, is_embed=False):
         super().__init__()
-        self.mlp_w = torch.nn.Linear(input_dim, input_dim, bias=False)
-        self.conv1 = MaskRGCNConv(input_dim, hidden_dim, num_relations, num_bases=num_bases)
-        self.conv2 = MaskRGCNConv(hidden_dim, output_dim, num_relations, num_bases=num_bases)
+        self.is_embed = is_embed
+        if self.is_embed:
+            self.mlp_w = torch.nn.Linear(input_dim, input_dim, bias=False)
+        self.conv1 = MaskRGCNConv(input_dim, mlp_n_in_dim, mlp_c_in_dim, hidden_dim, num_relations, num_bases=num_bases)
+        self.conv2 = MaskRGCNConv(hidden_dim, mlp_n_in_dim, mlp_c_in_dim, output_dim, num_relations, num_bases=num_bases)
 
     def forward(self, x, edge_index, edge_type):
-        x = self.mlp_w(x)
+        if self.is_embed:
+            x = self.mlp_w(x)
+        x = self.conv1(x, edge_index, edge_type)
+        x = self.conv2(x, edge_index, edge_type)
+        return x
+
+
+class AttnRGCN(torch.nn.Module):
+    def __init__(self, input_dim, mlp_n_in_dim, mlp_c_in_dim, hidden_dim, output_dim, num_relations, num_bases=10, is_embed=False):
+        super().__init__()
+        self.is_embed = is_embed
+        if self.is_embed:
+            self.mlp_w = torch.nn.Linear(input_dim, input_dim, bias=False)
+        self.conv1 = AttnRGCNConv(input_dim, mlp_n_in_dim, mlp_c_in_dim, hidden_dim, num_relations, num_bases=num_bases)
+        self.conv2 = AttnRGCNConv(hidden_dim, mlp_n_in_dim, mlp_c_in_dim, output_dim, num_relations, num_bases=num_bases)
+
+    def forward(self, x, edge_index, edge_type):
+        if self.is_embed:
+            x = self.mlp_w(x)
         x = self.conv1(x, edge_index, edge_type)
         x = self.conv2(x, edge_index, edge_type)
         return x

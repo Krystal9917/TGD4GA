@@ -14,7 +14,7 @@ from torch_scatter import scatter_mean
 from torch.utils.tensorboard import SummaryWriter
 from transformers import BertModel
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, CosineAnnealingLR
-from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN, MaskRGCN
+from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN, MaskRGCN, AttnRGCN
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
 
 
@@ -39,22 +39,36 @@ class UinGangsModelPreTrain:
         # Initialize GNN Model for Graph
         self.conv_type = args_dict["conv_type"]
         self.task_type = args_dict["task_type"]
+        self.n_dim = args_dict['uin_acs_numberical_feat_dim']
+        self.c_dim = args_dict['uin_acs_categorical_feat_hasher_dim']
         # self.scaler = GradScaler()
+        self.edge_types = {('uin', 'self_loop', 'uin'): 0, ('uin', 'ipv6', 'uin'): 1, ('uin', 'wifi', 'uin'): 2,
+                           ('uin', 'room', 'uin'): 3, ('uin', 'friend', 'uin'): 4, ('uin', 'idcardid', 'uin'): 5,
+                           ('uin', 'device', 'uin'): 6, ('uin', 'payee', 'uin'): 7, ('uin', 'payer', 'uin'): 8,
+                           ('uin', 'bankcard', 'uin'): 9, ('uin', 'download_app', 'uin'): 10}
         if self.conv_type == 'RGCN':
-            self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
-                               ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
-                               ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
-                               ('uin', 'download_app', 'uin'): 9}
+            # self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
+            #                    ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
+            #                    ('uin', 'payee', 'uin'): 6, ('uin', 'payer', 'uin'): 7, ('uin', 'bankcard', 'uin'): 8,
+            #                    ('uin', 'download_app', 'uin'): 9}
             self.model = RGCN(input_dim=args_dict['input_dim'],
                               hidden_dim=args_dict['hidden_dim'],
                               output_dim=args_dict['output_dim'],
-                              num_relations=args_dict['num_relations'])
-        else:
-            self.edge_types = {('uin', 'self_loop', 'uin'): 0, ('uin', 'ipv6', 'uin'): 1, ('uin', 'wifi', 'uin'): 2,
-                               ('uin', 'room', 'uin'): 3, ('uin', 'friend', 'uin'): 4, ('uin', 'idcardid', 'uin'): 5,
-                               ('uin', 'device', 'uin'): 6, ('uin', 'payee', 'uin'): 7, ('uin', 'payer', 'uin'): 8,
-                               ('uin', 'bankcard', 'uin'): 9, ('uin', 'download_app', 'uin'): 10}
+                              num_relations=args_dict['num_relations'],
+                              num_bases=args_dict['num_relations'])
+        elif self.conv_type == 'MaskRGCN':
             self.model = MaskRGCN(
+                mlp_n_in_dim=args_dict['uin_acs_numberical_feat_dim'],
+                mlp_c_in_dim=args_dict['uin_acs_categorical_feat_hasher_dim'],
+                input_dim=args_dict['input_dim'],
+                hidden_dim=args_dict['hidden_dim'],
+                output_dim=args_dict['output_dim'],
+                num_relations=args_dict['num_relations'],
+                num_bases=args_dict['num_relations'])
+        else:
+            self.model = AttnRGCN(
+                mlp_n_in_dim=args_dict['uin_acs_numberical_feat_dim'],
+                mlp_c_in_dim=args_dict['uin_acs_categorical_feat_hasher_dim'],
                 input_dim=args_dict['input_dim'],
                 hidden_dim=args_dict['hidden_dim'],
                 output_dim=args_dict['output_dim'],
@@ -243,8 +257,11 @@ class UinGangsModelPreTrain:
             normal_batch_i = normal_x[batch == idx_list[i]]
             anomalous_anchor_i = anomalous_anchors[i]
             average_normal_i = normal_batch_i.mean(dim=0)
-            similarity_diff = (torch.cosine_similarity(normal_batch_i, anomalous_anchor_i) -
-                               torch.cosine_similarity(normal_batch_i, average_normal_i))
+            n_similarity_diff = (torch.cosine_similarity(normal_batch_i[:, :self.n_dim], anomalous_anchor_i[:self.n_dim]) -
+                               torch.cosine_similarity(normal_batch_i[:, :self.n_dim], average_normal_i[:self.n_dim]))
+            c_similarity_diff = (torch.cosine_similarity(normal_batch_i[:, self.n_dim: (self.n_dim + self.c_dim)], anomalous_anchor_i[self.n_dim: (self.n_dim + self.c_dim)]) -
+                               torch.cosine_similarity(normal_batch_i[:, self.n_dim: (self.n_dim + self.c_dim)], average_normal_i[self.n_dim: (self.n_dim + self.c_dim)]))
+            similarity_diff = torch.stack([n_similarity_diff, c_similarity_diff], dim=1).mean(dim=1)
             exclude_idx = (similarity_diff >= self.train_dict['similarity_diff']).nonzero().squeeze().detach().cpu()
             prefix_node_idx = (batch < idx_list[i]).nonzero().squeeze()
             if prefix_node_idx.shape != torch.Size([]):
