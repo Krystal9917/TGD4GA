@@ -40,12 +40,19 @@ class UinGangsModelPreTrain:
         self.conv_type = args_dict["conv_type"]
         self.task_type = args_dict["task_type"]
         self.n_dim = args_dict['uin_acs_numberical_feat_dim']
-        self.c_dim = args_dict['uin_acs_categorical_feat_hasher_dim']
-        # self.scaler = GradScaler()
+        self.c_dim = self.n_dim + args_dict['uin_acs_categorical_feat_hasher_dim']
+        self.cos_sim = torch.cosine_similarity
+        self.n_weight = torch.nn.Parameter(torch.tensor(args_dict["n_weight"]), requires_grad=True)
+        self.c_weight = torch.nn.Parameter(torch.tensor(args_dict["c_weight"]), requires_grad=True)
+        # self.edge_types = {('uin', 'self_loop', 'uin'): 0, ('uin', 'ipv6', 'uin'): 1, ('uin', 'wifi', 'uin'): 2,
+        #                    ('uin', 'room', 'uin'): 3, ('uin', 'friend', 'uin'): 4, ('uin', 'idcardid', 'uin'): 5,
+        #                    ('uin', 'device', 'uin'): 6, ('uin', 'payee', 'uin'): 7, ('uin', 'payer', 'uin'): 8,
+        #                    ('uin', 'bankcard', 'uin'): 9, ('uin', 'download_app', 'uin'): 10}
         self.edge_types = {('uin', 'self_loop', 'uin'): 0, ('uin', 'ipv6', 'uin'): 1, ('uin', 'wifi', 'uin'): 2,
                            ('uin', 'room', 'uin'): 3, ('uin', 'friend', 'uin'): 4, ('uin', 'idcardid', 'uin'): 5,
-                           ('uin', 'device', 'uin'): 6, ('uin', 'payee', 'uin'): 7, ('uin', 'payer', 'uin'): 8,
-                           ('uin', 'bankcard', 'uin'): 9, ('uin', 'download_app', 'uin'): 10}
+                           ('uin', 'device', 'uin'): 6, ('uin', 'bankcard', 'uin'): 7}
+        self.num_relations = len(self.edge_types)
+        print(f"Current Edges: {self.edge_types}")
         if self.conv_type == 'RGCN':
             # self.edge_types = {('uin', 'ipv6', 'uin'): 0, ('uin', 'wifi', 'uin'): 1, ('uin', 'room', 'uin'): 2,
             #                    ('uin', 'friend', 'uin'): 3, ('uin', 'idcardid', 'uin'): 4, ('uin', 'device', 'uin'): 5,
@@ -54,8 +61,8 @@ class UinGangsModelPreTrain:
             self.model = RGCN(input_dim=args_dict['input_dim'],
                               hidden_dim=args_dict['hidden_dim'],
                               output_dim=args_dict['output_dim'],
-                              num_relations=args_dict['num_relations'],
-                              num_bases=args_dict['num_relations'])
+                              num_relations=self.num_relations,
+                              num_bases=self.num_relations)
         elif self.conv_type == 'MaskRGCN':
             self.model = MaskRGCN(
                 mlp_n_in_dim=args_dict['uin_acs_numberical_feat_dim'],
@@ -63,8 +70,8 @@ class UinGangsModelPreTrain:
                 input_dim=args_dict['input_dim'],
                 hidden_dim=args_dict['hidden_dim'],
                 output_dim=args_dict['output_dim'],
-                num_relations=args_dict['num_relations'],
-                num_bases=args_dict['num_relations'])
+                num_relations=self.num_relations,
+                num_bases=self.num_relations)
         else:
             self.model = AttnRGCN(
                 mlp_n_in_dim=args_dict['uin_acs_numberical_feat_dim'],
@@ -72,8 +79,8 @@ class UinGangsModelPreTrain:
                 input_dim=args_dict['input_dim'],
                 hidden_dim=args_dict['hidden_dim'],
                 output_dim=args_dict['output_dim'],
-                num_relations=args_dict['num_relations'],
-                num_bases=args_dict['num_relations'])
+                num_relations=self.num_relations,
+                num_bases=self.num_relations)
 
         lr = self.train_dict["lr"]
         control_node_num = self.train_dict["filter_node_num"]
@@ -91,7 +98,8 @@ class UinGangsModelPreTrain:
                                                     num_workers=self.train_dict["num_workers"],
                                                     collate_fn=self.train_data.pos_collate_fn_for_fraudar)
         self.log_file_path = (f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_"
-                              f"{control_node_num}_lr_{str(lr)}_{self.train_dict['lr_scheduler']}")
+                              f"{control_node_num}_lr_{str(lr)}_edges_{self.num_relations}_"
+                              f"{self.train_dict['lr_scheduler']}")
         log_path = os.path.abspath(os.path.join(args_dict['log_dir'],
                                                 self.train_dict["model_states_path"].split('/')[-1],
                                                 self.log_file_path))
@@ -125,7 +133,10 @@ class UinGangsModelPreTrain:
             self.start_epoch = 1
             self.end_epoch = self.train_dict["n_epochs"]
         self.model.to(self.device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        params = [{'params': self.model.parameters(), 'lr': lr},
+                  {'params': self.n_weight, 'lr': lr * 1e-1},
+                  {'params': self.c_weight, 'lr': lr * 1e-1}]
+        self.optimizer = torch.optim.Adam(params, lr=lr)
         # lr scheduler
         if self.train_dict["lr_scheduler"] == "stepLR":
             self.scheduler = StepLR(self.optimizer,
@@ -216,6 +227,15 @@ class UinGangsModelPreTrain:
         for i in idx_list:
             subgraph_pos_h = pos_h[pos_batch == i]
             subgraph_neg_h = neg_h[neg_batch == i]
+            min_num = min(subgraph_pos_h.shape[0], subgraph_neg_h.shape[0])
+            if subgraph_pos_h.shape[0] > min_num:
+                pos_select_idx = [i for i in range(subgraph_pos_h.shape[0])]
+                random.shuffle(pos_select_idx)
+                subgraph_pos_h = subgraph_pos_h[pos_select_idx[:min_num]]
+            if subgraph_neg_h.shape[0] > min_num:
+                neg_select_idx = [i for i in range(subgraph_neg_h.shape[0])]
+                random.shuffle(neg_select_idx)
+                subgraph_neg_h = subgraph_neg_h[neg_select_idx[:min_num]]
             batch_loss = self.node_contrastive_loss(subgraph_pos_h, subgraph_neg_h)
             batch_loss_list.append(batch_loss)
         return torch.stack([item for item in batch_loss_list if not torch.isnan(item)]).mean()
@@ -237,7 +257,8 @@ class UinGangsModelPreTrain:
                 neg_select_idx = [i for i in range(i_subgraph_neg_h.shape[0])]
                 random.shuffle(neg_select_idx)
                 i_subgraph_neg_h = i_subgraph_neg_h[neg_select_idx[:min_num]]
-            cross_loss = self.preference_contrastive_loss(i_subgraph_pos_h, i_fraudar_pos_h, i_subgraph_neg_h, tag='intra')
+            cross_loss = self.preference_contrastive_loss(i_fraudar_pos_h, i_subgraph_pos_h, i_subgraph_neg_h,
+                                                          tag='intra')
             batch_loss_list.append(cross_loss)
         return torch.stack([item for item in batch_loss_list if not torch.isnan(item)]).mean()
 
@@ -257,12 +278,15 @@ class UinGangsModelPreTrain:
             normal_batch_i = normal_x[batch == idx_list[i]]
             anomalous_anchor_i = anomalous_anchors[i]
             average_normal_i = normal_batch_i.mean(dim=0)
-            n_similarity_diff = (torch.cosine_similarity(normal_batch_i[:, :self.n_dim], anomalous_anchor_i[:self.n_dim]) -
-                               torch.cosine_similarity(normal_batch_i[:, :self.n_dim], average_normal_i[:self.n_dim]))
-            c_similarity_diff = (torch.cosine_similarity(normal_batch_i[:, self.n_dim: (self.n_dim + self.c_dim)], anomalous_anchor_i[self.n_dim: (self.n_dim + self.c_dim)]) -
-                               torch.cosine_similarity(normal_batch_i[:, self.n_dim: (self.n_dim + self.c_dim)], average_normal_i[self.n_dim: (self.n_dim + self.c_dim)]))
-            similarity_diff = torch.stack([n_similarity_diff, c_similarity_diff], dim=1).mean(dim=1)
-            exclude_idx = (similarity_diff >= self.train_dict['similarity_diff']).nonzero().squeeze().detach().cpu()
+            n_sim_diff = (
+                    self.cos_sim(normal_batch_i[:, :self.n_dim], anomalous_anchor_i[:self.n_dim]) -
+                    self.cos_sim(normal_batch_i[:, :self.n_dim], average_normal_i[:self.n_dim]))
+            c_sim_diff = (self.cos_sim(normal_batch_i[:, self.n_dim: self.c_dim],
+                                       anomalous_anchor_i[self.n_dim: self.c_dim]) -
+                          self.cos_sim(normal_batch_i[:, self.n_dim: self.c_dim],
+                                       average_normal_i[self.n_dim: self.c_dim]))
+            sim_diff = torch.stack([self.n_weight * n_sim_diff, self.c_weight * c_sim_diff], dim=1).sum(dim=1)
+            exclude_idx = (self.train_dict['similarity_diff'] < sim_diff).nonzero().squeeze().detach().cpu()
             prefix_node_idx = (batch < idx_list[i]).nonzero().squeeze()
             if prefix_node_idx.shape != torch.Size([]):
                 exclude_idx = exclude_idx + prefix_node_idx.shape[0]
@@ -404,6 +428,8 @@ class UinGangsModelPreTrain:
             return batch_h
 
     def fraudar_sampling_pretraining(self):
+        self.n_weight = self.n_weight.to(self.device)
+        self.c_weight = self.c_weight.to(self.device)
         for epoch in range(self.start_epoch, self.end_epoch):
             self.model.train()
             epoch_loss = []
@@ -422,17 +448,7 @@ class UinGangsModelPreTrain:
                 batch_x = torch.concat([pos_batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 pos_batch['uin'].x = batch_x
-                if self.conv_type in ['HAN', 'HGT']:
-                    try:
-                        pos_x_dict = pos_batch.x_dict
-                        pos_edge_index_dict = pos_batch.edge_index_dict
-                    except Exception as e:
-                        print(f"Error: <{e}>; data: {pos_batch}")
-                        batch_h = None
-                    else:
-                        batch_h = self.hetero_fit(pos_x_dict, pos_edge_index_dict)
-                else:
-                    batch_h = self.relation_fit(pos_batch, pos_batch['uin'].x)
+                batch_h = self.relation_fit(pos_batch, pos_batch['uin'].x)
                 if batch_h is not None:
                     batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
                     pos_batch_idx = (pos_batch['uin'].flag == 1).nonzero().squeeze().detach().cpu().tolist()
@@ -550,30 +566,31 @@ class UinGangsModelPreTrain:
                         else:
                             loss = subgraph_loss
                         if not torch.isnan(loss):
-                            # self.scaler.scale(loss).backward()
-                            # self.scaler.step(self.optimizer)
-                            # self.scaler.update()
                             loss.backward()
                             self.optimizer.step()
                             if self.train_dict["lr_scheduler"] == "cosineLR":
                                 self.scheduler.step()
                             loss_value = loss.detach().cpu().item()
                             epoch_loss.append(loss_value)
-                            if (i + 1) % 5 == 0:
+                            if (i + 1) % 10 == 0:
                                 if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
                                     print(
-                                        "Batch: {}, Loss: {:.6f}, "
+                                        "Batch: {}, n_weight: {:.2f}, c_weight:{:.2f}, Loss: {:.6f}, "
                                         "Batch Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
                                             i + 1,
+                                            self.n_weight,
+                                            self.c_weight,
                                             loss_value,
                                             batch_loss.detach().cpu().item(),
                                             subgraph_loss.detach().cpu().item(),
                                             time.time() - start_time))
                                 elif self.task_type in ['cross_subgraph', 'fine_grained_cross_subgraph']:
                                     print(
-                                        "Batch: {}, Loss: {:.6f}, "
+                                        "Batch: {}, n_weight: {:.2f}, c_weight:{:.2f}, Loss: {:.6f}, "
                                         "Cross Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
                                             i + 1,
+                                            self.n_weight,
+                                            self.c_weight,
                                             loss_value,
                                             cross_loss.detach().cpu().item(),
                                             subgraph_loss.detach().cpu().item(),

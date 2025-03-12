@@ -67,20 +67,20 @@ class ArgsUinGangs:
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
-        parser.add_argument('--conv_type', type=str, default='RGCN',
+        parser.add_argument('--conv_type', type=str, default='MaskRGCN',
                             choices=['RGCN', 'MaskRGCN', 'AttnRGCN'])
         parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_cross_subgraph', 'fine_grained_batch_subgraph'])
         parser.add_argument('--W_subgraph', type=float, default=0.6)
         parser.add_argument('--W_node', type=float, default=0.4)
-        # RGCN
-        parser.add_argument('--num_relations', type=int, default=11)
+        parser.add_argument('--n_weight', type=float, default=0.7)
+        parser.add_argument('--c_weight', type=float, default=0.3)
         # RGAT/HAN/HGT
         parser.add_argument('--num_heads', type=int, default=2)
         parser.add_argument('--data_tag', type=str, default='1921_',
                             choices=['', '1921_', '1930_', 'order_1930_'])
-        parser.add_argument('--similarity_diff', type=float, default=0.2)
+        parser.add_argument('--similarity_diff', type=float, default=0.05)
         args = parser.parse_args()
         args_dict = vars(args)
         self.args_dict = args_dict
