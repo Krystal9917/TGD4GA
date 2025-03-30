@@ -6,6 +6,7 @@ from torch.nn import Parameter
 
 import torch_geometric.backend
 import torch_geometric.typing
+import torch.nn.functional as F
 from torch_scatter import scatter
 from torch_geometric import is_compiling
 from torch_geometric.index import index2ptr
@@ -27,14 +28,29 @@ def masked_edge_index(edge_index: Adj, edge_mask: Tensor) -> Adj:
     return torch_sparse.masked_select_nnz(edge_index, edge_mask, layout='coo')
 
 
+class Adapter(torch.nn.Module):
+    def __init__(self, hidden_dim, reduction=4):
+        super().__init__()
+        self.down_proj = torch.nn.Linear(hidden_dim, hidden_dim // reduction)
+        self.up_proj = torch.nn.Linear(hidden_dim // reduction, hidden_dim)
+
+    def forward(self, x):
+        return x + self.up_proj(F.relu(self.down_proj(x)))
+
+
 class MaskRGCNConv(MessagePassing):
     def __init__(
         self,
         in_channels: Union[int, Tuple[int, int]],
         mlp_n_in_channels: int,
         mlp_c_in_channels: int,
+        mlp_t_in_channels: int,
         out_channels: int,
         num_relations: int,
+        is_dropout: bool = False,
+        attn_weight_type: str = 'split',
+        adapter_type: str = 'post_relation',
+        metric_learning: str = 'similarity',
         num_bases: Optional[int] = None,
         num_blocks: Optional[int] = None,
         aggr: str = 'mean',
@@ -53,27 +69,69 @@ class MaskRGCNConv(MessagePassing):
         self.in_channels = in_channels
         self.mlp_n_in_channels = mlp_n_in_channels
         self.mlp_c_in_channels = mlp_c_in_channels
+        self.mlp_t_in_channels = mlp_t_in_channels
         self.out_channels = out_channels
         self.num_relations = num_relations
         self.num_bases = num_bases
         self.num_blocks = num_blocks
         self.is_sorted = is_sorted
-        self.mask_n_generators = torch.nn.ModuleList([
-            torch.nn.Sequential(
-                torch.nn.Linear(mlp_n_in_channels, mlp_n_in_channels),
-                torch.nn.ReLU(),
-                torch.nn.Linear(mlp_n_in_channels, 1),
-                torch.nn.ReLU()
-            ) for _ in range(num_relations)
-        ])
-        self.mask_c_generators = torch.nn.ModuleList([
-            torch.nn.Sequential(
-                torch.nn.Linear(mlp_c_in_channels, mlp_c_in_channels),
-                torch.nn.ReLU(),
-                torch.nn.Linear(mlp_c_in_channels, 1),
-                torch.nn.ReLU()
-            ) for _ in range(num_relations)
-        ])
+        self.is_dropout = is_dropout
+        self.attn_weight_type = attn_weight_type
+        self.adapter_type = adapter_type
+        if self.adapter_type == 'post_relation':
+            self.adapter = torch.nn.ModuleList([
+                Adapter(in_channels, reduction=2)
+                for i in range(num_relations)
+                ])
+        elif self.adapter_type == 'post_aggregation':
+            self.adapter = Adapter(out_channels, reduction=2)
+        self.metric_learning = metric_learning
+        if self.attn_weight_type == 'split':
+            if self.metric_learning == 'similarity':
+                self.gamma_1 = torch.nn.Parameter(torch.ones(num_relations))
+                self.gamma_2 = torch.nn.Parameter(torch.ones(num_relations) * 0.5)
+                self.gamma_3 = torch.nn.Parameter(torch.ones(num_relations) * 0.5)
+                self.mask_n_generators = torch.exp
+                self.mask_c_generators = torch.exp
+                self.mask_t_generators = torch.exp
+            else:
+                self.mask_n_generators = torch.nn.ModuleList([
+                    torch.nn.Sequential(
+                        torch.nn.Linear(mlp_n_in_channels, mlp_n_in_channels),
+                        torch.nn.ReLU(),
+                        torch.nn.Linear(mlp_n_in_channels, 1),
+                        torch.nn.ReLU()
+                    ) for _ in range(num_relations)
+                ])
+                self.mask_c_generators = torch.nn.ModuleList([
+                    torch.nn.Sequential(
+                        torch.nn.Linear(mlp_c_in_channels, mlp_c_in_channels),
+                        torch.nn.ReLU(),
+                        torch.nn.Linear(mlp_c_in_channels, 1),
+                        torch.nn.ReLU()
+                    ) for _ in range(num_relations)
+                ])
+                self.mask_t_generators = torch.nn.ModuleList([
+                    torch.nn.Sequential(
+                        torch.nn.Linear(mlp_t_in_channels, mlp_t_in_channels),
+                        torch.nn.ReLU(),
+                        torch.nn.Linear(mlp_t_in_channels, 1),
+                        torch.nn.ReLU()
+                    ) for _ in range(num_relations)
+                ])
+        else:
+            if self.metric_learning == 'similarity':
+                self.gamma = torch.nn.Parameter(torch.ones(num_relations))
+                self.mask_generators = torch.exp
+            else:
+                self.mask_generators = torch.nn.ModuleList([
+                    torch.nn.Sequential(
+                        torch.nn.Linear(in_channels, in_channels),
+                        torch.nn.ReLU(),
+                        torch.nn.Linear(in_channels, 1),
+                        torch.nn.ReLU()
+                    ) for _ in range(num_relations)
+                ])
 
         if isinstance(in_channels, int):
             in_channels = (in_channels, in_channels)
@@ -129,7 +187,13 @@ class MaskRGCNConv(MessagePassing):
             x_l = x
         if x_l is None:
             x_l = torch.arange(self.in_channels_l, device=self.weight.device)
-
+        if self.metric_learning == 'similarity':
+            if self.attn_weight_type == 'split':
+                self.gamma_1 = self.gamma_1.to(x.device)
+                self.gamma_2 = self.gamma_2.to(x.device)
+                self.gamma_3 = self.gamma_3.to(x.device)
+            else:
+                self.gamma = self.gamma.to(x.device)
         x_r: Tensor = x_l
         if isinstance(x, tuple):
             x_r = x[1]
@@ -196,19 +260,37 @@ class MaskRGCNConv(MessagePassing):
                 out = self.propagate(edge_index, x=x_l,
                                      edge_type_ptr=edge_type_ptr, size=size)
             else:
-                for i in range(self.num_relations):
-                    tmp = masked_edge_index(edge_index, edge_type == i)
+                if self.adapter_type == 'post_relation':
+                    for i in range(self.num_relations):
+                        tmp = masked_edge_index(edge_index, edge_type == i)
 
-                    if not torch.is_floating_point(x_r):
-                        out = out + self.propagate(
-                            tmp,
-                            x=weight[i, x_l],
-                            edge_type_ptr=None,
-                            size=size,
-                        )
-                    else:
-                        h = self.propagate(tmp, x=x_l, edge_type=i, size=size)
-                        out = out + (h @ weight[i])
+                        if not torch.is_floating_point(x_r):
+                            out = out + self.propagate(
+                                tmp,
+                                x=weight[i, x_l],
+                                edge_type_ptr=None,
+                                size=size,
+                            )
+                        else:
+                            h = self.propagate(tmp, x=x_l, edge_type=i, size=size)
+                            h = self.adapter[i](h)
+                            out = out + (h @ weight[i])
+                else:
+                    for i in range(self.num_relations):
+                        tmp = masked_edge_index(edge_index, edge_type == i)
+
+                        if not torch.is_floating_point(x_r):
+                            out = out + self.propagate(
+                                tmp,
+                                x=weight[i, x_l],
+                                edge_type_ptr=None,
+                                size=size,
+                            )
+                        else:
+                            h = self.propagate(tmp, x=x_l, edge_type=i, size=size)
+                            out = out + (h @ weight[i])
+                    if self.adapter_type == 'post_aggregation':
+                        out = self.adapter(out)
 
         root = self.root
         if root is not None:
@@ -226,10 +308,31 @@ class MaskRGCNConv(MessagePassing):
                   edge_type_ptr: Optional[Tensor] = None,
                   size: Optional[Tensor] = None) -> Tensor:
         x_out, x_in = x[edge_index[0, :]], x[edge_index[1, :]]
-        x_n_pair = (x_in - x_out)[:, :self.mlp_n_in_channels]
-        x_c_pair = (x_in - x_out)[:, self.mlp_n_in_channels:(self.mlp_n_in_channels + self.mlp_c_in_channels)]
-        passing_weight = self.mask_n_generators[edge_type](x_n_pair) + self.mask_c_generators[edge_type](x_c_pair)
+        if self.attn_weight_type == 'split':
+            x_n_pair = (x_in - x_out)[:, :self.mlp_n_in_channels]
+            x_c_pair = (x_in - x_out)[:, self.mlp_n_in_channels:self.mlp_n_in_channels + self.mlp_c_in_channels]
+            x_t_pair = (x_in - x_out)[:, self.mlp_n_in_channels + self.mlp_c_in_channels:]
+            if self.metric_learning == 'similarity':
+                x_n_pair_mean = x_n_pair.abs().mean(dim=1)
+                x_c_pair_mean = x_c_pair.abs().mean(dim=1)
+                x_t_pair_mean = x_t_pair.abs().mean(dim=1)
+                passing_weight = (self.mask_n_generators(-self.gamma_1[edge_type] * x_n_pair_mean) +
+                                  self.mask_c_generators(-self.gamma_2[edge_type] * x_c_pair_mean) +
+                                  self.mask_t_generators(-self.gamma_2[edge_type] * x_t_pair_mean)).unsqueeze(1)
+            else:
+                passing_weight = (self.mask_n_generators[edge_type](x_n_pair) +
+                                  self.mask_c_generators[edge_type](x_c_pair) +
+                                  self.mask_t_generators[edge_type](x_t_pair))
+        else:
+            x_pair = x_in - x_out
+            if self.metric_learning == 'similarity':
+                x_pair_mean = x_pair.abs().mean(dim=1)
+                passing_weight = self.mask_generators(-self.gamma[edge_type] * x_pair_mean)
+            else:
+                passing_weight = self.mask_generators[edge_type](x_pair)
         weighted_x_out = passing_weight * x_out
+        if self.is_dropout:
+            weighted_x_out = F.dropout(weighted_x_out, p=0.3, training=self.training)
         h_out = scatter(weighted_x_out, edge_index[1, :], dim=0, reduce='sum')
         h = torch.zeros_like(x, device=x.device)
         h_out_index = edge_index[1, :].unique()

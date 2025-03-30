@@ -52,6 +52,7 @@ if __name__ == '__main__':
     # file_names = ['24112' + str(i) for i in range(10)] + ['241130', '241201', '241202']
     prefix_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset'
     # prefix_dir = '/mnt/cephfs/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset'
+    # prefix_dir = '/mnt/wfs/mmchongqingwfssz/project_security-others-common/LLM_TRAINING_PIPELINE/sz_old/DATASETS/WeSecLM-NLP/OneFileDatasets/'
     # for file_name in file_names:
     #     train_input_file_path = prefix_dir + f'/train/{file_name}_20241119/uin_gangs_full_graph_dataset_train_{file_name}_20241119.txt'
     #     train_output_file_path = prefix_dir + f'/train/raw/uin_gangs_full_graph_dataset_train_{file_name}_20241119.txt'
@@ -59,8 +60,10 @@ if __name__ == '__main__':
         # eval_input_file_path = prefix_dir + f'/eval/{file_name}/uin_gangs_full_graph_dataset_eval_{file_name}.txt'
         # eval_output_file_path = prefix_dir + f'/eval/json_data/uin_gangs_full_graph_dataset_eval_{file_name}.txt'
         # process_urls_from_file(eval_input_file_path, eval_output_file_path)
-    train_input_file_path = prefix_dir + f'/valid/241204_20241204/uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt'
-    train_output_file_path = prefix_dir + f'/valid/raw/uin_gangs_supervise_full_graph_dataset_eval_241204_20241211.txt'
+    # date = '24'
+    train_input_file_path = prefix_dir + f'/valid/250324_202503241700/uin_gangs_supervise_full_graph_dataset_eval_250324_202503241700.txt'
+    train_output_file_path = prefix_dir + f'/valid/raw/uin_gangs_supervise_full_graph_dataset_eval_250324_202503241700.txt'
+    # train_output_file_path = prefix_dir + f'/train/raw/uin_gangs_full_graph_dataset_train_2503{date}_202503201445.txt'
     st = time.time()
     process_urls_from_file(train_input_file_path, train_output_file_path)
     # print(f"Process time: {time.time() - st:.4f} s")

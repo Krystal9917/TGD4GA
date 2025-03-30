@@ -53,8 +53,9 @@ class UinGangsDataIterablePyGDDP(IterableDataset):
         print(f"Rank: {self.rank}, Lines: {len(self.line_indices)}, Load Time: {time.time() - st:.4f} s")
         self.control_node_num = self.args_dict["filter_node_num"]
         self.minirbt_tokenizer = AutoTokenizer.from_pretrained(self.args_dict["minirbt_path"])
-        self.undirected_edge_types = ['idcardid', 'bankcard', 'device', 'wifi', 'ipv6', 'room']
-        self.hasher = FeatureHasher(n_features=300, input_type='string')
+        self.undirected_edge_types = ['idcardid', 'bankcard', 'device', 'wifi', 'ipv6', 'room',
+                                      'headimg', 'signature', 'nickname', 'android_bootid_fsid']
+        self.hasher = FeatureHasher(n_features=self.args_dict['uin_acs_categorical_feat_hasher_dim'], input_type='string')
 
     def __len__(self):
         return len(self.line_indices)
@@ -191,8 +192,8 @@ class UinGangsDataIterablePyGDDP(IterableDataset):
                 graph_data['uin'].x = torch.concat([uin_acs_numberical_feat, uin_acs_categorical_feat], dim=1)
                 text_list = np.array(
                     graph_schema["node_sets"]["uin"]["data"]["uin_acs_text_feat"]["string_list"]).squeeze().tolist()
-                text_input = self.minirbt_tokenizer(text_list, max_length=256, padding="max_length",
-                                                    truncation=True, return_tensors="pt")
+                text_input = self.minirbt_tokenizer(text_list, max_length=self.args_dict['uin_acs_text_feat_dim'],
+                                                    padding="max_length", truncation=True, return_tensors="pt")
                 uin_acs_text_feat_input_ids = text_input["input_ids"]
                 uin_acs_text_feat_attention_mask = text_input["attention_mask"]
                 graph_data['uin'].text_feat_input_ids = uin_acs_text_feat_input_ids

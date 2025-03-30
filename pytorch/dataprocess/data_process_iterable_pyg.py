@@ -57,8 +57,10 @@ class UinGangsDataIterablePyG(IterableDataset):
         else:
             self.device = torch.device("cpu")
         self.minirbt_tokenizer = AutoTokenizer.from_pretrained(self.args_dict["minirbt_path"])
-        self.undirected_edge_types = ['idcardid', 'bankcard', 'device', 'wifi', 'ipv6', 'room']
-        self.hasher = FeatureHasher(n_features=300, input_type='string')
+        self.undirected_edge_types = ['idcardid', 'bankcard', 'device', 'wifi', 'ipv6', 'room',
+                                      'headimg', 'signature', 'nickname', 'android_bootid_fsid']
+        self.hasher = FeatureHasher(n_features=self.args_dict['uin_acs_categorical_feat_hasher_dim'],
+                                    input_type='string')
 
     def __len__(self):
         return len(self.line_indices)
@@ -97,25 +99,6 @@ class UinGangsDataIterablePyG(IterableDataset):
         while buffer:
             yield buffer.pop()
 
-    def filter_iterator(self):
-        # 定义缓冲区, 缓冲区要尽可能比 batch_size 大
-        buffer = []
-        with open(self.file_path, 'r', encoding="utf-8") as f:
-            for i, line in enumerate(f):
-                if i in self.line_indices:
-                    line = line.strip()
-                    if len(line) == 0:
-                        print("Warning: line is empty")
-                        continue
-                    flag = self.filter_subgraph(line)
-                    if flag:
-                        buffer.append(line)
-        with open(os.path.join(self.args_dict["eval_data_path"],
-                               "uin_gangs_supervised_full_graph_dataset_eval_normal_subgraphs.txt"), 'w') as file:
-            for item in buffer:
-                file.write(f"{item}\n")
-        print("SAVE!")
-
     def pre_process(self, line):
         try:
             data = json.loads(line)
@@ -137,33 +120,6 @@ class UinGangsDataIterablePyG(IterableDataset):
                         return pyg_data
             else:
                 return None
-
-    def filter_subgraph(self, line):
-        try:
-            data = json.loads(line)
-        except json.JSONDecodeError as e:
-            print(f"JSON decode error: {e}")
-            error_position = e.pos
-            print("Error context:")
-            print(line[max(0, error_position - 50):error_position + 50])
-            return False
-        else:
-            if data["original_label"] in self.class_label_enums_dict:
-                label = self.class_label_enums_dict[data["original_label"]]
-                if label == 0:
-                    pyg_data = self.process_json_to_pyg(data, control_edge_number=self.control_node_num)
-                    if pyg_data is not None:
-                        gang_mem_num = self.generate_positive_samples_by_fraudar(pyg_data, return_nodes_num=True)
-                        if gang_mem_num < 3:
-                            return True
-                        else:
-                            return False
-                    else:
-                        return False
-                else:
-                    return False
-            else:
-                return False
 
     def process_json_to_pyg(self, json_data, control_node_number=5, control_edge_number=5):
         graph_data = HeteroData()
@@ -195,15 +151,24 @@ class UinGangsDataIterablePyG(IterableDataset):
                                         (int(edge_info["dst_nodeid"]), int(edge_info["src_nodeid"])))
                             except KeyError:
                                 print("Key error")
-                # add self loops
-                graph_data[('uin', 'self_loop', 'uin')].edge_index = (
-                    torch.concat([torch.tensor([[i], [i]]) for i in range(uin_acs_numberical_feat.shape[0])], dim=1))
-                # other edge types
-                for edge_type in all_edge_type_list:
-                    edge_index_set[edge_type] = list(set(edge_index_set[edge_type]))
-                    edge_index = [[src, dst] for (src, dst) in edge_index_set[edge_type]]
+                if self.args_dict['is_single_edge']:
+                    all_edge_index = []
+                    for edge_type in all_edge_type_list:
+                        all_edge_index.extend(edge_index_set[edge_type])
+                    all_edge_index = list(set(all_edge_index))
+                    edge_index = [[src, dst] for (src, dst) in all_edge_index]
                     edge_index = torch.tensor(edge_index)
-                    graph_data[('uin', edge_type, 'uin')].edge_index = edge_index.T
+                    graph_data[('uin', 'link', 'uin')].edge_index = edge_index.T
+                else:
+                    # add self loops
+                    graph_data[('uin', 'self_loop', 'uin')].edge_index = \
+                        (torch.concat([torch.tensor([[i], [i]]) for i in range(uin_acs_numberical_feat.shape[0])], dim=1))
+                    # other edge types
+                    for edge_type in all_edge_type_list:
+                        edge_index_set[edge_type] = list(set(edge_index_set[edge_type]))
+                        edge_index = [[src, dst] for (src, dst) in edge_index_set[edge_type]]
+                        edge_index = torch.tensor(edge_index)
+                        graph_data[('uin', edge_type, 'uin')].edge_index = edge_index.T
 
                 uin_acs_categorical_feat = torch.from_numpy(self.hasher.transform(np.array(
                     graph_schema["node_sets"]["uin"]["data"]["uin_acs_categorical_feat"][
@@ -211,8 +176,8 @@ class UinGangsDataIterablePyG(IterableDataset):
                 graph_data['uin'].x = torch.concat([uin_acs_numberical_feat, uin_acs_categorical_feat], dim=1)
                 text_list = np.array(
                     graph_schema["node_sets"]["uin"]["data"]["uin_acs_text_feat"]["string_list"]).squeeze().tolist()
-                text_input = self.minirbt_tokenizer(text_list, max_length=256, padding="max_length",
-                                                    truncation=True, return_tensors="pt")
+                text_input = self.minirbt_tokenizer(text_list, max_length=self.args_dict['uin_acs_text_feat_dim'],
+                                                    padding="max_length", truncation=True, return_tensors="pt")
                 uin_acs_text_feat_input_ids = text_input["input_ids"]
                 uin_acs_text_feat_attention_mask = text_input["attention_mask"]
                 graph_data['uin'].text_feat_input_ids = uin_acs_text_feat_input_ids
@@ -224,13 +189,10 @@ class UinGangsDataIterablePyG(IterableDataset):
                     graph_data['uin'].y = self.class_label_enums_dict[json_data['original_label'].strip()]
                 else:
                     graph_data['uin'].y = 1
-                if 'gangs_label' in json_data.keys():
-                    if "异常" in json_data['gangs_label'].strip():
-                        graph_data['uin'].gang_label = 1
-                    else:
-                        graph_data['uin'].gang_label = 0
-                else:
+                if "正常" in json_data['original_label'].strip():
                     graph_data['uin'].gang_label = 0
+                else:
+                    graph_data['uin'].gang_label = 1
                 graph_data['uin'].gang_mem = torch.zeros(graph_data['uin'].x.shape[0])
                 if 'uin_gangs_mem_list' in json_data.keys():
                     gang_mem_list = json_data['uin_gangs_mem_list'].split(',')

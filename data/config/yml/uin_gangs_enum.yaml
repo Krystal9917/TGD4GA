@@ -75,6 +75,7 @@ class_label_enums:
   账号-资金盘-数字货币资金盘欺诈: 18
   账号-资金盘-网络传销欺诈: 18
   账号-资金盘-刷单资金盘欺诈: 18
+  养号团伙: 19
 
 
 label_class_enums:
@@ -97,6 +98,7 @@ label_class_enums:
   16: 返利
   17: 刷单
   18: 资金盘
+  19: 养号
 
 label_class_amount_upper_limit:
   0: 1
@@ -118,6 +120,7 @@ label_class_amount_upper_limit:
   16: 1
   17: 1
   18: 2
+  19: 2
 
 
 label_class_weight:
@@ -140,6 +143,7 @@ label_class_weight:
   16: 100
   17: 33
   18: 200
+  19: 300
 
 label_class_threshold:
   0: 0.5
@@ -161,3 +165,4 @@ label_class_threshold:
   16: 0.0
   17: 0.0
   18: 0.0
+  19: 0.0
