@@ -29,13 +29,14 @@ class UinGangsModelPreTrain:
             print("GPU is not available")
             self.device = torch.device("cpu")
         # Load Pretrained Language Model for Text Embedding
-        self.minirbt_model = BertModel.from_pretrained(self.train_dict["minirbt_path"])
-        minirbt_model_params_size = 0
-        for param in self.minirbt_model.parameters():
-            param.requires_grad = False
-            minirbt_model_params_size += param.numel()
-        print(f"minirbt_model params size: {minirbt_model_params_size}")
-        self.minirbt_model.to(self.device)
+        if self.train_dict["load_text_feature"]:
+            self.minirbt_model = BertModel.from_pretrained(self.train_dict["minirbt_path"])
+            minirbt_model_params_size = 0
+            for param in self.minirbt_model.parameters():
+                param.requires_grad = False
+                minirbt_model_params_size += param.numel()
+            print(f"minirbt_model params size: {minirbt_model_params_size}")
+            self.minirbt_model.to(self.device)
         # Initialize GNN Model for Graph
         self.conv_type = args_dict["conv_type"]
         self.task_type = args_dict["task_type"]
@@ -73,17 +74,35 @@ class UinGangsModelPreTrain:
                               num_relations=self.num_relations,
                               num_bases=self.num_relations)
         elif self.conv_type == 'MaskRGCN':
-            self.model = MaskRGCN(
-                mlp_n_in_dim=args_dict['uin_acs_numberical_feat_dim'],
-                mlp_c_in_dim=args_dict['uin_acs_categorical_feat_hasher_dim'],
-                mlp_t_in_dim=args_dict['uin_acs_text_feat_dim'],
-                input_dim=args_dict['input_dim'],
-                hidden_dim=args_dict['hidden_dim'],
-                output_dim=args_dict['output_dim'],
-                adapter_type=args_dict['adapter_type'],
-                num_relations=self.num_relations,
-                metric_learning=self.metric,
-                num_bases=self.num_relations)
+            if self.train_dict["load_text_feature"]:
+                input_dim = (args_dict['uin_acs_numberical_feat_dim'] +
+                             args_dict['uin_acs_categorical_feat_hasher_dim'] +
+                             args_dict['uin_acs_text_feat_dim'])
+                self.model = MaskRGCN(
+                    mlp_n_in_dim=args_dict['uin_acs_numberical_feat_dim'],
+                    mlp_c_in_dim=args_dict['uin_acs_categorical_feat_hasher_dim'],
+                    mlp_t_in_dim=args_dict['uin_acs_text_feat_dim'],
+                    input_dim=input_dim,
+                    hidden_dim=args_dict['hidden_dim'],
+                    output_dim=args_dict['output_dim'],
+                    adapter_type=args_dict['adapter_type'],
+                    num_relations=self.num_relations,
+                    metric_learning=self.metric,
+                    num_bases=self.num_relations)
+            else:
+                input_dim = (args_dict['uin_acs_numberical_feat_dim'] +
+                             args_dict['uin_acs_categorical_feat_hasher_dim'])
+                self.model = MaskRGCN(
+                    mlp_n_in_dim=args_dict['uin_acs_numberical_feat_dim'],
+                    mlp_c_in_dim=args_dict['uin_acs_categorical_feat_hasher_dim'],
+                    mlp_t_in_dim=None,
+                    input_dim=input_dim,
+                    hidden_dim=args_dict['hidden_dim'],
+                    output_dim=args_dict['output_dim'],
+                    adapter_type=args_dict['adapter_type'],
+                    num_relations=self.num_relations,
+                    metric_learning=self.metric,
+                    num_bases=self.num_relations)
         else:
             self.model = AttnRGCN(
                 mlp_n_in_dim=args_dict['uin_acs_numberical_feat_dim'],
@@ -111,7 +130,7 @@ class UinGangsModelPreTrain:
                                                     collate_fn=self.train_data.pos_collate_fn_for_fraudar)
         self.log_file_path = (f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_"
                               f"{control_node_num}_lr_{str(lr)}_edges_{self.num_relations}"
-                              f"{self.train_dict['lr_scheduler']}")
+                              f"{self.train_dict['lr_scheduler']}_text_{self.train_dict['load_text_feature']}")
         log_path = os.path.abspath(os.path.join(args_dict['log_dir'],
                                                 self.train_dict["model_states_path"].split('/')[-1],
                                                 self.log_file_path))
@@ -428,68 +447,6 @@ class UinGangsModelPreTrain:
                     del batch_copy[edge_type]
         return batch_copy
 
-    def random_sampling_pretraining(self):
-        for epoch in range(self.start_epoch, self.end_epoch):
-            self.model.train()
-            epoch_loss = []
-            epoch_start_time = time.time()
-            for (i, batch) in enumerate(self.pos_train_loader):
-                start_time = time.time()
-                self.optimizer.zero_grad()
-                batch = batch.to(self.device)
-                batch_uin_acs_text_feat_input_ids = batch['uin'].text_feat_input_ids.to(self.device)
-                batch_uin_acs_text_feat_attention_mask = batch['uin'].text_feat_attention_mask.to(self.device)
-                with torch.no_grad():
-                    batch_uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
-                                                                 batch_uin_acs_text_feat_attention_mask).pooler_output
-                    batch_uin_acs_text_feat = batch_uin_acs_text_feat.to(self.device)
-                # combine numerical, categorical and text attributes
-                batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
-                batch_x = torch.nn.functional.normalize(batch_x, dim=1)
-                batch['uin'].x = batch_x.to(self.device)
-                # get edge information
-                batch_edge_index, batch_edge_types = self.get_edge_info(batch)
-                batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
-                batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-
-                pos_batch = self.extract_batch_subgraphs(batch, (batch['uin'].mask == 0).nonzero().squeeze().detach())
-                pos_batch_edge_index, pos_batch_edge_types = self.get_edge_info(pos_batch)
-                pos_batch_h = self.model(pos_batch['uin'].x, pos_batch_edge_index, pos_batch_edge_types)
-                pos_batch_h_g = scatter_mean(pos_batch_h, pos_batch['uin'].batch, dim=0)
-                # subgraph-level contrastive learning
-                loss = self.contrastive_loss(batch_h_g, pos_batch_h_g)
-                loss.backward()
-                self.optimizer.step()
-                torch.cuda.empty_cache()
-                loss_value = loss.detach().cpu().item()
-                epoch_loss.append(loss_value)
-                print(
-                    "Batch: {}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
-                        i + 1,
-                        loss_value,
-                        time.time() - start_time))
-            epoch_loss = sum(epoch_loss) / len(epoch_loss)
-            if not self.train_dict["is_debug"]:
-                self.writer.add_scalar('pretraining_loss', epoch_loss, epoch)
-            print("Epoch: {}, Loss: {:.4f}, Time: {:.4f} s".format(epoch, epoch_loss,
-                                                                   time.time() - epoch_start_time))
-            if epoch_loss < self.best_loss:
-                self.best_loss = epoch_loss
-                file_name = os.path.join(self.save_model_path, "uin_gangs_RGCN_model_best_loss.pth")
-                torch.save(self.model.state_dict(), file_name)
-                print(f"Now best loss: {self.best_loss:.4f}, save model to {file_name}")
-        if not self.train_dict["is_debug"]:
-            self.writer.close()
-
-    def hetero_fit(self, x_dict, edge_index_dict):
-        try:
-            out = self.model(x_dict, edge_index_dict)
-        except Exception as e:
-            print(f"{self.conv_type} Error: <{e}>")
-            return None
-        else:
-            return out
-
     def relation_fit(self, pos_batch, batch_x):
         try:
             batch_edge_index, batch_edge_types = self.get_edge_info(pos_batch)
@@ -511,14 +468,17 @@ class UinGangsModelPreTrain:
                 start_time = time.time()
                 self.optimizer.zero_grad()
                 pos_batch = pos_batch.to(self.device)
-                batch_uin_acs_text_feat_input_ids = pos_batch['uin'].text_feat_input_ids.to(self.device)
-                batch_uin_acs_text_feat_attention_mask = pos_batch['uin'].text_feat_attention_mask.to(self.device)
-                with torch.no_grad():
-                    batch_uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
+                if self.train_dict["load_text_feature"]:
+                    batch_uin_acs_text_feat_input_ids = pos_batch['uin'].text_feat_input_ids.to(self.device)
+                    batch_uin_acs_text_feat_attention_mask = pos_batch['uin'].text_feat_attention_mask.to(self.device)
+                    with torch.no_grad():
+                        batch_uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
                                                                  batch_uin_acs_text_feat_attention_mask).pooler_output
-                    batch_uin_acs_text_feat = batch_uin_acs_text_feat.to(self.device)
-                # combine numerical, categorical and text attributes
-                batch_x = torch.concat([pos_batch['uin'].x, batch_uin_acs_text_feat], dim=1)
+                        batch_uin_acs_text_feat = batch_uin_acs_text_feat.to(self.device)
+                    # combine numerical, categorical and text attributes
+                    batch_x = torch.concat([pos_batch['uin'].x, batch_uin_acs_text_feat], dim=1)
+                else:
+                    batch_x = pos_batch['uin'].x
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 pos_batch['uin'].x = batch_x
                 batch_h = self.relation_fit(pos_batch, pos_batch['uin'].x)
@@ -565,8 +525,8 @@ class UinGangsModelPreTrain:
                                     [(pos_batch['uin'].batch == i).nonzero().squeeze().detach().cpu() for i in
                                      pos_batch_idx], dim=0).tolist()
                             else:
-                                batch_pos_neg_samples_idx = (pos_batch[
-                                                                 'uin'].batch == pos_batch_idx).nonzero().squeeze().detach().cpu().tolist()
+                                batch_pos_neg_samples_idx = ((pos_batch['uin'].batch == pos_batch_idx).
+                                                             nonzero().squeeze().detach().cpu().tolist())
                             pos_samples_idx = (
                                     pos_batch['uin'].idx == 1).nonzero().squeeze().detach().cpu().tolist()
                             batch_pos_samples_idx = list(set(batch_pos_neg_samples_idx) & set(pos_samples_idx))
@@ -642,8 +602,8 @@ class UinGangsModelPreTrain:
                             if (i + 1) % 10 == 0:
                                 if self.task_type in ['batch_subgraph', 'fine_grained_batch_subgraph']:
                                     print(
-                                        "Batch: {}, n_weight: {:.2f}, c_weight:{:.2f}, Loss: {:.6f}, "
-                                        "Batch Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
+                                        "Batch: {}, Loss: {:.6f}, Batch Loss: {:.6f}, "
+                                        "Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
                                             i + 1,
                                             self.n_weight,
                                             self.c_weight,
@@ -653,8 +613,8 @@ class UinGangsModelPreTrain:
                                             time.time() - start_time))
                                 elif self.task_type in ['cross_subgraph', 'fine_grained_cross_subgraph']:
                                     print(
-                                        "Batch: {}, n_weight: {:.2f}, c_weight:{:.2f}, Loss: {:.6f}, "
-                                        "Cross Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
+                                        "Batch: {}, Loss: {:.6f}, Cross Loss: {:.6f}, "
+                                        "Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
                                             i + 1,
                                             self.n_weight,
                                             self.c_weight,
@@ -664,8 +624,8 @@ class UinGangsModelPreTrain:
                                             time.time() - start_time))
                                 elif self.task_type == 'context_cl':
                                     print(
-                                        "Batch: {}, n_weight: {:.2f}, c_weight:{:.2f}, Loss: {:.6f}, "
-                                        "Context Loss: {:.6f}, Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
+                                        "Batch: {}, Loss: {:.6f}, Context Loss: {:.6f}, "
+                                        "Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
                                             i + 1,
                                             self.n_weight.detach().cpu().item(),
                                             self.c_weight.detach().cpu().item(),

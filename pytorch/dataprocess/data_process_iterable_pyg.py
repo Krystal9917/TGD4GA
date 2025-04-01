@@ -42,6 +42,8 @@ class UinGangsDataIterablePyG(IterableDataset):
         self.label_class_weight = torch.tensor(
             [self.label_class_weight_dict[key] for key in range(len(self.label_class_weight_dict))])
 
+        self.load_text = self.args_dict["load_text_feature"]
+
         st = time.time()
         with open(self.file_path, 'r', encoding="utf-8") as file:
             self.line_indices = list(range(sum(1 for _ in file)))
@@ -51,12 +53,12 @@ class UinGangsDataIterablePyG(IterableDataset):
                   f"Load Time: {time.time() - st:.4f} s")
         self.control_node_num = self.args_dict["filter_node_num"]
 
-        # 预训练的文本embedding模型的分词工具
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
         else:
             self.device = torch.device("cpu")
-        self.minirbt_tokenizer = AutoTokenizer.from_pretrained(self.args_dict["minirbt_path"])
+        if self.load_text:
+            self.minirbt_tokenizer = AutoTokenizer.from_pretrained(self.args_dict["minirbt_path"])
         self.undirected_edge_types = ['idcardid', 'bankcard', 'device', 'wifi', 'ipv6', 'room',
                                       'headimg', 'signature', 'nickname', 'android_bootid_fsid']
         self.hasher = FeatureHasher(n_features=self.args_dict['uin_acs_categorical_feat_hasher_dim'],
@@ -174,14 +176,15 @@ class UinGangsDataIterablePyG(IterableDataset):
                     graph_schema["node_sets"]["uin"]["data"]["uin_acs_categorical_feat"][
                         "string_list"])).toarray()).float()
                 graph_data['uin'].x = torch.concat([uin_acs_numberical_feat, uin_acs_categorical_feat], dim=1)
-                text_list = np.array(
-                    graph_schema["node_sets"]["uin"]["data"]["uin_acs_text_feat"]["string_list"]).squeeze().tolist()
-                text_input = self.minirbt_tokenizer(text_list, max_length=self.args_dict['uin_acs_text_feat_dim'],
-                                                    padding="max_length", truncation=True, return_tensors="pt")
-                uin_acs_text_feat_input_ids = text_input["input_ids"]
-                uin_acs_text_feat_attention_mask = text_input["attention_mask"]
-                graph_data['uin'].text_feat_input_ids = uin_acs_text_feat_input_ids
-                graph_data['uin'].text_feat_attention_mask = uin_acs_text_feat_attention_mask
+                if self.load_text:
+                    text_list = np.array(
+                        graph_schema["node_sets"]["uin"]["data"]["uin_acs_text_feat"]["string_list"]).squeeze().tolist()
+                    text_input = self.minirbt_tokenizer(text_list, max_length=self.args_dict['uin_acs_text_feat_dim'],
+                                                        padding="max_length", truncation=True, return_tensors="pt")
+                    uin_acs_text_feat_input_ids = text_input["input_ids"]
+                    uin_acs_text_feat_attention_mask = text_input["attention_mask"]
+                    graph_data['uin'].text_feat_input_ids = uin_acs_text_feat_input_ids
+                    graph_data['uin'].text_feat_attention_mask = uin_acs_text_feat_attention_mask
                 # obtain anomaly score
                 graph_data['uin'].score = torch.from_numpy(np.array(
                     graph_schema["node_sets"]["uin"]["data"]["uin_evil_score"]["float_list"], dtype=np.float32)).float()
@@ -193,8 +196,8 @@ class UinGangsDataIterablePyG(IterableDataset):
                     graph_data['uin'].gang_label = 0
                 else:
                     graph_data['uin'].gang_label = 1
-                graph_data['uin'].gang_mem = torch.zeros(graph_data['uin'].x.shape[0])
                 if 'uin_gangs_mem_list' in json_data.keys():
+                    graph_data['uin'].gang_mem = torch.zeros(graph_data['uin'].x.shape[0])
                     gang_mem_list = json_data['uin_gangs_mem_list'].split(',')
                     map_dict = graph_schema['uin2nodeid_map']
                     for uin_gang_mem in gang_mem_list:

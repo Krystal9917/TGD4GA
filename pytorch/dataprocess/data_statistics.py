@@ -1,5 +1,7 @@
+import ot
 import json
 import torch
+import random
 import os.path
 import numpy as np
 import pandas as pd
@@ -18,27 +20,26 @@ from sklearn.feature_extraction import FeatureHasher
 def read_file(in_dir, infile_name, outfile_name):
     unique_data_list = []
     unique_line_list = []
+    normal_count = 0
+    abnormal_count = 0
     same_count = 0
-    normal_count = 599
+    with open(in_dir + infile_name, 'r') as f:
+        line_count = list(range(sum(1 for _ in f)))
+    random.shuffle(line_count)
+    line_count = line_count[:800]
     with open(in_dir + infile_name, 'r') as f:
         for i, line in enumerate(f):
-            # if i not in [40, 54, 60, 62, 105, 108, 114, 138, 149, 199, 225, 264, 290, 291, 349, 356, 401, 411, 417, 440, 453, 471, 517, 550, 563, 583, 593, 604, 618]:
-            #     data = json.loads(line)
-            #     if '养号' in data['original_label']:
-            #         if data not in unique_data_list:
-            #             unique_data_list.append(data)
-            #             unique_line_list.append(line)
-            #         else:
-            #             same_count += 1
-            data = json.loads(line)
-            if '正常' in data['original_label']:
+            if i in line_count:
+                data = json.loads(line)
+                if '正常' in data['original_label']:
+                    normal_count += 1
+                else:
+                    abnormal_count += 1
                 if data not in unique_data_list:
                     unique_data_list.append(data)
                     unique_line_list.append(line)
-                    normal_count -= 1
-            if normal_count == 0:
-                break
     print(len(unique_data_list), same_count)
+    print(f"Normal count: {normal_count}, abnormal count: {abnormal_count}")
     with open(in_dir + outfile_name, 'w') as f:
         for line in unique_line_list:
             f.write(line)
@@ -51,49 +52,49 @@ def process(in_dir, infile_name):
     minirbt_model = BertModel.from_pretrained(minirbt_path)
     hasher = FeatureHasher(n_features=256, input_type='string')
     data_list = []
-    anomaly_score = []
-    scaler = MinMaxScaler()
+    # anomaly_score = []
+    # scaler = MinMaxScaler()
     with open(in_dir + infile_name, 'r') as f:
         for i, line in enumerate(f):
-            if i in [32, 34, 35, 36]:
-                data = json.loads(line)
-                pyg_data = process_json_to_pyg(data, hasher, minirbt_tokenizer, minirbt_model)
-                total_edge_index = torch.concat([pyg_data[edge_type].edge_index for edge_type in pyg_data.edge_types],
-                                                dim=1)
-                full_adj = to_dense_adj(total_edge_index, max_num_nodes=pyg_data.num_nodes).squeeze()
-                gang_mem_idx = (pyg_data['uin'].gang_mem == 1).nonzero().squeeze()
-                non_gang_mem_idx = (pyg_data['uin'].gang_mem == 0).nonzero().squeeze()
-                gang_non_gang_adj_1 = full_adj[gang_mem_idx, :][:, non_gang_mem_idx]
-                gang_non_gang_adj_2 = full_adj[non_gang_mem_idx, :]
-                if len(gang_non_gang_adj_2.shape) == 1:
-                    gang_non_gang_adj_2 = gang_non_gang_adj_2[gang_mem_idx]
-                else:
-                    gang_non_gang_adj_2 = gang_non_gang_adj_2[:, gang_mem_idx]
-                gang_non_gang_adj = gang_non_gang_adj_1.T + gang_non_gang_adj_2
-                gang_score = pyg_data['uin'].score[gang_mem_idx].squeeze()
-                gang_adj = full_adj[gang_mem_idx, :][:, gang_mem_idx]
-                gang_density, gang_non_gang_density = gang_adj.mean().item(), gang_non_gang_adj.mean().item()
-                df_data = pd.DataFrame(np.array([[i, gang_density, gang_non_gang_density]]))
-                data_list.append(df_data)
+            # if i in [32, 34, 35, 36]:
+            data = json.loads(line)
+            pyg_data = process_json_to_pyg(data, hasher, minirbt_tokenizer, minirbt_model)
+                # total_edge_index = torch.concat([pyg_data[edge_type].edge_index for edge_type in pyg_data.edge_types],
+                #                                 dim=1)
+                # full_adj = to_dense_adj(total_edge_index, max_num_nodes=pyg_data.num_nodes).squeeze()
+                # gang_mem_idx = (pyg_data['uin'].gang_mem == 1).nonzero().squeeze()
+                # non_gang_mem_idx = (pyg_data['uin'].gang_mem == 0).nonzero().squeeze()
+                # gang_non_gang_adj_1 = full_adj[gang_mem_idx, :][:, non_gang_mem_idx]
+                # gang_non_gang_adj_2 = full_adj[non_gang_mem_idx, :]
+                # if len(gang_non_gang_adj_2.shape) == 1:
+                #     gang_non_gang_adj_2 = gang_non_gang_adj_2[gang_mem_idx]
+                # else:
+                #     gang_non_gang_adj_2 = gang_non_gang_adj_2[:, gang_mem_idx]
+                # gang_non_gang_adj = gang_non_gang_adj_1.T + gang_non_gang_adj_2
+                # gang_score = pyg_data['uin'].score[gang_mem_idx].squeeze()
+                # gang_adj = full_adj[gang_mem_idx, :][:, gang_mem_idx]
+                # gang_density, gang_non_gang_density = gang_adj.mean().item(), gang_non_gang_adj.mean().item()
+                # df_data = pd.DataFrame(np.array([[i, gang_density, gang_non_gang_density]]))
+                # data_list.append(df_data)
             # label = data['original_label']
             # x = pyg_data['uin'].x[pyg_data['uin'].gang_mem == 1]
             # gang_score = pyg_data['uin'].score[pyg_data['uin'].gang_mem == 1]
             # score = pyg_data['uin'].score
             # anomaly_score.append(pd.DataFrame(
             #     [[gang_score.mean().item(), gang_score.std().item(), score.mean().item(), score.std().item()]]))
-            # x = pyg_data['uin'].x
+            x = pyg_data['uin'].x
             # x_normalized = scaler.fit_transform(x.detach().numpy())
             # pca(x_normalized, pyg_data['uin'].gang_mem.int().numpy())
-
             # label = pyg_data['uin'].gang_mem.unsqueeze(1).int()
-            # score = pyg_data['uin'].score
-            # idx = (torch.ones_like(score) * i).type(torch.LongTensor)
-            # df_data = pd.DataFrame(torch.concat([idx, label, score, x], dim=1).detach().numpy())
-            # data_list.append(df_data)
+            label = -1 * torch.ones(x.shape[0], 1)
+            label[0] = pyg_data['uin'].root_label
+            score = pyg_data['uin'].score
+            idx = (torch.ones_like(score) * i).type(torch.LongTensor)
+            df_data = pd.DataFrame(torch.concat([idx, label, score, x], dim=1).detach().numpy())
+            data_list.append(df_data)
     # anomaly_score = pd.concat(anomaly_score)
     data_list = pd.concat(data_list)
-    print()
-    # data_list.to_csv(in_dir + 'full_subgraphs_connectivity.csv', index=False)
+    data_list.to_csv(in_dir + 'unlabeled_subgraphs.csv', index=False)
 
 
 def process_json_to_pyg(json_data, hasher, minirbt_tokenizer, minirbt_model, undirected_edge_types=None):
@@ -147,8 +148,9 @@ def process_json_to_pyg(json_data, hasher, minirbt_tokenizer, minirbt_model, und
     # obtain anomaly score
     graph_data['uin'].score = torch.from_numpy(np.array(
         graph_schema["node_sets"]["uin"]["data"]["uin_evil_score"]["float_list"], dtype=np.float32)).float()
-    graph_data['uin'].gang_mem = torch.zeros(graph_data['uin'].score.shape[0])
+    graph_data['uin'].root_label = 0 if "正常" in json_data['original_label'] else 1
     if 'uin_gangs_mem_list' in json_data.keys():
+        graph_data['uin'].gang_mem = torch.zeros(graph_data['uin'].score.shape[0])
         gang_mem_list = json_data['uin_gangs_mem_list'].split(',')
         map_dict = graph_schema['uin2nodeid_map']
         for uin_gang_mem in gang_mem_list:
@@ -205,7 +207,7 @@ def pca(x, y, tag=None):
     pca = PCA(n_components=2)
     X_pca = pca.fit_transform(x)
     plt.figure(figsize=(8, 6))
-    scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], cmap='viridis', c=y, edgecolor='k', s=25)
+    scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], cmap='viridis', c=y, edgecolor='k', alpha=0.5, s=25)
     # if tag is not None:
     #     plt.title(f'General and Yanghao Gangs in {tag}')
     # else:
@@ -220,11 +222,25 @@ def t_SNE(x, y, tag=None):
     tsne = TSNE(n_components=2, perplexity=30, random_state=0)
     data_tsne = tsne.fit_transform(x)
     plt.figure(figsize=(8, 6))
-    scatter = plt.scatter(data_tsne[:, 0], data_tsne[:, 1], c=y, cmap='viridis', alpha=0.7)
+    scatter = plt.scatter(data_tsne[:, 0], data_tsne[:, 1], c=y, cmap='viridis', alpha=0.5)
     plt.colorbar(scatter, label='Class Label')
     plt.title(f't-SNE Visualization of {tag} Features with Labels')
     plt.xlabel('t-SNE Component 1')
     plt.ylabel('t-SNE Component 2')
+    plt.grid()
+    plt.show()
+
+
+def t_SNE_3d(x, y, tag=None):
+    tsne = TSNE(n_components=3, perplexity=30, random_state=0)
+    data_tsne = tsne.fit_transform(x)
+    fig = plt.figure(figsize=(8, 6))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(data_tsne[:, 0], data_tsne[:, 2], data_tsne[:, 1], c=y, cmap='viridis', alpha=0.5)
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    plt.title(f't-SNE Visualization of {tag} Features with Labels')
     plt.grid()
     plt.show()
 
@@ -266,10 +282,18 @@ def new_feature_statistics(path):
     # gang_labels = np.zeros(full_gang_feature.shape[0])
     # pca(gang_features_normed, gang_labels)
     full_exclude_file = 'full_exclude_gangs.csv'
+    part_label_file = 'unlabeled_subgraphs.csv'
     full_data = pd.read_csv(path+full_file, header=0, dtype={'0': np.int32})
     full_exclude_data = pd.read_csv(path+full_exclude_file, header=0, dtype={'0': np.int32})
-    labels = np.concatenate([np.ones(full_data['0'].shape[0]), np.zeros(full_exclude_data['0'].shape[0])], axis=0)
-    features = np.concatenate([full_data.iloc[:, 508:].to_numpy(), full_exclude_data.iloc[:, 508:].to_numpy()], axis=0)
+    part_label_data = pd.read_csv(path+part_label_file, header=0, dtype={'0': np.int32})
+    full_data_labels = np.concatenate([np.zeros(full_exclude_data['0'].shape[0]), np.ones(full_data['0'].shape[0])], axis=0)
+    part_data_labels = part_label_data['1'].to_numpy()
+    part_data_labels[part_data_labels == 0] = 2
+    part_data_labels[part_data_labels == 1] = 3
+    labels = np.concatenate([full_data_labels, part_data_labels], axis=0)
+    features = np.concatenate([full_exclude_data.iloc[:, 508:].to_numpy(),
+                               full_data.iloc[:, 508:].to_numpy(),
+                               part_label_data.iloc[:, 509:].to_numpy()], axis=0)
     # general_file = 'general_subgraphs.csv'
     # yanghao_file = 'yanghao_subgraphs.csv'
     # general_data = pd.read_csv(path + general_file, header=0, dtype={'0': np.int32})
@@ -282,7 +306,9 @@ def new_feature_statistics(path):
     # features = np.concatenate([general_data.iloc[:, 3:].to_numpy(), yanghao_data.iloc[:, 3:].to_numpy()], axis=0)
     scaler = MinMaxScaler()
     features_normed = scaler.fit_transform(features)
-    pca(features_normed, labels)
+    # pca(features_normed, labels)
+    t_SNE(features_normed, labels, "Textual")
+    # t_SNE_3d(features_normed, labels, "Raw")
 
 
 def gang_score_std(path):
@@ -364,49 +390,101 @@ def class_score_histogram(path, file_name, tag):
     plt.show()
 
 
+def representation_statistics(path):
+    data_list = []
+    for i in range(1, 6):
+        file_name = f'supervised_10_output_representation_label_sample_{i}.csv'
+        data_i = pd.read_csv(path + file_name, header=0, dtype={'0': np.int32})
+        data_list.append(data_i)
+    data_list = pd.concat(data_list, axis=0)
+    label = data_list['0'].to_numpy()
+    scaler = MinMaxScaler()
+    features = data_list.iloc[:, 1:].to_numpy()
+    features_normed = scaler.fit_transform(features)
+    t_SNE(features_normed, label, 'Supervised Output')
+
+def wasserstein_distance(path):
+    full_file = 'full_gangs.csv'
+    full_exclude_file = 'full_exclude_gangs.csv'
+    full_data = pd.read_csv(path + full_file, header=0, dtype={'0': np.int32}).iloc[:, 2:]
+    full_exclude_data = pd.read_csv(path + full_exclude_file, header=0, dtype={'0': np.int32}).iloc[:, 2:]
+    # downstream_data = pd.concat([full_data, full_exclude_data], axis=0).iloc[20000:40000, 2:]
+    # del full_data
+    # del full_exclude_data
+    # unlabeled_file = 'unlabeled_subgraphs.csv'
+    # upstream_data = pd.read_csv(path + unlabeled_file, header=0, dtype={'0': np.int32}).iloc[:20000, 3:]
+    scaler = MinMaxScaler()
+    X_scaled = scaler.fit_transform(full_data)
+    Y_scaled = scaler.fit_transform(full_exclude_data)
+    del full_data
+    del full_exclude_data
+    # del downstream_data
+    # del upstream_data
+    # pca = PCA(n_components=250)
+    # X_pca = pca.fit_transform(X_scaled)
+    # Y_pca = pca.fit_transform(Y_scaled)
+    X_pca = X_scaled
+    Y_pca = Y_scaled
+    del X_scaled
+    del Y_scaled
+    a = np.ones(X_pca.shape[0]) / X_pca.shape[0]
+    b = np.ones(Y_pca.shape[0]) / Y_pca.shape[0]
+
+    M = ot.dist(X_pca, Y_pca)
+    w_distance = ot.emd2(a, b, M)
+    print("Wasserstein Distance:", w_distance)
+
+
+def gaussian_kernel(x, y, sigma=1.0):
+    """计算高斯核"""
+    return np.exp(-np.linalg.norm(x - y) ** 2 / (2 * sigma ** 2))
+
+def compute_mmd(X1, X2, sigma=1.0):
+    """计算 MMD"""
+    N1 = X1.shape[0]
+    N2 = X2.shape[0]
+
+    # 计算内积矩阵
+    K_xx = np.zeros((N1, N1))
+    for i in range(N1):
+        for j in range(N1):
+            K_xx[i, j] = gaussian_kernel(X1[i], X1[j], sigma)
+
+    K_yy = np.zeros((N2, N2))
+    for i in range(N2):
+        for j in range(N2):
+            K_yy[i, j] = gaussian_kernel(X2[i], X2[j], sigma)
+
+    K_xy = np.zeros((N1, N2))
+    for i in range(N1):
+        for j in range(N2):
+            K_xy[i, j] = gaussian_kernel(X1[i], X2[j], sigma)
+
+    # 计算 MMD
+    mmd_squared = (1.0 / (N1 ** 2)) * np.sum(K_xx) - (2.0 / (N1 * N2)) * np.sum(K_xy) + (1.0 / (N2 ** 2)) * np.sum(K_yy)
+
+    return np.sqrt(mmd_squared)
+
+
+def mmd(path):
+    full_file = 'full_gangs.csv'
+    full_exclude_file = 'full_exclude_gangs.csv'
+    full_data = pd.read_csv(path + full_file, header=0, dtype={'0': np.int32}).iloc[:, 2:]
+    full_exclude_data = pd.read_csv(path + full_exclude_file, header=0, dtype={'0': np.int32}).iloc[:, 2:]
+    downstream_data = pd.concat([full_data, full_exclude_data], axis=0).iloc[20000:40000, 2:]
+    del full_data
+    del full_exclude_data
+    unlabeled_file = 'unlabeled_subgraphs.csv'
+    upstream_data = pd.read_csv(path + unlabeled_file, header=0, dtype={'0': np.int32}).iloc[:20000, 3:]
+    scaler = MinMaxScaler()
+    X_scaled = scaler.fit_transform(downstream_data)
+    Y_scaled = scaler.fit_transform(upstream_data)
+    mmd_value = compute_mmd(X_scaled, Y_scaled, sigma=1.0)
+    print(f"MMD Value: {mmd_value}")
+
+
 if __name__ == '__main__':
     path_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/valid/raw/'
     # filename = 'uin_gangs_supervise_full_graph_dataset_eval_241204_20241211_positive.txt'
-    # read_file(path_dir, filename)
-
-    # yanghao_filename = 'uin_gangs_supervise_full_graph_dataset_eval_250228_202502281128.txt'
-    # yanghao_filename_filter = 'uin_gangs_supervise_full_graph_dataset_eval_250228_202502281128_filter.txt'
-    # read_file(path_dir, yanghao_filename, yanghao_filename_filter)
-
-    # process(path_dir, filename)
-
-    # full_filename = 'uin_gangs_supervise_full_graph_dataset_eval_250324_202503241700_2.txt'
-    # filter_filename = 'uin_gangs_supervise_full_graph_dataset_eval_250324_202503241700_exclude_none_connect_gangs.txt'
-    # white_filename = 'uin_gangs_full_graph_dataset_train_202503201445_white.txt'
-    # filter_white_filename = 'uin_gangs_full_graph_dataset_train_202503201445_599_white.txt'
-    # read_file(path_dir, white_filename, filter_white_filename)
-
-    # simple_statistics(path_dir)
-    # process(path_dir, yanghao_filename_filter)
+    part_unlabeled_filename = 'uin_gangs_full_graph_dataset_train_202503201445_random_800.txt'
     new_feature_statistics(path_dir)
-
-    # gang_score_std(path_dir)
-
-    # filter_gang(path_dir)
-
-    # gang_file = 'full_gangs.csv'
-    # normal_file = 'full_exclude_gangs.csv'
-    # score_histogram(path_dir, gang_file, tag='Gang Member')
-    # score_histogram(path_dir, normal_file, tag='Normal User')
-
-    # general_file = 'general_subgraphs.csv'
-    # yanghao_file = 'yanghao_subgraphs.csv'
-    # full_file = 'full_gangs.csv'
-    # statistics_subgraph(path_dir, general_file, 'General Subgraph')
-    # statistics_subgraph(path_dir, yanghao_file, 'Yanghao Subgraph')
-    # statistics_subgraph(path_dir, full_file, 'Full Gang')
-    # class_score_histogram(path_dir, general_file, 'General Subgraph')
-    # class_score_histogram(path_dir, yanghao_file, 'Yanghao Subgraph')
-
-    # full_filter_file = 'uin_gangs_supervise_full_graph_dataset_eval_250324_202503241700_2.txt'
-    # process(path_dir, full_filter_file)
-
-    # file_name = 'gang_score_mean_std.csv'
-    # density_data = pd.read_csv(path_dir + file_name, dtype={'0': np.int32})
-    # filter_data_1 = density_data[(density_data['1'] < density_data['2']) | (density_data['1'] == 0)]
-    # print()

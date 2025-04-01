@@ -40,24 +40,24 @@ class Adapter(torch.nn.Module):
 
 class MaskRGCNConv(MessagePassing):
     def __init__(
-        self,
-        in_channels: Union[int, Tuple[int, int]],
-        mlp_n_in_channels: int,
-        mlp_c_in_channels: int,
-        mlp_t_in_channels: int,
-        out_channels: int,
-        num_relations: int,
-        is_dropout: bool = False,
-        attn_weight_type: str = 'split',
-        adapter_type: str = 'post_relation',
-        metric_learning: str = 'similarity',
-        num_bases: Optional[int] = None,
-        num_blocks: Optional[int] = None,
-        aggr: str = 'mean',
-        root_weight: bool = True,
-        is_sorted: bool = False,
-        bias: bool = True,
-        **kwargs,
+            self,
+            mlp_n_in_channels: int,
+            mlp_c_in_channels: int,
+            in_channels: Union[int, Tuple[int, int]],
+            out_channels: int,
+            num_relations: int,
+            mlp_t_in_channels: Optional[int] = None,
+            is_dropout: bool = False,
+            attn_weight_type: str = 'split',
+            adapter_type: str = 'post_relation',
+            metric_learning: str = 'similarity',
+            num_bases: Optional[int] = None,
+            num_blocks: Optional[int] = None,
+            aggr: str = 'mean',
+            root_weight: bool = True,
+            is_sorted: bool = False,
+            bias: bool = True,
+            **kwargs,
     ):
         kwargs.setdefault('aggr', aggr)
         super().__init__(node_dim=0, **kwargs)
@@ -82,7 +82,7 @@ class MaskRGCNConv(MessagePassing):
             self.adapter = torch.nn.ModuleList([
                 Adapter(in_channels, reduction=2)
                 for i in range(num_relations)
-                ])
+            ])
         elif self.adapter_type == 'post_aggregation':
             self.adapter = Adapter(out_channels, reduction=2)
         self.metric_learning = metric_learning
@@ -90,10 +90,11 @@ class MaskRGCNConv(MessagePassing):
             if self.metric_learning == 'similarity':
                 self.gamma_1 = torch.nn.Parameter(torch.ones(num_relations))
                 self.gamma_2 = torch.nn.Parameter(torch.ones(num_relations) * 0.5)
-                self.gamma_3 = torch.nn.Parameter(torch.ones(num_relations) * 0.5)
                 self.mask_n_generators = torch.exp
                 self.mask_c_generators = torch.exp
-                self.mask_t_generators = torch.exp
+                if self.mlp_t_in_channels is not None:
+                    self.gamma_3 = torch.nn.Parameter(torch.ones(num_relations) * 0.5)
+                    self.mask_t_generators = torch.exp
             else:
                 self.mask_n_generators = torch.nn.ModuleList([
                     torch.nn.Sequential(
@@ -111,14 +112,15 @@ class MaskRGCNConv(MessagePassing):
                         torch.nn.ReLU()
                     ) for _ in range(num_relations)
                 ])
-                self.mask_t_generators = torch.nn.ModuleList([
-                    torch.nn.Sequential(
-                        torch.nn.Linear(mlp_t_in_channels, mlp_t_in_channels),
-                        torch.nn.ReLU(),
-                        torch.nn.Linear(mlp_t_in_channels, 1),
-                        torch.nn.ReLU()
-                    ) for _ in range(num_relations)
-                ])
+                if mlp_t_in_channels is not None:
+                    self.mask_t_generators = torch.nn.ModuleList([
+                        torch.nn.Sequential(
+                            torch.nn.Linear(mlp_t_in_channels, mlp_t_in_channels),
+                            torch.nn.ReLU(),
+                            torch.nn.Linear(mlp_t_in_channels, 1),
+                            torch.nn.ReLU()
+                        ) for _ in range(num_relations)
+                    ])
         else:
             if self.metric_learning == 'similarity':
                 self.gamma = torch.nn.Parameter(torch.ones(num_relations))
@@ -191,7 +193,8 @@ class MaskRGCNConv(MessagePassing):
             if self.attn_weight_type == 'split':
                 self.gamma_1 = self.gamma_1.to(x.device)
                 self.gamma_2 = self.gamma_2.to(x.device)
-                self.gamma_3 = self.gamma_3.to(x.device)
+                if self.mlp_t_in_channels is not None:
+                    self.gamma_3 = self.gamma_3.to(x.device)
             else:
                 self.gamma = self.gamma.to(x.device)
         x_r: Tensor = x_l
@@ -311,18 +314,27 @@ class MaskRGCNConv(MessagePassing):
         if self.attn_weight_type == 'split':
             x_n_pair = (x_in - x_out)[:, :self.mlp_n_in_channels]
             x_c_pair = (x_in - x_out)[:, self.mlp_n_in_channels:self.mlp_n_in_channels + self.mlp_c_in_channels]
-            x_t_pair = (x_in - x_out)[:, self.mlp_n_in_channels + self.mlp_c_in_channels:]
+            if self.mlp_t_in_channels is not None:
+                x_t_pair = (x_in - x_out)[:, self.mlp_n_in_channels + self.mlp_c_in_channels:]
             if self.metric_learning == 'similarity':
                 x_n_pair_mean = x_n_pair.abs().mean(dim=1)
                 x_c_pair_mean = x_c_pair.abs().mean(dim=1)
-                x_t_pair_mean = x_t_pair.abs().mean(dim=1)
-                passing_weight = (self.mask_n_generators(-self.gamma_1[edge_type] * x_n_pair_mean) +
-                                  self.mask_c_generators(-self.gamma_2[edge_type] * x_c_pair_mean) +
-                                  self.mask_t_generators(-self.gamma_2[edge_type] * x_t_pair_mean)).unsqueeze(1)
+                if self.mlp_t_in_channels is not None:
+                    x_t_pair_mean = x_t_pair.abs().mean(dim=1)
+                    passing_weight = (self.mask_n_generators(-self.gamma_1[edge_type] * x_n_pair_mean) +
+                                      self.mask_c_generators(-self.gamma_2[edge_type] * x_c_pair_mean) +
+                                      self.mask_t_generators(-self.gamma_2[edge_type] * x_t_pair_mean)).unsqueeze(1)
+                else:
+                    passing_weight = (self.mask_n_generators(-self.gamma_1[edge_type] * x_n_pair_mean) +
+                                      self.mask_c_generators(-self.gamma_2[edge_type] * x_c_pair_mean)).unsqueeze(1)
             else:
-                passing_weight = (self.mask_n_generators[edge_type](x_n_pair) +
-                                  self.mask_c_generators[edge_type](x_c_pair) +
-                                  self.mask_t_generators[edge_type](x_t_pair))
+                if self.mlp_t_in_channels is not None:
+                    passing_weight = (self.mask_n_generators[edge_type](x_n_pair) +
+                                      self.mask_c_generators[edge_type](x_c_pair) +
+                                      self.mask_t_generators[edge_type](x_t_pair))
+                else:
+                    passing_weight = (self.mask_n_generators[edge_type](x_n_pair) +
+                                      self.mask_c_generators[edge_type](x_c_pair))
         else:
             x_pair = x_in - x_out
             if self.metric_learning == 'similarity':
@@ -333,7 +345,7 @@ class MaskRGCNConv(MessagePassing):
         weighted_x_out = passing_weight * x_out
         if self.is_dropout:
             weighted_x_out = F.dropout(weighted_x_out, p=0.3, training=self.training)
-        h_out = scatter(weighted_x_out, edge_index[1, :], dim=0, reduce='sum')
+        h_out = scatter(weighted_x_out, edge_index[1, :], dim=0, reduce='mean')
         h = torch.zeros_like(x, device=x.device)
         h_out_index = edge_index[1, :].unique()
         h[h_out_index] = h_out[h_out_index]
@@ -355,4 +367,3 @@ class MaskRGCNConv(MessagePassing):
     def __repr__(self) -> str:
         return (f'{self.__class__.__name__}({self.in_channels}, '
                 f'{self.out_channels}, num_relations={self.num_relations})')
-

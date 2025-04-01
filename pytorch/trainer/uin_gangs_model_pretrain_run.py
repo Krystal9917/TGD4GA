@@ -48,42 +48,40 @@ class ArgsUinGangs:
         parser.add_argument('--lr_adjust_step', type=int, default=2)
         parser.add_argument('--lr_gamma', type=float, default=0.5)
         parser.add_argument('--n_epochs', type=int, default=100)
-        parser.add_argument('--uin_in_size', type=int, default=846)
         parser.add_argument('--uin_acs_numberical_feat_dim', type=int, default=250)
         parser.add_argument('--uin_acs_text_feat_dim', type=int, default=256)
         parser.add_argument('--uin_acs_categorical_feat_hasher_dim', type=int, default=256)
-        parser.add_argument('--uin_hidden_size', type=int, default=512)
-        parser.add_argument('--uin_out_size', type=int, default=128)
         parser.add_argument('--drop_rate', type=float, default=0.5)
         parser.add_argument('--onnx_opset', type=int, default=15)
         parser.add_argument('--seed', type=int, default=42)
         parser.add_argument('--num_workers', type=int, default=32)
         parser.add_argument('--temperature', type=int, default=1)
-        parser.add_argument('--input_dim', type=int, default=762)
         parser.add_argument('--hidden_dim', type=int, default=1024)
-        parser.add_argument('--output_dim', type=int, default=762)
+        parser.add_argument('--output_dim', type=int, default=512)
         parser.add_argument('--filter_node_num', type=int, default=3)
-        parser.add_argument('--sampling', type=str, default='fraudar', choices=['fraudar', 'random'])
+        parser.add_argument('--sampling', type=str, default='fraudar')
         parser.add_argument('--drop_ratio', type=float, default=0.2)
         parser.add_argument('--re_train', type=bool, default=False)
         parser.add_argument('--is_debug', type=bool, default=False)
         parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--conv_type', type=str, default='MaskRGCN',
                             choices=['RGCN', 'MaskRGCN', 'AttnRGCN'])
-        parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
+        parser.add_argument('--task_type', type=str, default='context_cl',
                             choices=['subgraph', 'node_subgraph', 'context_cl', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_cross_subgraph', 'fine_grained_batch_subgraph'])
+        parser.add_argument('--load_text_feature', type=bool, default=False)
+        # multi pre-training tasks weight
         parser.add_argument('--W_subgraph', type=float, default=0.4)
         parser.add_argument('--W_node', type=float, default=0.6)
-        parser.add_argument('--n_weight', type=float, default=0.3)
-        parser.add_argument('--c_weight', type=float, default=0.7)
+        # context cl
         parser.add_argument('--random_k_ratio', type=float, default=0.2)
         parser.add_argument('--neighbor_l_ratio', type=int, default=0.1)
-        # RGAT/HAN/HGT
-        parser.add_argument('--num_heads', type=int, default=2)
+        # cross/batch
+        parser.add_argument('--n_weight', type=float, default=0.3)
+        parser.add_argument('--c_weight', type=float, default=0.7)
+        parser.add_argument('--similarity_diff', type=float, default=0.05)
         parser.add_argument('--data_tag', type=str, default='2503_4_',
                             choices=['', '1921_', '1930_', 'order_1930_', '2503_', '2503_4_'])
-        parser.add_argument('--similarity_diff', type=float, default=0.05)
         parser.add_argument('--metric_learning', type=str, default='mlp',
                             choices=['similarity', 'mlp'])
         parser.add_argument('--is_single_edge', type=bool, default=False)
@@ -109,9 +107,6 @@ def run_pretraining_graph(args):
     if args.args_dict["sampling"] == 'fraudar':
         print("======Single Device Fraudar Pretraining======")
         train_model.fraudar_sampling_pretraining()
-    elif args.args_dict["sampling"] == 'random':
-        print("======Single Device Random Pretraining======")
-        train_model.random_sampling_pretraining()
 
 
 if __name__ == '__main__':
