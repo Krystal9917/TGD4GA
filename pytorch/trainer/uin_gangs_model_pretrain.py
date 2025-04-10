@@ -81,7 +81,7 @@ class UinGangsModelPreTrain:
                 self.model = MaskRGCN(
                     mlp_n_in_dim=args_dict['uin_acs_numberical_feat_dim'],
                     mlp_c_in_dim=args_dict['uin_acs_categorical_feat_hasher_dim'],
-                    mlp_t_in_dim=args_dict['uin_acs_text_feat_dim'],
+                    mlp_t_in_dim=None,
                     input_dim=input_dim,
                     hidden_dim=args_dict['hidden_dim'],
                     output_dim=args_dict['output_dim'],
@@ -128,9 +128,12 @@ class UinGangsModelPreTrain:
                                                     batch_size=self.train_dict["batch_size"],
                                                     num_workers=self.train_dict["num_workers"],
                                                     collate_fn=self.train_data.pos_collate_fn_for_fraudar)
+        # self.log_file_path = (f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_"
+        #                       f"{control_node_num}_lr_{str(lr)}_edges_{self.num_relations}"
+        #                       f"{self.train_dict['lr_scheduler']}_text_{self.train_dict['load_text_feature']}")
         self.log_file_path = (f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_"
                               f"{control_node_num}_lr_{str(lr)}_edges_{self.num_relations}"
-                              f"{self.train_dict['lr_scheduler']}_text_{self.train_dict['load_text_feature']}")
+                              f"{self.train_dict['lr_scheduler']}")
         log_path = os.path.abspath(os.path.join(args_dict['log_dir'],
                                                 self.train_dict["model_states_path"].split('/')[-1],
                                                 self.log_file_path))
@@ -156,7 +159,7 @@ class UinGangsModelPreTrain:
                     rename_key_model_weight[key] = key_weight
                 self.model.load_state_dict(rename_key_model_weight)
             else:
-                self.model.load_state_dict(model_weight)
+                self.model.load_state_dict(model_weight, strict=False)
             print(f"Load: {file_name}")
             self.start_epoch = epoch_num + 1
             self.end_epoch = self.start_epoch + self.train_dict["n_epochs"]
@@ -464,6 +467,9 @@ class UinGangsModelPreTrain:
             self.model.train()
             epoch_loss = []
             epoch_start_time = time.time()
+            # h1_collect = []
+            # h2_collect = []
+            # y_collect = []
             for (i, pos_batch) in enumerate(self.pos_train_loader):
                 start_time = time.time()
                 self.optimizer.zero_grad()
@@ -482,7 +488,18 @@ class UinGangsModelPreTrain:
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
                 pos_batch['uin'].x = batch_x
                 batch_h = self.relation_fit(pos_batch, pos_batch['uin'].x)
+                # labeled_idx = (pos_batch['uin'].gang_mem != -1).nonzero().squeeze()
+                # node_y = pos_batch['uin'].gang_mem[labeled_idx]
                 if batch_h is not None:
+                    # if i < 5:
+                    #     y_collect.append(node_y)
+                    #     h1_collect.append(batch_h[0][labeled_idx, :].detach())
+                    #     h2_collect.append(batch_h[1][labeled_idx, :].detach())
+                    # else:
+                    #     y_collect_copy = torch.concat(y_collect)
+                    #     h1_collect_copy = torch.concat(h1_collect, dim=0)
+                    #     h2_collect_copy = torch.concat(h2_collect, dim=0)
+                    batch_h = batch_h[1]
                     batch_h_g = scatter_mean(batch_h, pos_batch['uin'].batch, dim=0)
                     pos_batch_idx = (pos_batch['uin'].flag == 1).nonzero().squeeze().detach().cpu().tolist()
                     neg_batch_idx = (pos_batch['uin'].flag == 0).nonzero().squeeze().detach().cpu().tolist()
@@ -499,6 +516,7 @@ class UinGangsModelPreTrain:
                         fraudar_batch = fraudar_batch.to(self.device)
                         fraudar_batch_h = self.relation_fit(fraudar_batch, fraudar_batch['uin'].x)
                         if fraudar_batch_h is not None:
+                            fraudar_batch_h = fraudar_batch_h[1]
                             fraudar_batch_h_g = scatter_mean(fraudar_batch_h, fraudar_batch['uin'].batch, dim=0)
                             # fraudar_batch_h_g = fraudar_batch_h_g[pos_batch_idx]
 
@@ -605,8 +623,6 @@ class UinGangsModelPreTrain:
                                         "Batch: {}, Loss: {:.6f}, Batch Loss: {:.6f}, "
                                         "Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
                                             i + 1,
-                                            self.n_weight,
-                                            self.c_weight,
                                             loss_value,
                                             batch_loss.detach().cpu().item(),
                                             subgraph_loss.detach().cpu().item(),
@@ -616,8 +632,6 @@ class UinGangsModelPreTrain:
                                         "Batch: {}, Loss: {:.6f}, Cross Loss: {:.6f}, "
                                         "Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
                                             i + 1,
-                                            self.n_weight,
-                                            self.c_weight,
                                             loss_value,
                                             cross_loss.detach().cpu().item(),
                                             subgraph_loss.detach().cpu().item(),
@@ -627,8 +641,6 @@ class UinGangsModelPreTrain:
                                         "Batch: {}, Loss: {:.6f}, Context Loss: {:.6f}, "
                                         "Subgraph Loss: {:.6f}, Time: {:.4f} s".format(
                                             i + 1,
-                                            self.n_weight.detach().cpu().item(),
-                                            self.c_weight.detach().cpu().item(),
                                             loss_value,
                                             context_loss.detach().cpu().item(),
                                             subgraph_loss.detach().cpu().item(),

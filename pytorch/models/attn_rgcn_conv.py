@@ -27,21 +27,45 @@ def masked_edge_index(edge_index: Adj, edge_mask: Tensor) -> Adj:
     return torch_sparse.masked_select_nnz(edge_index, edge_mask, layout='coo')
 
 
+def softmax_edge_index(edge_index, alpha):
+    edge_index_unique = edge_index.unique(sorted=True)
+    for edge in edge_index_unique:
+        softmax_index = (edge_index == edge).nonzero().squeeze()
+        alpha[softmax_index] = torch.nn.functional.softmax(alpha[softmax_index], dim=0)
+    return alpha
+
+
+class AttnModule(torch.nn.Module):
+    def __init__(self, in_dim, out_dim):
+        super().__init__()
+        self.W = torch.nn.Linear(in_dim, out_dim, bias=False)
+        self.a = torch.nn.Linear(2 * out_dim, 1, bias=False)
+        self.leaky_relu = torch.nn.LeakyReLU(negative_slope=0.2)
+
+    def forward(self, x_out, x_in):
+        Wh_out = self.W(x_out)
+        Wh_in = self.W(x_in)
+        e = self.leaky_relu(self.a(torch.concat([Wh_out, Wh_in], dim=1)))
+        return e
+
+
 class AttnRGCNConv(MessagePassing):
     def __init__(
-        self,
-        in_channels: Union[int, Tuple[int, int]],
-        mlp_n_in_channels: int,
-        mlp_c_in_channels: int,
-        out_channels: int,
-        num_relations: int,
-        num_bases: Optional[int] = None,
-        num_blocks: Optional[int] = None,
-        aggr: str = 'mean',
-        root_weight: bool = True,
-        is_sorted: bool = False,
-        bias: bool = True,
-        **kwargs,
+            self,
+            in_channels: Union[int, Tuple[int, int]],
+            out_channels: int,
+            num_relations: int,
+            mlp_n_in_channels: int,
+            mlp_c_in_channels: int,
+            mlp_t_in_channels: Optional[int] = None,
+            num_bases: Optional[int] = None,
+            num_blocks: Optional[int] = None,
+            attn_type: str = 'split',
+            aggr: str = 'mean',
+            root_weight: bool = True,
+            is_sorted: bool = False,
+            bias: bool = True,
+            **kwargs,
     ):
         kwargs.setdefault('aggr', aggr)
         super().__init__(node_dim=0, **kwargs)
@@ -51,29 +75,24 @@ class AttnRGCNConv(MessagePassing):
                              'block-diagonal-decomposition at the same time.')
 
         self.in_channels = in_channels
+        self.out_channels = out_channels
         self.mlp_n_in_channels = mlp_n_in_channels
         self.mlp_c_in_channels = mlp_c_in_channels
-        self.W_q = torch.nn.Parameter(torch.randn(in_channels, in_channels))
-        self.W_k_n = torch.nn.Parameter(torch.randn(in_channels, in_channels))
-        self.W_k_c = torch.nn.Parameter(torch.randn(in_channels, in_channels))
-        self.W_k_t = torch.nn.Parameter(torch.randn(in_channels, in_channels))
-        self.W_v_c = torch.nn.Parameter(torch.randn(in_channels, in_channels))
-        self.W_v_n = torch.nn.Parameter(torch.randn(in_channels, in_channels))
-        self.W_v_t = torch.nn.Parameter(torch.randn(in_channels, in_channels))
-        self.d = torch.sqrt(torch.tensor(self.in_channels))
-        self.softmax = torch.nn.Softmax(dim=0)
-        self.n_mask = torch.zeros(in_channels)
-        self.n_mask[:self.mlp_n_in_channels] = 1
-        self.c_mask = torch.zeros(in_channels)
-        self.c_mask[self.mlp_c_in_channels:(self.mlp_n_in_channels+self.mlp_c_in_channels)] = 1
-        self.t_mask = torch.zeros(in_channels)
-        self.t_mask[(self.mlp_n_in_channels+self.mlp_c_in_channels):] = 1
-        self.out_channels = out_channels
+        self.mlp_t_in_channels = mlp_t_in_channels
+        self.attn_type = attn_type
+        if self.attn_type == 'split':
+            self.n_dim = mlp_n_in_channels
+            self.c_dim = mlp_n_in_channels + mlp_c_in_channels
+            self.n_attn = AttnModule(self.mlp_n_in_channels, self.mlp_n_in_channels)
+            self.c_attn = AttnModule(self.mlp_c_in_channels, self.mlp_c_in_channels)
+            if self.mlp_t_in_channels is not None:
+                self.t_attn = AttnModule(self.mlp_t_in_channels, self.mlp_t_in_channels)
+        else:
+            self.attn = AttnModule(self.in_channels, self.out_channels)
         self.num_relations = num_relations
         self.num_bases = num_bases
         self.num_blocks = num_blocks
         self.is_sorted = is_sorted
-
 
         if isinstance(in_channels, int):
             in_channels = (in_channels, in_channels)
@@ -129,10 +148,6 @@ class AttnRGCNConv(MessagePassing):
             x_l = x
         if x_l is None:
             x_l = torch.arange(self.in_channels_l, device=self.weight.device)
-        self.n_mask = self.n_mask.to(x.device)
-        self.c_mask = self.c_mask.to(x.device)
-        self.t_mask = self.t_mask.to(x.device)
-        self.d = self.d.to(x.device)
         x_r: Tensor = x_l
         if isinstance(x, tuple):
             x_r = x[1]
@@ -210,7 +225,10 @@ class AttnRGCNConv(MessagePassing):
                             size=size,
                         )
                     else:
-                        h = self.propagate(tmp, x=x_l, edge_type=i, size=size)
+                        if i == 0:
+                            h = x_l
+                        else:
+                            h = self.propagate(tmp, x=x_l, edge_type=i, size=size)
                         out = out + (h @ weight[i])
 
         root = self.root
@@ -229,11 +247,26 @@ class AttnRGCNConv(MessagePassing):
                   edge_type_ptr: Optional[Tensor] = None,
                   size: Optional[Tensor] = None) -> Tensor:
         x_out, x_in = x[edge_index[0, :]], x[edge_index[1, :]]
-        H_q = torch.matmul(x_out, self.W_q)
-        H_k = torch.matmul(self.n_mask * x_out, self.W_k_n) + torch.matmul(self.c_mask * x_out, self.W_k_c) + torch.matmul(self.t_mask * x_out,  self.W_k_t)
-        H_v = torch.matmul(self.n_mask * x_in, self.W_k_n) + torch.matmul(self.c_mask * x_in, self.W_k_c) + torch.matmul(self.t_mask * x_in,  self.W_k_t)
-        passing_weight = self.softmax(torch.matmul(H_k, H_v.T) / self.d)
-        weighted_x_out = torch.matmul(passing_weight, H_q)
+        if self.attn_type == 'split':
+            n_alpha = self.n_attn(x_out[:, :self.n_dim], x_in[:, :self.n_dim])
+            # n_alpha = softmax_edge_index(edge_index[1, :], n_alpha)
+            c_alpha = self.c_attn(x_out[:, self.n_dim:self.c_dim], x_in[:, self.n_dim:self.c_dim])
+            # c_alpha = softmax_edge_index(edge_index[1, :], c_alpha)
+            if self.mlp_t_in_channels is not None:
+                t_alpha = self.t_attn(x_out[:, self.c_dim:], x_in[:, self.c_dim:])
+                # t_alpha = softmax_edge_index(edge_index[1, :], t_alpha)
+                weighted_x_out = torch.concat([n_alpha * x_out[:, :self.n_dim],
+                                               c_alpha * x_out[:, self.n_dim:self.c_dim],
+                                               t_alpha * x_out[:, self.c_dim:]],
+                                              dim=1)
+            else:
+                weighted_x_out = torch.concat([n_alpha * x_out[:, :self.n_dim],
+                                               c_alpha * x_out[:, self.n_dim:self.c_dim]],
+                                              dim=1)
+        else:
+            alpha = self.attn(x_out, x_in)
+            # alpha = softmax_edge_index(edge_index[1, :], alpha)
+            weighted_x_out = alpha * x_out
         h_out = scatter(weighted_x_out, edge_index[1, :], dim=0, reduce='sum')
         h = torch.zeros_like(x, device=x.device)
         h_out_index = edge_index[1, :].unique()
@@ -256,4 +289,3 @@ class AttnRGCNConv(MessagePassing):
     def __repr__(self) -> str:
         return (f'{self.__class__.__name__}({self.in_channels}, '
                 f'{self.out_channels}, num_relations={self.num_relations})')
-

@@ -57,19 +57,19 @@ class ArgsUinGangs:
         parser.add_argument('--num_workers', type=int, default=32)
         parser.add_argument('--temperature', type=int, default=1)
         parser.add_argument('--hidden_dim', type=int, default=1024)
-        parser.add_argument('--output_dim', type=int, default=512)
+        parser.add_argument('--output_dim', type=int, default=762)
         parser.add_argument('--filter_node_num', type=int, default=3)
         parser.add_argument('--sampling', type=str, default='fraudar')
         parser.add_argument('--drop_ratio', type=float, default=0.2)
-        parser.add_argument('--re_train', type=bool, default=False)
-        parser.add_argument('--is_debug', type=bool, default=False)
-        parser.add_argument('--start_epoch', type=int, default=0)
+        parser.add_argument('--re_train', type=bool, default=True)
+        parser.add_argument('--is_debug', type=bool, default=True)
+        parser.add_argument('--start_epoch', type=int, default=99)
         parser.add_argument('--conv_type', type=str, default='MaskRGCN',
                             choices=['RGCN', 'MaskRGCN', 'AttnRGCN'])
-        parser.add_argument('--task_type', type=str, default='context_cl',
+        parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
                             choices=['subgraph', 'node_subgraph', 'context_cl', 'batch_subgraph', 'cross_subgraph',
                                      'fine_grained_cross_subgraph', 'fine_grained_batch_subgraph'])
-        parser.add_argument('--load_text_feature', type=bool, default=False)
+        parser.add_argument('--load_text_feature', type=bool, default=True)
         # multi pre-training tasks weight
         parser.add_argument('--W_subgraph', type=float, default=0.4)
         parser.add_argument('--W_node', type=float, default=0.6)
@@ -102,7 +102,7 @@ def run_pretraining_graph(args):
         args.args_dict["train_data_path"] = ("/chongqinggeminiceph1fs/geminicephfs/security-others-common/"
                                              "jiujiuchen/projects/mmgog_long_term_sequence_model/data/"
                                              "uin_gangs_full_graph_dataset/train/raw/"
-                                             "uin_gangs_full_graph_dataset_train_250320_202503201445_100.txt")
+                                             "uin_gangs_full_graph_dataset_train_202503201445_random_800.txt")
     train_model = UinGangsModelPreTrain(args.args_dict)
     if args.args_dict["sampling"] == 'fraudar':
         print("======Single Device Fraudar Pretraining======")

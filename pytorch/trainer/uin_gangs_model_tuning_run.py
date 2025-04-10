@@ -55,12 +55,12 @@ class ArgsUinGangs:
         parser.add_argument('--minirbt_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
-        parser.add_argument('--batch_size', type=int, default=128)
-        parser.add_argument('--data_buffer_size', type=int, default=128)
+        parser.add_argument('--batch_size', type=int, default=64)
+        parser.add_argument('--data_buffer_size', type=int, default=64)
         parser.add_argument('--pretrain_lr', type=float, default=0.001)
         parser.add_argument('--lr_scheduler', type=str, default='',
                             choices=['', '_stepLR', '_reduceLR', '_cosineLR'])
-        parser.add_argument('--n_epochs', type=int, default=10)
+        parser.add_argument('--n_epochs', type=int, default=30)
         # parser.add_argument('--uin_acs_numberical_feat_dim', type=int, default=290)
         # parser.add_argument('--uin_acs_text_feat_dim', type=int, default=256)
         # parser.add_argument('--uin_acs_categorical_feat_hasher_dim', type=int, default=300)
@@ -77,6 +77,7 @@ class ArgsUinGangs:
         parser.add_argument('--input_dim', type=int, default=762)
         parser.add_argument('--hidden_dim', type=int, default=1024)
         parser.add_argument('--output_dim', type=int, default=762)
+        parser.add_argument('--out_layer', type=int, default=1)
         parser.add_argument('--node_types', type=int, default=19)
         parser.add_argument('--num_heads', type=int, default=2)
         parser.add_argument('--filter_node_num', type=int, default=3)
@@ -86,7 +87,7 @@ class ArgsUinGangs:
         parser.add_argument('--is_finetune', type=bool, default=False)
         parser.add_argument('--is_supervised', type=bool, default=True)
         parser.add_argument('--num_bases', type=int, default=15)
-        parser.add_argument('--conv_type', type=str, default='SVM',
+        parser.add_argument('--conv_type', type=str, default='AttnRGCN',
                             choices=['SVM', 'MLP', 'GAT', 'RGCN', 'MaskRGCN', 'AttnRGCN'])
         parser.add_argument('--pretrained_task_type', type=str, default='context_cl',
                             choices=['subgraph', 'node_subgraph', 'batch_subgraph', 'cross_subgraph',
@@ -95,15 +96,15 @@ class ArgsUinGangs:
         parser.add_argument('--data_tag', type=str, default='2503_4_',
                             choices=['', '1921_', '1930_', 'order_1930_', '2503_', '2503_4_'])
         parser.add_argument('--device_tag', type=str, default='', choices=['', '_None', '_GPU2', '_GPU3', '_GPU4'])
-        parser.add_argument('--eval_epoch', type=int, default=40)
+        parser.add_argument('--eval_epoch', type=int, default=0)
         parser.add_argument('--info_insertion_type', type=str, default=None,
-                            choices=[None, 'combine_subgraph', 'concat_subgraph'])
+                            choices=[None, 'combine_subgraph', 'concat_subgraph', 'concat_text'])
         parser.add_argument('--prompt_type', type=str, default=None,
                             choices=[None, 'single_token'])
-        parser.add_argument('--downstream_task', type=str, default='subgraph_gang_cl',
+        parser.add_argument('--downstream_task', type=str, default='node_cl',
                             choices=['node_cl', 'subgraph_cl', 'subgraph_gang_cl', 'subgraph_gang_cl_by_fraudar',
                                      'subgraph_gang_cl_by_svm', 'node_score_optim', 'subgraph_node_score_optim'])
-        parser.add_argument('--downstream_loss', type=str, default='subgraph_node_loss',
+        parser.add_argument('--downstream_loss', type=str, default='node_loss',
                             choices=['node_loss', 'subgraph_node_loss', 'score_mse_loss'])
         # node classification weight
         parser.add_argument('--node_cls_loss_weight', type=str, default='1.0 2.0',
@@ -124,7 +125,10 @@ class ArgsUinGangs:
                             choices=['similarity', 'mlp'])
         parser.add_argument('--adapter_type', type=str, default=None,
                             choices=[None, 'post_relation', 'post_aggregation'])
-
+        parser.add_argument('--load_text_feature', type=bool, default=True)
+        parser.add_argument('--concat_text', type=bool, default=False)
+        parser.add_argument('--is_single_edge', type=bool, default=False)
+        parser.add_argument('--is_add_score', type=bool, default=False)
         args = parser.parse_args()
         args_dict = vars(args)
         self.args_dict = args_dict
