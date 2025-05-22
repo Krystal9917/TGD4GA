@@ -43,11 +43,16 @@ class UinGangsModelPreTrain:
         self.n_dim = args_dict['uin_acs_numberical_feat_dim']
         self.c_dim = self.n_dim + args_dict['uin_acs_categorical_feat_hasher_dim']
         self.cos_sim = torch.cosine_similarity
-        self.n_weight = torch.nn.Parameter(torch.tensor(args_dict["n_weight"]), requires_grad=True)
-        self.c_weight = torch.nn.Parameter(torch.tensor(args_dict["c_weight"]), requires_grad=True)
+
         self.metric = args_dict["metric_learning"]
         self.random_k_ratio = args_dict["random_k_ratio"]
         self.neighbor_l_ratio = args_dict['neighbor_l_ratio']
+        if 'fine_grained' in self.task_type:
+            self.n_weight = torch.nn.Parameter(torch.tensor(args_dict["n_weight"]), requires_grad=True)
+            self.c_weight = torch.nn.Parameter(torch.tensor(args_dict["c_weight"]), requires_grad=True)
+        elif self.task_type == 'new_context_cl':
+            self.s_weight = torch.nn.Parameter(torch.tensor(args_dict["s_weight"]), requires_grad=True)
+            self.d_weight = torch.nn.Parameter(torch.tensor(args_dict["d_weight"]), requires_grad=True)
         # self.edge_types = {('uin', 'self_loop', 'uin'): 0, ('uin', 'ipv6', 'uin'): 1, ('uin', 'wifi', 'uin'): 2,
         #                    ('uin', 'room', 'uin'): 3, ('uin', 'friend', 'uin'): 4, ('uin', 'idcardid', 'uin'): 5,
         #                    ('uin', 'device', 'uin'): 6, ('uin', 'payee', 'uin'): 7, ('uin', 'payer', 'uin'): 8,
@@ -81,7 +86,7 @@ class UinGangsModelPreTrain:
                 self.model = MaskRGCN(
                     mlp_n_in_dim=args_dict['uin_acs_numberical_feat_dim'],
                     mlp_c_in_dim=args_dict['uin_acs_categorical_feat_hasher_dim'],
-                    mlp_t_in_dim=None,
+                    mlp_t_in_dim=args_dict['uin_acs_text_feat_dim'],
                     input_dim=input_dim,
                     hidden_dim=args_dict['hidden_dim'],
                     output_dim=args_dict['output_dim'],
@@ -132,7 +137,7 @@ class UinGangsModelPreTrain:
         #                       f"{control_node_num}_lr_{str(lr)}_edges_{self.num_relations}"
         #                       f"{self.train_dict['lr_scheduler']}_text_{self.train_dict['load_text_feature']}")
         self.log_file_path = (f"{self.data_tag}{self.conv_type}_sample_{sampling_type}_filter_"
-                              f"{control_node_num}_lr_{str(lr)}_edges_{self.num_relations}"
+                              f"{control_node_num}_lr_{str(lr)}_edges_{self.num_relations}_text_False"
                               f"{self.train_dict['lr_scheduler']}")
         log_path = os.path.abspath(os.path.join(args_dict['log_dir'],
                                                 self.train_dict["model_states_path"].split('/')[-1],
@@ -167,9 +172,13 @@ class UinGangsModelPreTrain:
             self.start_epoch = 1
             self.end_epoch = self.train_dict["n_epochs"] + 1
         self.model.to(self.device)
-        params = [{'params': self.model.parameters(), 'lr': lr},
-                  {'params': self.n_weight, 'lr': lr * 1e-1},
-                  {'params': self.c_weight, 'lr': lr * 1e-1}]
+        params = [{'params': self.model.parameters(), 'lr': lr}]
+        if 'find_grained' in self.task_type:
+            params.append({'params': self.n_weight, 'lr': lr})
+            params.append({'params': self.c_weight, 'lr': lr})
+        elif self.task_type == "new_context_cl":
+            params.append({'params': self.s_weight, 'lr': lr})
+            params.append({'params': self.d_weight, 'lr': lr})
         self.optimizer = torch.optim.Adam(params, lr=lr)
         # lr scheduler
         if self.train_dict["lr_scheduler"] == "_stepLR":
@@ -345,6 +354,67 @@ class UinGangsModelPreTrain:
             node_loss = torch.tensor(0.0, device=self.device)
         return node_loss
 
+    def new_single_context_contrastive_loss(self, graph_h, graph_adj, graph_score):
+        n = graph_h.shape[0]
+        graph_deg = graph_adj.sum(dim=1) + graph_adj.sum(dim=0)
+        node_idx_list = list(range(n))
+        random_k = int(self.random_k_ratio * n) if int(self.random_k_ratio * n) > 5 else 5
+        # min_num = min(n, 2 * random_k)
+        # node_idx_list = graph_deg.sort(descending=True).indices[:min_num]
+        if random_k < n:
+            random_node_idx = random.sample(node_idx_list, random_k)
+        else:
+            random_node_idx = node_idx_list
+        node_loss = []
+        for i in random_node_idx:
+            i_adj = graph_adj[i, :]
+            i_adj[i] = 0
+            possible_positive = (i_adj > 0).nonzero().squeeze().detach().cpu().tolist()
+            if type(possible_positive) is int:
+                possible_positive = [possible_positive]
+            target_score = graph_score[i]
+            target_degree = graph_deg[i]
+            candidate_positive_score = graph_score[possible_positive]
+            candidate_positive_degree = graph_deg[possible_positive]
+            score_dif = -torch.log(1 - (target_score - candidate_positive_score).abs())
+            deg_dif = -torch.log(1 - (target_degree - candidate_positive_degree).abs() / (target_degree + candidate_positive_degree))
+            candidate_positive_dif = self.s_weight * score_dif + self.d_weight * deg_dif
+            sort_dif = candidate_positive_dif.sort().indices
+            possible_negative = (i_adj == 0).nonzero().squeeze().detach().cpu().tolist()
+            if type(possible_negative) is int:
+                possible_negative = [possible_negative]
+            neighbor_l = int(self.neighbor_l_ratio * len(possible_positive)) if (
+                    int(self.neighbor_l_ratio * len(possible_positive)) > 3) else 3
+            if len(possible_positive) > 0:
+                if neighbor_l < len(possible_positive):
+                    context_idx = sort_dif[:neighbor_l]
+                else:
+                    context_idx = possible_positive
+            else:
+                continue
+            neighbor_l = int(self.neighbor_l_ratio * len(possible_negative)) if (
+                    int(self.neighbor_l_ratio * len(possible_negative)) > 3) else 3
+            if len(possible_negative) > 0:
+                if neighbor_l < len(possible_negative):
+                    negative_idx = random.sample(possible_negative, neighbor_l)
+                else:
+                    negative_idx = possible_negative
+            else:
+                continue
+            context_h = graph_h[context_idx, :]
+            negative_h = graph_h[negative_idx, :]
+            i_h = graph_h[i, :].repeat(context_h.shape[0], 1)
+            pos_sim = torch.exp((torch.cosine_similarity(i_h, context_h) / self.train_dict["temperature"])).sum()
+            i_h = graph_h[i, :].repeat(negative_h.shape[0], 1)
+            neg_sim = torch.exp((torch.cosine_similarity(i_h, negative_h) / self.train_dict["temperature"])).sum()
+            i_loss = -torch.log(pos_sim / (pos_sim + neg_sim))
+            node_loss.append(i_loss)
+        if len(node_loss) != 0:
+            node_loss = torch.stack(node_loss).mean()
+        else:
+            node_loss = torch.tensor(0.0, device=self.device)
+        return node_loss
+
     def context_contrastive_loss(self, batch_h, batch, adj):
         N = batch.shape[0] - 1
         context_loss = []
@@ -353,6 +423,19 @@ class UinGangsModelPreTrain:
             graph_h = batch_h[start_node:end_node, :]
             graph_adj = adj[start_node:end_node, start_node:end_node]
             node_loss = self.single_context_contrastive_loss(graph_h, graph_adj)
+            context_loss.append(node_loss)
+        context_loss = torch.stack(context_loss).mean()
+        return context_loss
+
+    def new_context_contrastive_loss(self, batch_h, batch, adj, score):
+        N = batch.shape[0] - 1
+        context_loss = []
+        for i in range(N):
+            start_node, end_node = batch[i], batch[i + 1]
+            graph_h = batch_h[start_node:end_node, :]
+            graph_adj = adj[start_node:end_node, start_node:end_node]
+            graph_score = score[start_node:end_node]
+            node_loss = self.new_single_context_contrastive_loss(graph_h, graph_adj, graph_score)
             context_loss.append(node_loss)
         context_loss = torch.stack(context_loss).mean()
         return context_loss
@@ -461,8 +544,12 @@ class UinGangsModelPreTrain:
             return batch_h
 
     def fraudar_sampling_pretraining(self):
-        self.n_weight = self.n_weight.to(self.device)
-        self.c_weight = self.c_weight.to(self.device)
+        if 'fine_grained' in self.task_type:
+            self.n_weight = self.n_weight.to(self.device)
+            self.c_weight = self.c_weight.to(self.device)
+        elif self.task_type == 'new_context_cl':
+            self.s_weight = self.s_weight.to(self.device)
+            self.d_weight = self.d_weight.to(self.device)
         for epoch in range(self.start_epoch, self.end_epoch):
             self.model.train()
             epoch_loss = []
@@ -603,10 +690,14 @@ class UinGangsModelPreTrain:
                                     loss = self.train_dict['W_node'] * cross_loss + self.train_dict['W_subgraph'] * subgraph_loss
                                 else:
                                     loss = subgraph_loss
-                        elif self.task_type == 'context_cl':
+                        elif self.task_type in ['context_cl', 'new_context_cl']:
                             edge_index = torch.concat([pos_batch[edge_type].edge_index for edge_type in pos_batch.edge_types], dim=1)
                             adj = to_dense_adj(edge_index, max_num_nodes=pos_batch['uin'].num_nodes).squeeze()
-                            context_loss = self.context_contrastive_loss(batch_h, pos_batch['uin'].ptr, adj)
+                            if self.task_type == 'context_cl':
+                                context_loss = self.context_contrastive_loss(batch_h, pos_batch['uin'].ptr, adj)
+                            else:
+                                context_loss = self.new_context_contrastive_loss(batch_h, pos_batch['uin'].ptr, adj,
+                                                                                 pos_batch['uin'].score.squeeze())
                             loss = self.train_dict['W_node'] * context_loss + self.train_dict['W_subgraph'] * subgraph_loss
                         else:
                             loss = subgraph_loss
@@ -636,7 +727,7 @@ class UinGangsModelPreTrain:
                                             cross_loss.detach().cpu().item(),
                                             subgraph_loss.detach().cpu().item(),
                                             time.time() - start_time))
-                                elif self.task_type == 'context_cl':
+                                elif self.task_type in ['context_cl', 'new_context_cl']:
                                     print(
                                         "Batch: {}, Loss: {:.6f}, Context Loss: {:.6f}, "
                                         "Subgraph Loss: {:.6f}, Time: {:.4f} s".format(

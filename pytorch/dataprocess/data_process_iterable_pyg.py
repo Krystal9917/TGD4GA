@@ -11,7 +11,7 @@ import networkx as nx
 from transformers import AutoTokenizer
 from torch.utils.data import IterableDataset
 from torch_geometric.data import HeteroData, Batch
-from torch_geometric.utils import to_dense_adj
+from torch_geometric.utils import to_dense_adj, subgraph
 from sklearn.feature_extraction import FeatureHasher
 from mmgog_long_term_sequence_model.pytorch.dataprocess.fraudar import fraudar
 
@@ -120,8 +120,40 @@ class UinGangsDataIterablePyG(IterableDataset):
                         return None
                     else:
                         return pyg_data
+                else:
+                    return None
             else:
                 return None
+
+    def connect_subgraph(self, pyg_data, index):
+        graph_data = HeteroData()
+        graph_data['uin'].x = pyg_data['uin'].x[index]
+        graph_data['uin'].score = pyg_data['uin'].score[index]
+        graph_data['uin'].gang_mem = pyg_data['uin'].gang_mem[index]
+        if self.load_text:
+            graph_data['uin'].text_feat_input_ids = pyg_data['uin'].text_feat_input_ids[index]
+            graph_data['uin'].text_feat_attention_mask = pyg_data['uin'].text_feat_attention_mask[index]
+        graph_data['uin'].nodeid2uin_map = [pyg_data['uin'].nodeid2uin_map[i] for i in index]
+        graph_data['uin'].gang_label = pyg_data['uin'].gang_label
+        graph_data['uin'].y = pyg_data['uin'].y
+        graph_data['uin'].root_id = pyg_data['uin'].root_id
+        select_max_node_idx = index.max()
+        for edge_type in pyg_data.edge_types:
+            try:
+                current_max_node_idx = pyg_data[edge_type].edge_index.max()
+                max_node_idx = min(select_max_node_idx, current_max_node_idx)
+                if max_node_idx < select_max_node_idx:
+                    select_index = index[index <= max_node_idx]
+                    edge_index, _ = subgraph(select_index, pyg_data[edge_type].edge_index, relabel_nodes=True)
+                else:
+                    edge_index, _ = subgraph(index, pyg_data[edge_type].edge_index, relabel_nodes=True)
+            except Exception as e:
+                print(f"Extract Subgraph Error: <{e}>")
+            else:
+                # no such type of edges
+                if edge_index.shape[1] != 0:
+                    graph_data[edge_type].edge_index = edge_index
+        return graph_data
 
     def process_json_to_pyg(self, json_data, control_node_number=5, control_edge_number=5):
         graph_data = HeteroData()
@@ -161,16 +193,24 @@ class UinGangsDataIterablePyG(IterableDataset):
                     edge_index = [[src, dst] for (src, dst) in all_edge_index]
                     edge_index = torch.tensor(edge_index)
                     graph_data[('uin', 'link', 'uin')].edge_index = edge_index.T
+                    adj = to_dense_adj(edge_index, max_num_nodes=uin_acs_numberical_feat.shape[0]).squeeze()
+                    count_adj = adj.sum(dim=1) + adj.sum(dim=0)
+                    keep_idx = (count_adj != 0).nonzero().squeeze()
                 else:
-                    # add self loops
-                    graph_data[('uin', 'self_loop', 'uin')].edge_index = \
-                        (torch.concat([torch.tensor([[i], [i]]) for i in range(uin_acs_numberical_feat.shape[0])], dim=1))
                     # other edge types
                     for edge_type in all_edge_type_list:
                         edge_index_set[edge_type] = list(set(edge_index_set[edge_type]))
                         edge_index = [[src, dst] for (src, dst) in edge_index_set[edge_type]]
                         edge_index = torch.tensor(edge_index)
                         graph_data[('uin', edge_type, 'uin')].edge_index = edge_index.T
+                    total_edge_index = torch.concat([graph_data[edge_type].edge_index for edge_type in graph_data.edge_types], dim=1)
+                    adj = to_dense_adj(total_edge_index, max_num_nodes=uin_acs_numberical_feat.shape[0]).squeeze()
+                    count_adj = adj.sum(dim=1) + adj.sum(dim=0)
+                    keep_idx = (count_adj != 0).nonzero().squeeze()
+
+                    # add self loops
+                    graph_data[('uin', 'self_loop', 'uin')].edge_index = \
+                        (torch.concat([torch.tensor([[i], [i]]) for i in range(uin_acs_numberical_feat.shape[0])], dim=1))
 
                 uin_acs_categorical_feat = torch.from_numpy(self.hasher.transform(np.array(
                     graph_schema["node_sets"]["uin"]["data"]["uin_acs_categorical_feat"][
@@ -213,6 +253,9 @@ class UinGangsDataIterablePyG(IterableDataset):
                     graph_data['uin'].gang_mem[0] = graph_data['uin'].gang_label
                 uin_map = dict(sorted(graph_schema['nodeid2uin_map'].items(), key=lambda x: int(x[0])))
                 graph_data['uin'].nodeid2uin_map = list(uin_map.values())
+                graph_data['uin'].root_id = graph_schema['nodeid2uin_map']['0']
+                # if keep_idx.shape[0] != graph_data['uin'].x.shape[0]:
+                #     graph_data = self.connect_subgraph(graph_data, keep_idx)
             else:
                 graph_data = None
         else:

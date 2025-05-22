@@ -46,7 +46,7 @@ def read_file(in_dir, infile_name, outfile_name):
             f.write(line)
 
 
-def pyg_to_nx_and_plot(data, edge_index):
+def pyg_to_nx_and_plot(data, edge_index, save_path=None, save_fig_name=None):
     G = nx.Graph()
     G.add_nodes_from(range(data['uin'].num_nodes))
     edge_list = edge_index.t().tolist()
@@ -76,7 +76,11 @@ def pyg_to_nx_and_plot(data, edge_index):
     pos = nx.spring_layout(G)
     nx.draw(G, pos, with_labels=True, labels=labels, node_color=color_map, node_size=600,
             font_size=6, font_color='black', font_weight='bold')
-    plt.show()
+    if save_path is not None and save_fig_name is not None:
+        plt.savefig(save_path + save_fig_name + '.png')
+    else:
+        plt.show()
+    plt.close()
 
 
 def compute_similarity(x1, x2):
@@ -93,34 +97,61 @@ def process(in_dir, infile_name):
     minirbt_tokenizer = AutoTokenizer.from_pretrained(minirbt_path)
     minirbt_model = BertModel.from_pretrained(minirbt_path)
     hasher = FeatureHasher(n_features=256, input_type='string')
+    fig_save_path = ('/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/'
+                    'projects/mmgog_long_term_sequence_model/data/pictures/upstream_subgraph2/')
+    if not os.path.exists(fig_save_path):
+        os.makedirs(fig_save_path)
     data_list = []
-    # anomaly_score = []
+    anomaly_score = []
+    y_list = []
+    node_id_list = []
     # scaler = MinMaxScaler()
+    label_dict = {}
+    # root_dict = {}
+    gang_node_list = []
+    all_node_list = []
     with open(in_dir + infile_name, 'r') as f:
         for i, line in enumerate(f):
-            # if i in [32, 34, 35, 36]:
-            data = json.loads(line)
-            pyg_data = process_json_to_pyg(data, hasher, minirbt_tokenizer, minirbt_model)
-            total_edge_index = torch.concat([pyg_data[edge_type].edge_index for edge_type in pyg_data.edge_types],
-                                            dim=1)
-            pyg_to_nx_and_plot(pyg_data, total_edge_index)
-            full_adj = to_dense_adj(total_edge_index, max_num_nodes=pyg_data.num_nodes).squeeze()
-            gang_mem_idx = (pyg_data['uin'].gang_mem == 1).nonzero().squeeze()
-            non_gang_mem_idx = (pyg_data['uin'].gang_mem == 0).nonzero().squeeze()
-            gang_non_gang_adj_1 = full_adj[gang_mem_idx, :][:, non_gang_mem_idx]
-            gang_non_gang_adj_2 = full_adj[non_gang_mem_idx, :]
-            if len(gang_non_gang_adj_2.shape) == 1:
-                gang_non_gang_adj_2 = gang_non_gang_adj_2[gang_mem_idx]
-            else:
-                gang_non_gang_adj_2 = gang_non_gang_adj_2[:, gang_mem_idx]
-            gang_non_gang_adj = gang_non_gang_adj_1.T + gang_non_gang_adj_2
-            gang_adj = full_adj[gang_mem_idx, :][:, gang_mem_idx]
-            gang_x = pyg_data['uin'].x[gang_mem_idx][:, :506]
-            non_gang_x = pyg_data['uin'].x[non_gang_mem_idx][:, :506]
-            gang_sim = compute_similarity(gang_x, gang_x)
-            gang_non_sim = compute_similarity(gang_x, non_gang_x)
-            gang_score = pyg_data['uin'].score[gang_mem_idx].squeeze()
-            non_gang_score = pyg_data['uin'].score[non_gang_mem_idx].squeeze()
+                data = json.loads(line)
+                root_node_id = data['graph_schema']['nodeid2uin_map']['0']
+                if root_node_id in ['1780433592', '919312877', '3707457224', '174573922', '27922197',
+                                    '3381899542', '933942660', '371989504', '3310036105', '958527772',
+                                    '1030293320']:
+                    gang_node = data['uin_gangs_mem_list']
+                    all_node = ','.join(data['graph_schema']['nodeid2uin_map'].values())
+                    gang_node_list.append(gang_node)
+                    all_node_list.append(all_node)
+                # if data['original_label'] not in label_dict.keys():
+                #     label_dict[data['original_label']] = 1
+                    # root_dict[data['original_label']] = [root_node_id]
+                # else:
+                #     label_dict[data['original_label']] += 1
+                    # root_dict[data['original_label']].append(root_node_id)
+                # pyg_data = process_json_to_pyg(data, hasher, minirbt_tokenizer, minirbt_model)
+                # anomaly_score.append(pyg_data['uin'].score.numpy())
+                # y_list.append(pyg_data['uin'].gang_mem.int().numpy())
+                # node_id_list.extend(pyg_data['uin'].nodeid2uin_map)
+                # if len(pyg_data.edge_types) != 0:
+                #     total_edge_index = torch.concat(
+                #         [pyg_data[edge_type].edge_index for edge_type in pyg_data.edge_types], dim=1)
+                #     pyg_to_nx_and_plot(pyg_data, total_edge_index, fig_save_path, f'root={root_node_id}')
+            # full_adj = to_dense_adj(total_edge_index, max_num_nodes=pyg_data.num_nodes).squeeze()
+            # gang_mem_idx = (pyg_data['uin'].gang_mem == 1).nonzero().squeeze()
+            # non_gang_mem_idx = (pyg_data['uin'].gang_mem == 0).nonzero().squeeze()
+            # gang_non_gang_adj_1 = full_adj[gang_mem_idx, :][:, non_gang_mem_idx]
+            # gang_non_gang_adj_2 = full_adj[non_gang_mem_idx, :]
+            # if len(gang_non_gang_adj_2.shape) == 1:
+            #     gang_non_gang_adj_2 = gang_non_gang_adj_2[gang_mem_idx]
+            # else:
+            #     gang_non_gang_adj_2 = gang_non_gang_adj_2[:, gang_mem_idx]
+            # gang_non_gang_adj = gang_non_gang_adj_1.T + gang_non_gang_adj_2
+            # gang_adj = full_adj[gang_mem_idx, :][:, gang_mem_idx]
+            # gang_x = pyg_data['uin'].x[gang_mem_idx][:, :506]
+            # non_gang_x = pyg_data['uin'].x[non_gang_mem_idx][:, :506]
+            # gang_sim = compute_similarity(gang_x, gang_x)
+            # gang_non_sim = compute_similarity(gang_x, non_gang_x)
+            # gang_score = pyg_data['uin'].score[gang_mem_idx].squeeze()
+            # non_gang_score = pyg_data['uin'].score[non_gang_mem_idx].squeeze()
             # gang_density, gang_non_gang_density = gang_adj.mean().item(), gang_non_gang_adj.mean().item()
             # df_data = pd.DataFrame(np.array([[i, gang_density, gang_non_gang_density]]))
             # data_list.append(df_data)
@@ -140,9 +171,23 @@ def process(in_dir, infile_name):
             # idx = (torch.ones_like(score) * i).type(torch.LongTensor)
             # df_data = pd.DataFrame(torch.concat([idx, label, score, x], dim=1).detach().numpy())
             # data_list.append(df_data)
+    # anomaly_score = np.concatenate(anomaly_score, axis=0)
+    # y_list = np.concatenate(y_list, axis=0)
+    # node_id_list = np.array(node_id_list)
+    # data = pd.DataFrame(data={'node_id': node_id_list,
+    #                           'y_true': y_list,
+    #                           'y_prob': anomaly_score.squeeze()})
+    # data.to_csv('/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/'
+    #             'projects/mmgog_long_term_sequence_model/data/prediction/score_pred.csv', index=False)
     # anomaly_score = pd.concat(anomaly_score)
     # data_list = pd.concat(data_list)
     # data_list.to_csv(in_dir + 'unlabeled_subgraphs.csv', index=False)
+    # print(sorted(label_dict.items(), key=lambda x: x[1], reverse=True))
+    # print(root_dict)
+    data = pd.DataFrame(data={'gang_uin': gang_node_list,
+                              'all_uin': all_node_list})
+    data.to_csv('/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/'
+                'projects/mmgog_long_term_sequence_model/data/difficult_subgraphs.csv', index=False)
 
 
 def process_json_to_pyg(json_data, hasher, minirbt_tokenizer, minirbt_model, undirected_edge_types=None):
@@ -196,7 +241,9 @@ def process_json_to_pyg(json_data, hasher, minirbt_tokenizer, minirbt_model, und
     # obtain anomaly score
     graph_data['uin'].score = torch.from_numpy(np.array(
         graph_schema["node_sets"]["uin"]["data"]["uin_evil_score"]["float_list"], dtype=np.float32)).float()
-    graph_data['uin'].root_label = 0 if "正常" in json_data['original_label'] else 1
+    graph_data['uin'].root_id = graph_schema['nodeid2uin_map']['0']
+    uin_map = dict(sorted(graph_schema['nodeid2uin_map'].items(), key=lambda x: int(x[0])))
+    graph_data['uin'].nodeid2uin_map = list(uin_map.values())
     if 'uin_gangs_mem_list' in json_data.keys():
         graph_data['uin'].gang_mem = torch.zeros(graph_data['uin'].score.shape[0])
         gang_mem_list = json_data['uin_gangs_mem_list'].split(',')
@@ -211,7 +258,8 @@ def process_json_to_pyg(json_data, hasher, minirbt_tokenizer, minirbt_model, und
                 graph_data['uin'].gang_mem[nodeid] = 1
     else:
         graph_data['uin'].gang_mem = (-1) * torch.ones(graph_data['uin'].score.shape[0])
-    graph_data['uin'].gang_mem[0] = graph_data['uin'].root_label
+        graph_data['uin'].root_label = 0 if "正常" in json_data['original_label'] else 1
+        graph_data['uin'].gang_mem[0] = graph_data['uin'].root_label
     return graph_data
 
 
@@ -380,7 +428,7 @@ def filter_gang(path):
         score_file = 'gang_score_mean_std.csv'
         score_data = pd.read_csv(path + score_file, index_col=0)
         select_gang_idx = score_data.iloc[:, 1][score_data.iloc[:, 1] > 0.15].index.to_list()
-        full_file = 'uin_gangs_supervise_full_graph_dataset_eval_250324_202503241700_filter.txt'
+        full_file = 'uin_gangs_supervise_full_graph_dataset_eval_250324_202503241700_628.txt'
         select_list = []
         with open(path + full_file, 'r') as f:
             for i, line in enumerate(f):
@@ -539,5 +587,5 @@ def mmd(path):
 
 if __name__ == '__main__':
     path_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/valid/raw/'
-    file_name = 'uin_gangs_supervise_full_graph_dataset_eval_250324_202503241700_exclude_none_connect_gangs.txt'
+    file_name = 'uin_gangs_supervise_full_graph_dataset_eval_250324_202503241700_599.txt'
     process(path_dir, file_name)

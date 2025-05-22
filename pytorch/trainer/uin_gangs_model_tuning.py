@@ -2,7 +2,6 @@ import logging
 import os
 import time
 import random
-
 import pandas as pd
 import torch
 
@@ -28,7 +27,8 @@ from mmgog_long_term_sequence_model.pytorch.models.rgcn_model import RGCN, MaskR
 from mmgog_long_term_sequence_model.pytorch.models.rgat_model import GAT
 from mmgog_long_term_sequence_model.pytorch.models.linear import MultiLinear
 from mmgog_long_term_sequence_model.pytorch.dataprocess.data_process_iterable_pyg import UinGangsDataIterablePyG
-from mmgog_long_term_sequence_model.utils.utils import batch_subgraph_loss_based_cross_entropy
+from mmgog_long_term_sequence_model.utils.utils import (batch_subgraph_loss_based_cross_entropy, batch_loss, old_batch_loss,
+                                                        batch_loss_based_on_homo, plot_auc, fetch_cnt_emb, cnt_inner_score)
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix
 
 
@@ -62,6 +62,10 @@ class UinGangsModelTuning:
         self.metric = self.eval_dict["metric_learning"]
         self.num_bases = args_dict['num_bases'] if args_dict['num_bases'] != 0 else 5
         self.out_layer = args_dict['out_layer']
+        self.k_shot = args_dict['k_shot']
+        self.degree_param = args_dict['degree_param']
+        self.top_k = args_dict['top_k']
+        self.node_context = args_dict['node_context']
         if self.pooling == 'sag_pool':
             self.sag_pooling = SAGPooling(in_channels=args_dict['output_dim'],
                                           ratio=args_dict['top_sag_pool_ratio'],
@@ -97,24 +101,33 @@ class UinGangsModelTuning:
                     num_relations=self.num_relations,
                     metric_learning=self.metric,
                     num_bases=self.num_bases)
-                self.text_model = MaskRGCN(
-                    mlp_n_in_dim=None,
-                    mlp_c_in_dim=None,
-                    mlp_t_in_dim=args_dict['uin_acs_text_feat_dim'],
-                    input_dim=args_dict['uin_acs_text_feat_dim'],
-                    hidden_dim=args_dict['uin_acs_text_feat_dim'],
-                    output_dim=args_dict['uin_acs_text_feat_dim'],
-                    adapter_type=args_dict['adapter_type'],
-                    num_relations=self.num_relations,
-                    metric_learning=self.metric,
-                    num_bases=self.num_bases,
-                    layer=1,
-                    first_attn_weight='all')
+                if self.eval_dict['text_model'] == 'MaskRGCN':
+                    self.text_model = MaskRGCN(
+                        mlp_n_in_dim=None,
+                        mlp_c_in_dim=None,
+                        mlp_t_in_dim=args_dict['uin_acs_text_feat_dim'],
+                        input_dim=args_dict['uin_acs_text_feat_dim'],
+                        hidden_dim=args_dict['uin_acs_text_feat_dim'],
+                        output_dim=args_dict['uin_acs_text_feat_dim'],
+                        adapter_type=args_dict['adapter_type'],
+                        num_relations=self.num_relations,
+                        metric_learning=self.metric,
+                        num_bases=self.num_bases,
+                        layer=1,
+                        first_attn_weight='all')
+                elif self.eval_dict['text_model'] == 'MLP':
+                    self.text_model = torch.nn.Sequential(
+                        torch.nn.Linear(args_dict['uin_acs_text_feat_dim'], args_dict['hidden_dim']),
+                        torch.nn.LeakyReLU(),
+                        torch.nn.Linear(args_dict['hidden_dim'], args_dict['uin_acs_text_feat_dim']))
+                else:
+                    self.text_model = None
             else:
                 self.model = MaskRGCN(
                     mlp_n_in_dim=args_dict['uin_acs_numberical_feat_dim'],
                     mlp_c_in_dim=args_dict['uin_acs_categorical_feat_hasher_dim'],
                     mlp_t_in_dim=None,
+                    degree_param=self.degree_param,
                     input_dim=args_dict['input_dim'],
                     hidden_dim=args_dict['hidden_dim'],
                     output_dim=args_dict['output_dim'],
@@ -139,9 +152,7 @@ class UinGangsModelTuning:
                              num_heads=args_dict['num_heads'])
         elif self.conv_type == 'MLP':
             self.model = torch.nn.Sequential(torch.nn.Linear(args_dict['input_dim'], args_dict['hidden_dim']),
-                                             torch.nn.ReLU(),
-                                             torch.nn.Linear(args_dict['hidden_dim'], 2),
-                                             torch.nn.Softmax(dim=1))
+                                             torch.nn.Linear(args_dict['hidden_dim'], args_dict['output_dim']))
         else:
             self.model = SVC(kernel='linear')
         self.save_model_path = os.path.join(self.eval_dict["model_states_path"],
@@ -172,7 +183,7 @@ class UinGangsModelTuning:
                     self.model.load_state_dict(model_weight, strict=False)
                 print(f"Load: {file_name}")
             self.model.to(self.device)
-            if self.eval_dict['concat_text']:
+            if self.eval_dict['concat_text'] and self.text_model is not None:
                 self.text_model.to(self.device)
             # set classifier
             if self.info_type in ['combine_subgraph', 'combine_difference'] and self.conv_type != 'GAT':
@@ -180,6 +191,8 @@ class UinGangsModelTuning:
             elif self.info_type == 'concat_text':
                 if self.out_layer == 1:
                     cls_input = args_dict['hidden_dim'] + args_dict['uin_acs_text_feat_dim']
+                    if self.node_context:
+                        cls_input = cls_input * 2
                 else:
                     cls_input = args_dict['output_dim'] + args_dict['uin_acs_text_feat_dim']
             elif self.info_type in ['combine_subgraph', 'combine_difference'] and self.conv_type == 'GAT':
@@ -201,6 +214,7 @@ class UinGangsModelTuning:
                 output_dim = 2
                 if self.eval_dict['concat_text']:
                     self.classifier = MultiLinear(cls_input, args_dict['hidden_dim'], output_dim)
+
                 else:
                     self.classifier = torch.nn.Sequential(torch.nn.Linear(cls_input, args_dict['hidden_dim']),
                                                           torch.nn.ReLU(),
@@ -215,14 +229,25 @@ class UinGangsModelTuning:
             else:
                 self.pt_info = f'{self.conv_type}_No_Pretrain'
             weights = self.eval_dict['node_cls_loss_weight'].split(' ')
-            self.ft_info = f'wp_{weights[1]}_wn_{weights[0]}'
-        if self.eval_dict["downstream_task"] in ['node_cl', 'subgraph_cl', 'subgraph_gang_cl', 'node_score_optim',
+            self.ft_info = f'wp_{weights[1]}_wn_{weights[0]}_layer_{self.out_layer}'
+        if self.eval_dict["downstream_task"] in ['node_cl', 'node_cl_score', 'subgraph_cl', 'subgraph_gang_cl', 'node_score_optim',
                                                  'subgraph_gang_cl_by_svm', 'subgraph_node_score_optim']:
-            train_data_path = os.path.join(self.eval_dict["train_data_path"] + self.eval_dict["split_idx"],
+            if self.k_shot != 0:
+                train_data_path = os.path.join(self.eval_dict["train_data_path"],
+                                           f"{self.k_shot}_shot_processed",
+                                           f"split_{self.eval_dict['split_idx']}",
                                            self.eval_dict["train_data_file"])
+                test_data_path = os.path.join(self.eval_dict["test_data_path"],
+                                              f"{self.k_shot}_shot_processed",
+                                              f"split_{self.eval_dict['split_idx']}",
+                                              self.eval_dict["test_data_file"])
+            else:
+                train_data_path = os.path.join(self.eval_dict["train_data_path"] + self.eval_dict['split_idx'],
+                                               self.eval_dict["train_data_file"])
+                test_data_path = os.path.join(self.eval_dict["test_data_path"] + self.eval_dict['split_idx'],
+                                              self.eval_dict["test_data_file"])
             self.train_data = UinGangsDataIterablePyG(self.eval_dict, train_data_path)
-            test_data_path = os.path.join(self.eval_dict["test_data_path"] + self.eval_dict["split_idx"],
-                                          self.eval_dict["test_data_file"])
+
             self.eval_data = UinGangsDataIterablePyG(self.eval_dict, test_data_path)
             self.train_loader = Data.DataLoader(self.train_data,
                                                 batch_size=self.eval_dict["batch_size"],
@@ -231,13 +256,17 @@ class UinGangsModelTuning:
             self.eval_loader = Data.DataLoader(self.eval_data,
                                                batch_size=self.eval_dict["batch_size"],
                                                num_workers=self.eval_dict["num_workers"],
-                                               collate_fn=self.eval_data.collate_fn)
+                                               collate_fn=self.eval_data.pos_collate_fn_for_fraudar)
             if self.conv_type != "SVM":
                 params = []
                 if (self.eval_dict["is_finetune"] and self.eval_dict["adapter_type"] is None) or self.eval_dict[
                     "is_supervised"]:
-                    params.append({'params': self.model.parameters(), 'lr': self.eval_dict['cls_lr']})
-                    if self.eval_dict["concat_text"]:
+                    if self.eval_dict["is_finetune"]:
+                        lr = self.eval_dict['cls_lr']
+                    else:
+                        lr = self.eval_dict['pretrain_lr']
+                    params.append({'params': self.model.parameters(), 'lr': lr})
+                    if self.eval_dict['concat_text'] and self.text_model is not None:
                         params.append({'params': self.text_model.parameters(), 'lr': self.eval_dict['pretrain_lr']})
                 elif self.eval_dict["is_finetune"] and self.eval_dict["adapter_type"] is not None:
                     params.append(
@@ -260,8 +289,16 @@ class UinGangsModelTuning:
         # inference based on pretrained GNN model and classifier
         else:
             self.model.eval()
-            test_data_path = os.path.join(self.eval_dict["test_data_path"] + self.eval_dict["split_idx"],
-                                          self.eval_dict["test_data_file"])
+            if self.k_shot != 0:
+                test_data_path = os.path.join(self.eval_dict["test_data_path"],
+                                              f"{self.k_shot}_shot_processed",
+                                              f"split_{self.eval_dict['split_idx']}",
+                                              self.eval_dict["test_data_file"])
+            else:
+                test_data_path = os.path.join(self.eval_dict["test_data_path"],
+                                              f"{self.k_shot}_shot_processed",
+                                              f"split_{self.eval_dict['split_idx']}",
+                                              self.eval_dict["test_data_file"])
             self.eval_data = UinGangsDataIterablePyG(self.eval_dict, test_data_path)
             self.eval_loader = Data.DataLoader(self.eval_data,
                                                batch_size=self.eval_dict["batch_size"],
@@ -299,8 +336,10 @@ class UinGangsModelTuning:
                 current_max_node_idx = batch[edge_type].edge_index.max()
                 max_node_idx = min(subgraph_max_node_idx, current_max_node_idx)
                 if max_node_idx < subgraph_max_node_idx:
-                    subgraph_node_indices = subgraph_node_indices[subgraph_node_indices <= max_node_idx]
-                edge_index, _ = subgraph(subgraph_node_indices, batch[edge_type].edge_index, relabel_nodes=True)
+                    select_node_indices = subgraph_node_indices[subgraph_node_indices <= max_node_idx]
+                    edge_index, _ = subgraph(select_node_indices, batch[edge_type].edge_index, relabel_nodes=True)
+                else:
+                    edge_index, _ = subgraph(subgraph_node_indices, batch[edge_type].edge_index, relabel_nodes=True)
             except Exception as e:
                 print(f"Extract Subgraph Error: <{e}>")
             else:
@@ -312,17 +351,22 @@ class UinGangsModelTuning:
     def relation_fit(self, pos_batch, batch_x, batch_text=None):
         try:
             batch_edge_index, batch_edge_types = self.get_edge_info(pos_batch)
-            if self.eval_dict['is_add_score']:
-                batch_h = self.model(batch_x, batch_edge_index, batch_edge_types, pos_batch['uin'].score)
+            if self.eval_dict['ft_strategy'] is not None:
+                adj = to_dense_adj(batch_edge_index, max_num_nodes=pos_batch['uin'].num_nodes).squeeze()
+                deg = adj.sum(dim=1) + adj.sum(dim=0)
+                batch_h = self.model(batch_x, batch_edge_index, batch_edge_types,
+                                 pos_batch['uin'].score.squeeze(), deg)
             else:
                 batch_h = self.model(batch_x, batch_edge_index, batch_edge_types)
-                if self.eval_dict['concat_text']:
-                    batch_h_text = self.text_model(batch_text, batch_edge_index, batch_edge_types)
         except Exception as e:
-            print(f"{self.conv_type} Get Edge Information Error: <{e}>")
+            print(f"{self.conv_type} Error: <{e}>")
             return None
         else:
-            if self.eval_dict['concat_text']:
+            if self.eval_dict['concat_text'] and self.text_model is not None:
+                if self.eval_dict['text_model'] == 'MaskRGCN':
+                    batch_h_text = self.text_model(batch_text, batch_edge_index, batch_edge_types)
+                else:
+                    batch_h_text = self.text_model(batch_text)
                 return batch_h, batch_h_text
             else:
                 return batch_h
@@ -368,29 +412,84 @@ class UinGangsModelTuning:
             subgraph_embedding_list.append(subgraph_embedding[i, :].repeat(repeat_times, 1))
         return torch.concat(subgraph_embedding_list, dim=0)
 
+    def subgraph_score_expand(self, sub_ave_score, expand_sizes):
+        n = sub_ave_score.shape[0]
+        sub_ave_score_list = []
+        for i in range(n):
+            repeat_times = (expand_sizes[i + 1] - expand_sizes[i]).detach().cpu().item()
+            sub_ave_score_list.append(sub_ave_score[i].repeat(repeat_times))
+        return torch.concat(sub_ave_score_list, dim=0)
+
     def save_output_file(self, true_idx_list, pred_idx_list,
                          subgraph_uin_list, subgraph_y_list,
-                         jaccard_list, file_name):
+                         jaccard_list, file_name, root_id_list=None,
+                         node_num_list=None):
         true_uin_list, pred_uin_list = [], []
-        for i in range(len(true_idx_list)):
-            true_uin_idx = true_idx_list[i][1:-1].split(',')
-            pred_uin_idx = pred_idx_list[i][1:-1].split(',')
-            uin_map_list = subgraph_uin_list[i]
-            if true_uin_idx != ['']:
-                true_uin_list.append([uin_map_list[int(item)] for item in true_uin_idx])
-            else:
-                true_uin_list.append([])
-            if pred_uin_idx != ['']:
-                pred_uin_list.append([uin_map_list[int(item)] for item in pred_uin_idx])
-            else:
-                pred_uin_list.append([])
-        df = pd.DataFrame(data={'label_gang_mem_list': true_uin_list,
-                                'pred_gang_mem_list': pred_uin_list,
-                                'jaccard': jaccard_list,
-                                'subgraph_gang_label': subgraph_y_list,
-                                'subgraph_node_map': subgraph_uin_list})
+        if root_id_list is None and node_num_list is None:
+            for i in range(len(true_idx_list)):
+                true_uin_idx = true_idx_list[i][1:-1].split(',')
+                pred_uin_idx = pred_idx_list[i][1:-1].split(',')
+                uin_map_list = subgraph_uin_list[i]
+                if true_uin_idx != ['']:
+                    true_uin_list.append([uin_map_list[int(item)] for item in true_uin_idx])
+                else:
+                    true_uin_list.append([])
+                if pred_uin_idx != ['']:
+                    pred_uin_list.append([uin_map_list[int(item)] for item in pred_uin_idx])
+                else:
+                    pred_uin_list.append([])
+            df = pd.DataFrame(data={'label_gang_mem_list': true_uin_list,
+                                    'pred_gang_mem_list': pred_uin_list,
+                                    'jaccard': jaccard_list,
+                                    'subgraph_gang_label': subgraph_y_list,
+                                    'subgraph_node_map': subgraph_uin_list})
+        else:
+            for i in range(len(true_idx_list)):
+                true_uin_idx = true_idx_list[i][1:-1].split(',')
+                pred_uin_idx = pred_idx_list[i][1:-1].split(',')
+                true_uin_list.append(true_uin_idx)
+                pred_uin_list.append(pred_uin_idx)
+            df = pd.DataFrame(data={'root_id': root_id_list,
+                                    'node_num': node_num_list,
+                                    'ground_truth': true_uin_list,
+                                    'prediction': pred_uin_list,
+                                    'jaccard': jaccard_list,
+                                    'subgraph_label': subgraph_y_list})
         df.to_csv(file_name, index=False)
         print(f"===== Save Prediction File To: {file_name} =====")
+
+    def generate_node_context(self, graph_h, graph_adj, graph_score):
+        n = graph_h.shape[0]
+        d = graph_h.shape[1]
+        graph_deg = graph_adj.sum(dim=1) + graph_adj.sum(dim=0)
+        ave_score = graph_score.mean()
+        ave_deg = graph_deg.mean() / 2
+        cnt_h_list = []
+        for i in range(n):
+            i_scr = graph_score[i]
+            i_deg = graph_deg[i]
+            if i_scr < ave_score and i_deg < ave_deg:
+                cnt_h_list.append(torch.zeros(d))
+            else:
+                i_adj = graph_adj[i, :]
+                i_adj[i] = 0
+                i_neigh = (i_adj > 0).nonzero().squeeze()
+                if type(i_neigh) is int:
+                    i_neigh = [i_neigh]
+                i_neigh_scr = graph_score[i_neigh]
+                i_neigh_deg = graph_deg[i_neigh]
+                scr_dif = 1 - (i_scr - i_neigh_scr).abs()
+                deg_dif = 1 - (i_deg - i_neigh_deg).abs() / (i_deg + i_neigh_deg)
+                i_neigh_dif = scr_dif * deg_dif
+                i_neigh_dif_srt_idx = i_neigh_dif.sort().indices
+                if i_neigh_dif_srt_idx.shape[0] > self.top_k:
+                    i_neigh_top_k = i_neigh_dif_srt_idx[:self.top_k]
+                else:
+                    i_neigh_top_k = i_neigh_dif_srt_idx
+                context_h = graph_h[i_neigh_top_k, :].mean(dim=0)
+                cnt_h_list.append(context_h)
+        node_cnt_h = torch.stack(cnt_h_list, dim=1)
+        return node_cnt_h.to(self.device)
 
     def detect_subgraph_by_model(self, flag):
         if self.eval_dict["is_finetune"] or self.eval_dict["is_supervised"]:
@@ -552,7 +651,7 @@ class UinGangsModelTuning:
             if not (self.eval_dict["is_finetune"] and self.eval_dict['adapter_type'] is not None):
                 for param in self.model.parameters():
                     param.requires_grad = False
-        if self.eval_dict['concat_text']:
+        if self.eval_dict['concat_text'] and self.text_model is not None:
             self.text_model.train()
         for param in self.classifier.parameters():
             param.requires_grad = True
@@ -566,6 +665,8 @@ class UinGangsModelTuning:
             best_test_pos_jac = 0
             best_test_neg_jac = 0
         best_test_time = 0
+        best_loss = 1e2
+        count = 0
         for epoch in range(1, self.eval_dict["n_epochs"] + 1):
             st = time.time()
             self.classifier.train()
@@ -596,18 +697,27 @@ class UinGangsModelTuning:
                 batch['uin'].x = batch_x
                 if self.eval_dict['is_single_edge'] and self.conv_type == 'GAT':
                     batch_h = self.model(batch['uin'].x, batch[('uin', 'link', 'uin')].edge_index)
+                elif self.conv_type == 'MLP':
+                    batch_h = self.model(batch['uin'].x)
                 else:
                     if self.eval_dict['concat_text']:
                         cut = self.eval_dict['uin_acs_numberical_feat_dim'] + self.eval_dict[
                             'uin_acs_categorical_feat_hasher_dim']
-                        batch_h, batch_uin_acs_text_feat = self.relation_fit(batch, batch['uin'].x[:, :cut],
-                                                                             batch['uin'].x[:, cut:])
+                        if self.eval_dict['concat_text'] and self.text_model is not None:
+                            batch_h, batch_uin_acs_text_feat = self.relation_fit(batch, batch['uin'].x[:, :cut], batch['uin'].x[:, cut:])
+                        else:
+                            batch_h = self.relation_fit(batch, batch['uin'].x[:, :cut])
                     else:
                         batch_h = self.relation_fit(batch, batch['uin'].x)
                 # get edge information
                 if batch_h is not None:
-                    batch_h = batch_h[self.out_layer - 1]
-                    batch_uin_acs_text_feat = batch_uin_acs_text_feat[0]
+                    if self.conv_type != 'MLP':
+                        batch_h = batch_h[self.out_layer - 1]
+                    if self.eval_dict['concat_text']:
+                        if self.eval_dict['text_model'] == 'MaskRGCN':
+                            batch_uin_acs_text_feat = batch_uin_acs_text_feat[0]
+                        batch_h = torch.concat([batch_h, batch_uin_acs_text_feat], dim=1)
+                        batch_h = torch.nn.functional.normalize(batch_h, dim=1)
                     batch_y = batch['uin'].gang_mem.long()
                     if self.info_type in ['combine_subgraph', 'concat_subgraph']:
                         if self.pooling == 'sag_pool':
@@ -624,15 +734,58 @@ class UinGangsModelTuning:
                         else:
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
                             batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
-                    if self.eval_dict['concat_text']:
-                        batch_h = torch.concat([batch_h, batch_uin_acs_text_feat], dim=1)
-                        batch_h = torch.nn.functional.normalize(batch_h, dim=1)
-                        h_out = self.classifier(batch_h)
-                        pred_y = h_out[-1]
-                    else:
-                        pred_y = self.classifier(batch_h)
+                    if self.node_context:
+                        batch_edge_index = torch.concat(
+                            [batch[edge_type].edge_index for edge_type in batch.edge_types], dim=1)
+                        batch_adj = to_dense_adj(batch_edge_index, max_num_nodes=batch['uin'].num_nodes).squeeze()
+                        graph_num = (batch['uin'].batch.unique().max() + 1).detach().cpu().item()
+                        grh_h_cnt_list = []
+                        for g_num in range(graph_num):
+                            g_node_idx = (batch['uin'].batch == g_num).nonzero().squeeze()
+                            graph_h = batch_h[g_node_idx]
+                            graph_adj = batch_adj[g_node_idx, :][:, g_node_idx]
+                            graph_score = batch['uin'].score.squeeze()[g_node_idx]
+                            graph_h_context = self.generate_node_context(graph_h, graph_adj, graph_score)
+                            grh_h_cnt_list.append(graph_h_context)
+                        batch_h_context = torch.concat(grh_h_cnt_list, dim=0).to(self.device)
+                        batch_h = torch.concat([batch_h, batch_h_context]).to(self.device)
+                    if self.eval_dict['downstream_task'] != 'node_cl_score':
+                        if self.eval_dict['concat_text']:
+                            pred_y = self.classifier(batch_h)[-1]
+                        else:
+                            pred_y = self.classifier(batch_h)
                     if self.eval_dict['downstream_loss'] == 'node_loss':
                         loss = self.criterion(pred_y, batch_y)
+                    elif self.eval_dict['downstream_loss'] == 'batch_loss':
+                        loss = batch_loss(batch['uin'].batch, pred_y[:, 1], batch_y)
+                    elif self.eval_dict['downstream_loss'] == 'old_batch_loss':
+                        loss = old_batch_loss(batch['uin'].batch, pred_y[:, 1], batch_y) / batch['uin'].num_nodes
+                    elif self.eval_dict['downstream_loss'] == 'new_batch_loss':
+                        total_edge_index = torch.concat(
+                            [batch[edge_type].edge_index for edge_type in batch.edge_types], dim=1)
+                        adj = to_dense_adj(total_edge_index, max_num_nodes=batch['uin'].num_nodes).squeeze()
+                        loss = batch_loss_based_on_homo(batch['uin'].batch, pred_y[:, 1], batch_y, adj)
+                    elif self.eval_dict['downstream_loss'] == 'score_loss':
+                        sub_ave_score = scatter_mean(batch['uin'].score.squeeze(), batch['uin'].batch, dim=0)
+                        sub_ave_score = self.subgraph_score_expand(sub_ave_score, batch['uin'].ptr)
+                        lg_sub_idx = ((batch['uin'].score.squeeze() - sub_ave_score) > 0).nonzero().squeeze()
+                        total_edge_index = torch.concat(
+                            [batch[edge_type].edge_index for edge_type in batch.edge_types], dim=1)
+                        adj = to_dense_adj(total_edge_index, max_num_nodes=batch['uin'].num_nodes).squeeze()
+                        raw_score = batch['uin'].score.squeeze()
+                        reduce_score = cnt_inner_score(lg_sub_idx, adj, raw_score, batch_h) - 0.2
+                        reduce_score = torch.min(torch.zeros_like(reduce_score), reduce_score)
+                        update_score = raw_score.clone()
+                        update_score[lg_sub_idx] += reduce_score
+                        update_score = torch.relu(update_score).unsqueeze(1)
+                        update_score = torch.concat([1-update_score, update_score], dim=1).to(self.device)
+                        loss = self.criterion(update_score, batch_y)
+                    elif self.eval_dict['downstream_loss'] == 'new_score_loss':
+                        prob_y = self.classifier(batch_h)[-1][:, 1].unsqueeze(1)
+                        raw_score = batch['uin'].score
+                        prob_y = (prob_y + raw_score) / 2
+                        update_score = torch.concat([1 - prob_y, prob_y], dim=1)
+                        loss = old_batch_loss(batch['uin'].batch, update_score, batch_y) / batch['uin'].num_nodes
                     else:
                         loss = batch_subgraph_loss_based_cross_entropy(batch['uin'].gang_label.long(),
                                                                        batch['uin'].batch,
@@ -648,50 +801,64 @@ class UinGangsModelTuning:
                     epoch_loss.append(loss.detach().cpu().item())
             current_loss = sum(epoch_loss) / len(epoch_loss)
             print(f"Epoch {epoch}, Loss: {current_loss: .4f}, Time: {time.time() - st: .4f} s")
-            if task == "node":
-                test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm, test_time = self.evaluate_classifier(
-                    flag=flag,
-                    epoch=epoch,
-                    task="node_cl")
+            if current_loss < best_loss:
+                best_loss = current_loss
+                count = 0
             else:
-                (test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm,
-                 test_pos_jac, test_neg_jac, test_time) = self.evaluate_classifier(flag=flag,
-                                                                                   epoch=epoch,
-                                                                                   task="subgraph_gang_cl",
-                                                                                   save_results=True,
-                                                                                   best_f1=best_test_f1)
-            if test_f1 > best_test_f1:
-                best_test_acc = test_acc
-                best_test_pre = test_pre
-                best_test_rec = test_rec
-                best_test_f1 = test_f1
-                best_test_roc_auc = test_roc_auc
-                best_test_cm = test_cm
-                if task != "node":
-                    best_test_pos_jac = test_pos_jac
-                    best_test_neg_jac = test_neg_jac
-                best_test_time = test_time
-                # save classifier
-                if save_model:
-                    is_finetune = '_finetune' if self.eval_dict["is_finetune"] else ''
-                    is_supervised = '_supervised' if self.eval_dict["is_supervised"] else ''
-                    is_sag_pool = f'_sag_pool_{self.eval_dict["sag_top_ratio"]}' if self.info_type == 'sag_pooling' else ''
-                    file_name = (f"{self.info_type}_f1_{best_test_f1:.2f}{is_finetune}{is_supervised}"
-                                 f"{is_sag_pool}_sample_{flag}.pth") if self.info_type is not None else \
-                        f"f1_{best_test_f1:.2f}{is_finetune}{is_supervised}{is_sag_pool}_sample_{flag}.pth"
-                    file_dir = os.path.join(self.eval_dict["cls_model_states_path"], self.pt_info, self.ft_info)
-                    if not os.path.exists(file_dir):
-                        os.makedirs(file_dir)
-                    file_name = os.path.join(file_dir, file_name)
-                    params = {'cls': self.classifier.state_dict()}
-                    if self.info_type == 'sag_pooling':
-                        params['pooling'] = self.sag_pooling.state_dict()
-                    if self.prompt_type is not None:
-                        params['prompt'] = self.prompt
-                    torch.save(params, file_name)
-                    print(f"===== Best F1: {test_f1:.4f}, Save To: {file_name} =====")
+                count += 1
+            if epoch == self.eval_dict["n_epochs"] or count == self.eval_dict["patience"]:
+                if task == "node":
+                    if self.eval_dict["downstream_loss"] in ["score_loss", "new_score_loss"]:
+                        test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm, test_time, test_y, test_prob, test_node_id = self.evaluation(
+                            flag=flag,
+                            epoch=epoch,
+                            save_results=True)
+                    else:
+                        test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm, test_time, test_y, test_prob, test_node_id = self.evaluate_classifier(
+                            flag=flag,
+                            epoch=epoch,
+                            task="node_cl",
+                            save_results=True)
+                elif task == "subgraph":
+                    (test_acc, test_pre, test_rec, test_f1, test_roc_auc, test_cm,
+                     test_pos_jac, test_neg_jac, test_time) = self.evaluate_classifier(flag=flag,
+                                                                                       epoch=epoch,
+                                                                                       task="subgraph_gang_cl",
+                                                                                       save_results=True,
+                                                                                       best_f1=best_test_f1)
+                if test_f1 > best_test_f1:
+                    best_test_acc = test_acc
+                    best_test_pre = test_pre
+                    best_test_rec = test_rec
+                    best_test_f1 = test_f1
+                    best_test_roc_auc = test_roc_auc
+                    best_test_cm = test_cm
+                    if task != "node":
+                        best_test_pos_jac = test_pos_jac
+                        best_test_neg_jac = test_neg_jac
+                    best_test_time = test_time
+                    # save classifier
+                    if save_model:
+                        is_finetune = '_finetune' if self.eval_dict["is_finetune"] else ''
+                        is_supervised = '_supervised' if self.eval_dict["is_supervised"] else ''
+                        is_sag_pool = f'_sag_pool_{self.eval_dict["sag_top_ratio"]}' if self.info_type == 'sag_pooling' else ''
+                        file_name = (f"{self.info_type}_f1_{best_test_f1:.2f}{is_finetune}{is_supervised}"
+                                     f"{is_sag_pool}_sample_{flag}.pth") if self.info_type is not None else \
+                            f"f1_{best_test_f1:.2f}{is_finetune}{is_supervised}{is_sag_pool}_sample_{flag}.pth"
+                        file_dir = os.path.join(self.eval_dict["cls_model_states_path"], self.pt_info, self.ft_info)
+                        if not os.path.exists(file_dir):
+                            os.makedirs(file_dir)
+                        file_name = os.path.join(file_dir, file_name)
+                        params = {'cls': self.classifier.state_dict()}
+                        if self.info_type == 'sag_pooling':
+                            params['pooling'] = self.sag_pooling.state_dict()
+                        if self.prompt_type is not None:
+                            params['prompt'] = self.prompt
+                        torch.save(params, file_name)
+                        print(f"===== Best F1: {test_f1:.4f}, Save To: {file_name} =====")
+                break
         if task == "node":
-            return best_test_acc, best_test_pre, best_test_rec, best_test_f1, best_test_roc_auc, best_test_cm, best_test_time
+            return best_test_acc, best_test_pre, best_test_rec, best_test_f1, best_test_roc_auc, best_test_cm, best_test_time, test_y, test_prob, test_node_id
         else:
             return best_test_acc, best_test_pre, best_test_rec, best_test_f1, best_test_roc_auc, best_test_cm, best_test_pos_jac, best_test_neg_jac, best_test_time
 
@@ -767,7 +934,11 @@ class UinGangsModelTuning:
                 if self.eval_dict['concat_text']:
                     cut = self.eval_dict['uin_acs_numberical_feat_dim'] + self.eval_dict[
                         'uin_acs_categorical_feat_hasher_dim']
-                    batch_h = self.relation_fit(batch, batch['uin'].x[:, :cut])
+                    if self.eval_dict['concat_text'] and self.text_model is not None:
+                        batch_h, batch_uin_acs_text_feat = self.relation_fit(batch, batch['uin'].x[:, :cut],
+                                                                             batch['uin'].x[:, cut:])
+                    else:
+                        batch_h = self.relation_fit(batch, batch['uin'].x[:, :cut])
                 else:
                     batch_h = self.relation_fit(batch, batch['uin'].x)
                 # get edge information
@@ -789,6 +960,8 @@ class UinGangsModelTuning:
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
                             batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
                     if self.eval_dict['concat_text']:
+                        if self.eval_dict['text_model'] == 'MaskRGCN':
+                            batch_uin_acs_text_feat = batch_uin_acs_text_feat[0]
                         batch_h = torch.concat([batch_h, batch_uin_acs_text_feat], dim=1)
                         batch_h = torch.nn.functional.normalize(batch_h, dim=1)
                     pred_anomaly_score = self.classifier(batch_h)[-1].squeeze()
@@ -855,7 +1028,7 @@ class UinGangsModelTuning:
         G = nx.DiGraph()
         for i in range(anomaly_score.shape[0]):
             G.add_node(i, evil_score=anomaly_score[i].item())
-        unique_edge_index = torch.nonzero(adj)
+        unique_edge_index = torch.nonzero(adj).T
         for i in range(unique_edge_index.shape[1]):
             srt = unique_edge_index[0, i].item()
             dst = unique_edge_index[1, i].item()
@@ -866,24 +1039,21 @@ class UinGangsModelTuning:
             idx[sorted(best_graph.nodes)] = 1
         return idx
 
-    def evaluate_classifier(self, flag, epoch, task="subgraph", save_results=False, best_f1=0):
-        self.classifier.eval()
+    def evaluation(self, flag, epoch, save_results):
         self.model.eval()
-        if self.eval_dict['concat_text']:
-            self.text_model.eval()
-        if self.pooling == 'sag_pool':
-            self.sag_pooling.eval()
-        if self.prompt_type is not None:
-            prompt = self.prompt.detach()
+        self.classifier.eval()
         true_y_list = []
         pred_y_list = []
         prob_y_list = []
         true_idx_list = []
         pred_idx_list = []
+        node_id_list = []
+        node_num_list = []
         if save_results:
             subgraph_y_list = []
             subgraph_uin_list = []
             jaccard_list = []
+            root_id_list = []
         start_time = time.time()
         with torch.no_grad():
             for i, batch in enumerate(self.eval_loader):
@@ -896,6 +1066,162 @@ class UinGangsModelTuning:
                 # combine numerical, categorical and text attributes
                 batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
                 batch_x = torch.nn.functional.normalize(batch_x, dim=1)
+                batch['uin'].x = batch_x
+                node_num_list.append(batch['uin'].ptr[1:] - batch['uin'].ptr[:-1])
+                for item in batch['uin'].nodeid2uin_map:
+                    node_id_list.extend(item)
+                if self.eval_dict['concat_text']:
+                    cut = self.eval_dict['uin_acs_numberical_feat_dim'] + self.eval_dict[
+                        'uin_acs_categorical_feat_hasher_dim']
+                    if self.eval_dict['concat_text'] and self.text_model is not None:
+                        batch_h, batch_uin_acs_text_feat = self.relation_fit(batch, batch['uin'].x[:, :cut],
+                                                                             batch['uin'].x[:, cut:])
+                    else:
+                        batch_h = self.relation_fit(batch, batch['uin'].x[:, :cut])
+                elif self.conv_type == 'MLP':
+                    batch_h = self.model(batch['uin'].x)
+                else:
+                    batch_h = self.relation_fit(batch, batch['uin'].x)
+                if batch_h is not None:
+                    if self.conv_type != 'MLP':
+                        batch_h = batch_h[self.out_layer - 1]
+                    if self.eval_dict['concat_text']:
+                        batch_h = torch.concat([batch_h, batch_uin_acs_text_feat], dim=1)
+                        batch_h = torch.nn.functional.normalize(batch_h, dim=1)
+                    if self.node_context:
+                        batch_edge_index = torch.concat(
+                            [batch[edge_type].edge_index for edge_type in batch.edge_types], dim=1)
+                        batch_adj = to_dense_adj(batch_edge_index, max_num_nodes=batch['uin'].num_nodes).squeeze()
+                        graph_num = (batch['uin'].batch.unique().max() + 1).detach().cpu().item()
+                        grh_h_cnt_list = []
+                        for g_num in range(graph_num):
+                            g_node_idx = (batch['uin'].batch == g_num).nonzero().squeeze()
+                            graph_h = batch_h[g_node_idx]
+                            graph_adj = batch_adj[g_node_idx, :][:, g_node_idx]
+                            graph_score = batch['uin'].score.squeeze()[g_node_idx]
+                            graph_h_context = self.generate_node_context(graph_h, graph_adj, graph_score)
+                            grh_h_cnt_list.append(graph_h_context)
+                        batch_h_context = torch.concat(grh_h_cnt_list, dim=0).to(self.device)
+                        batch_h = torch.concat([batch_h, batch_h_context]).to(self.device)
+                    prob_y = self.classifier(batch_h)[-1][:, 1].unsqueeze(1)
+                    raw_score = batch['uin'].score
+                    update_score = (prob_y + raw_score) / 2
+                    # update_score = 0.2 * prob_y + 0.8 * raw_score
+                    # sub_ave_score = scatter_mean(batch['uin'].score.squeeze(), batch['uin'].batch, dim=0)
+                    # sub_ave_score = self.subgraph_score_expand(sub_ave_score, batch['uin'].ptr)
+                    # lg_sub_idx = ((batch['uin'].score.squeeze() - sub_ave_score) > 0).nonzero().squeeze()
+                    total_edge_index = torch.concat([batch[edge_type].edge_index for edge_type in batch.edge_types], dim=1)
+                    adj = to_dense_adj(total_edge_index, max_num_nodes=batch['uin'].num_nodes).squeeze()
+                    # reduce_score = cnt_inner_score(lg_sub_idx, adj, raw_score, batch_h) - 0.2
+                    # reduce_score = torch.min(torch.zeros_like(reduce_score), reduce_score)
+                    # update_score = raw_score.clone()
+                    # update_score[lg_sub_idx] += reduce_score
+                    sub_num = batch['uin'].batch.unique().max().item() + 1
+                    pred_gang_member = []
+                    for sub_i in range(sub_num):
+                        start_node, end_node = batch['uin'].ptr[sub_i].item(), batch['uin'].ptr[sub_i + 1].item()
+                        sub_pred_gang_member = self.generate_gang_by_fraudar(
+                            update_score[batch['uin'].batch == sub_i].squeeze(),
+                            adj[start_node:end_node, start_node:end_node])
+                        pred_gang_member.append(sub_pred_gang_member)
+                    pred_gang_member = torch.concat(pred_gang_member, dim=0)
+                    true_gang_member = batch['uin'].gang_mem.int()
+                    jaccard_coeff, true_idx, pred_idx = self.jaccard_batch(true_gang_member,
+                                                                           pred_gang_member,
+                                                                           batch['uin'].batch)
+                    batch_y = batch['uin'].gang_mem.int()
+                    pred_y = pred_gang_member
+                    if save_results:
+                        jaccard_list.extend(jaccard_coeff)
+                        true_idx_list.extend(true_idx)
+                        pred_idx_list.extend(pred_idx)
+                        subgraph_y_list.extend(batch['uin'].y.detach().cpu().tolist())
+                        subgraph_uin_list.extend(batch['uin'].nodeid2uin_map)
+                        root_id_list.extend(batch['uin'].root_id)
+                    true_y = batch_y.detach().cpu()
+                    prob_y = update_score.detach().cpu()
+                    pred_y = pred_y.detach().cpu()
+                    true_y_list.append(true_y)
+                    pred_y_list.append(pred_y)
+                    prob_y_list.append(prob_y)
+            node_num_list = torch.concat(node_num_list, dim=0).detach().cpu().numpy()
+            true_y_list = torch.concat(true_y_list, dim=0).numpy()
+            prob_y_list = torch.concat(prob_y_list, dim=0).numpy()
+            pred_y_list = torch.concat(pred_y_list, dim=0).numpy()
+            acc = accuracy_score(true_y_list, pred_y_list)
+            f1 = f1_score(true_y_list, pred_y_list)
+            pre = precision_score(true_y_list, pred_y_list)
+            rec = recall_score(true_y_list, pred_y_list)
+            roc_auc = roc_auc_score(true_y_list, prob_y_list)
+            cm = confusion_matrix(true_y_list, pred_y_list)
+            eval_time = time.time() - start_time
+            print(f"Test ACC: {acc: .4f}, "
+                  f"Precision: {pre: .4f}, "
+                  f"Recall: {rec: .4f}, "
+                  f"F1: {f1: .4f}, "
+                  f"ROC-AUC: {roc_auc: .4f}, "
+                  f"Confusion Matrix: {cm.tolist()}, "
+                  f"Evaluate Time: {eval_time: .4f} s")
+            if save_results:
+                file_name = os.path.join(self.pred_save_path, self.pt_info, self.ft_info)
+                if not os.path.exists(file_name):
+                    os.makedirs(file_name)
+                if self.eval_dict['is_finetune']:
+                    file_tag = "finetune_"
+                else:
+                    if self.eval_dict['is_supervised']:
+                        file_tag = "supervised_"
+                    else:
+                        file_tag = ""
+                info = self.info_type + "_" if self.info_type is not None else ""
+                if self.k_shot != 0:
+                    file_name = os.path.join(file_name,
+                                             file_tag + f"{info}sample_{flag}_{self.k_shot}_shot_epoch_{epoch}_"
+                                                        f"{self.eval_dict['downstream_loss']}_add_score_revised_loss.csv")
+                else:
+                    file_name = os.path.join(file_name, file_tag + f"{info}_sample_{flag}_epoch_{epoch}.csv")
+                self.save_output_file(true_idx_list, pred_idx_list, subgraph_uin_list,
+                                      subgraph_y_list, jaccard_list, file_name, root_id_list, node_num_list)
+
+            return acc, pre, rec, f1, roc_auc, cm, eval_time, true_y_list, prob_y_list, node_id_list
+
+
+    def evaluate_classifier(self, flag, epoch, task="subgraph", save_results=False, best_f1=0):
+        self.classifier.eval()
+        self.model.eval()
+        if self.eval_dict['concat_text'] and self.text_model is not None:
+            self.text_model.eval()
+        if self.pooling == 'sag_pool':
+            self.sag_pooling.eval()
+        if self.prompt_type is not None:
+            prompt = self.prompt.detach()
+        true_y_list = []
+        pred_y_list = []
+        prob_y_list = []
+        true_idx_list = []
+        pred_idx_list = []
+        node_id_list = []
+        node_num_list = []
+        if save_results:
+            subgraph_y_list = []
+            subgraph_uin_list = []
+            jaccard_list = []
+            root_id_list = []
+        start_time = time.time()
+        with torch.no_grad():
+            for i, batch in enumerate(self.eval_loader):
+                batch = batch.to(self.device)
+                batch_uin_acs_text_feat_input_ids = batch['uin'].text_feat_input_ids
+                batch_uin_acs_text_feat_attention_mask = batch['uin'].text_feat_attention_mask
+                with torch.no_grad():
+                    batch_uin_acs_text_feat = self.minirbt_model(batch_uin_acs_text_feat_input_ids,
+                                                                 batch_uin_acs_text_feat_attention_mask).pooler_output
+                # combine numerical, categorical and text attributes
+                batch_x = torch.concat([batch['uin'].x, batch_uin_acs_text_feat], dim=1)
+                batch_x = torch.nn.functional.normalize(batch_x, dim=1)
+                node_num_list.append(batch['uin'].ptr[1:] - batch['uin'].ptr[:-1])
+                for item in batch['uin'].nodeid2uin_map:
+                    node_id_list.extend(item)
                 if self.prompt_type == 'single_token':
                     # batch_x = batch_x + self.prompt.to(self.device)
                     batch_x = torch.mul(batch_x, prompt.to(self.device))
@@ -906,12 +1232,20 @@ class UinGangsModelTuning:
                     if self.eval_dict['concat_text']:
                         cut = self.eval_dict['uin_acs_numberical_feat_dim'] + self.eval_dict[
                             'uin_acs_categorical_feat_hasher_dim']
-                        batch_h, batch_uin_acs_text_feat = self.relation_fit(batch, batch['uin'].x[:, :cut], batch['uin'].x[:, cut:])
+                        if self.eval_dict['concat_text'] and self.text_model is not None:
+                            batch_h, batch_uin_acs_text_feat = self.relation_fit(batch, batch['uin'].x[:, :cut],
+                                                                                 batch['uin'].x[:, cut:])
+                        else:
+                            batch_h = self.relation_fit(batch, batch['uin'].x[:, :cut])
                     else:
                         batch_h = self.relation_fit(batch, batch['uin'].x)
                 if batch_h is not None:
                     batch_h = batch_h[self.out_layer - 1]
-                    batch_uin_acs_text_feat = batch_uin_acs_text_feat[0]
+                    if self.eval_dict['concat_text']:
+                        if self.eval_dict['text_model'] == 'MaskRGCN':
+                            batch_uin_acs_text_feat = batch_uin_acs_text_feat[0]
+                        batch_h = torch.concat([batch_h, batch_uin_acs_text_feat], dim=1)
+                        batch_h = torch.nn.functional.normalize(batch_h, dim=1)
                     if self.pooling == 'sag_pool':
                         batch_edge_index, batch_edge_types = self.get_edge_info(batch)
                         h_pool, edge_index_pool, edge_attr_pool, perm, mask, score = (
@@ -919,36 +1253,21 @@ class UinGangsModelTuning:
                         batch_h_g = scatter_mean(h_pool, perm, dim=0)
                     else:
                         batch_h_g = scatter_mean(batch_h, batch['uin'].batch, dim=0)
-                    if task == "subgraph_cl":
-                        batch_y = batch['uin'].gang_label.int()
-                        prob_y = self.classifier(batch_h_g)[:, 1]
-                        pred_y = self.classifier(batch_h_g).argmax(dim=1)
-                    elif task == "node_cl":
-                        batch_y = batch['uin'].gang_mem.int()
-                        if self.eval_dict['concat_text']:
-                            batch_h = torch.concat([batch_h, batch_uin_acs_text_feat], dim=1)
-                            h_out = self.classifier(batch_h)
-                            prob_y = h_out[-1][:, 1]
-                            pred_y = h_out[-1].argmax(dim=1)
+                    if self.info_type in ['combine_subgraph', 'concat_subgraph']:
+                        expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
+                        if self.info_type == 'combine_subgraph':
+                            diff_h = expand_batch_h_g - batch_h
+                            batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
                         else:
-                            prob_y = self.classifier(batch_h)[:, 1]
-                            pred_y = self.classifier(batch_h).argmax(dim=1)
-                    elif task in ["subgraph_score", "node_score"]:
-                        if self.eval_dict['concat_text']:
-                            batch_h = torch.concat([batch_h, batch_uin_acs_text_feat], dim=1)
-                        if self.info_type in ['combine_subgraph', 'concat_subgraph']:
                             expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                            if self.info_type == 'combine_subgraph':
-                                diff_h = expand_batch_h_g - batch_h
-                                batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
-                            else:
-                                expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                                batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
+                            batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
+                    if task in ["subgraph_score", "node_score"]:
                         pred_anomaly_score = self.classifier(batch_h)
                         pred_anomaly_score = pred_anomaly_score[-1]
                         sub_num = batch['uin'].batch.unique().max().item() + 1
                         edge_index = torch.concat([batch[edge_type].edge_index for edge_type in batch.edge_types],
                                                   dim=1)
+                        unique_edge_index, _ = torch.unique(edge_index, dim=1, return_inverse=True)
                         batch_adj = to_dense_adj(edge_index, max_num_nodes=batch['uin'].num_nodes).squeeze()
                         pred_gang_member = []
                         for sub_i in range(sub_num):
@@ -978,34 +1297,44 @@ class UinGangsModelTuning:
                             subgraph_y_list.extend(batch['uin'].y.detach().cpu().tolist())
                             subgraph_uin_list.extend(batch['uin'].nodeid2uin_map)
                     else:
-                        batch_y = batch['uin'].gang_label.int()
                         true_gang_member = batch['uin'].gang_mem.int()
-                        if self.info_type in ['combine_subgraph', 'concat_subgraph']:
-                            expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                            if self.info_type == 'combine_subgraph':
-                                diff_h = expand_batch_h_g - batch_h
-                                batch_h = torch.concat([expand_batch_h_g, diff_h], dim=1)
+                        if task == "subgraph_cl":
+                            if self.eval_dict['concat_text']:
+                                h_out = self.classifier(batch_h)
+                                pred_gang_member = h_out[-1].argmax(dim=1)
                             else:
-                                expand_batch_h_g = self.subgraph_embedding_expand(batch_h_g, batch['uin'].ptr)
-                                batch_h = torch.concat([batch_h, expand_batch_h_g], dim=1)
-                        pred_gang_member = self.classifier(batch_h).argmax(dim=1)
-                        jaccard_coeff, true_idx, pred_idx = self.jaccard_batch(true_gang_member, pred_gang_member,
-                                                                               batch['uin'].batch)
-                        prob_y = torch.tensor(jaccard_coeff, device=self.device)
-                        pred_y = torch.zeros(prob_y.shape[0], device=self.device)
-                        pred_y[prob_y >= self.eval_dict["subgraph_tp_threshold"]] = 1
+                                pred_gang_member = self.classifier(batch_h).argmax(dim=1)
+                            jaccard_coeff, true_idx, pred_idx = self.jaccard_batch(true_gang_member, pred_gang_member,
+                                                                                   batch['uin'].batch)
+                            batch_y = batch['uin'].gang_label.int()
+                            prob_y = torch.tensor(jaccard_coeff, device=self.device)
+                            pred_y = torch.zeros(prob_y.shape[0], device=self.device)
+                            pred_y[prob_y >= self.eval_dict["subgraph_tp_threshold"]] = 1
+                        else:
+                            batch_y = true_gang_member
+                            if self.eval_dict['concat_text']:
+                                h_out = self.classifier(batch_h)
+                                prob_y = h_out[-1][:, 1]
+                                pred_y = h_out[-1].argmax(dim=1)
+                            else:
+                                prob_y = self.classifier(batch_h)[:, 1]
+                                pred_y = self.classifier(batch_h).argmax(dim=1)
+                            jaccard_coeff, true_idx, pred_idx = self.jaccard_batch(true_gang_member, pred_y,
+                                                                                   batch['uin'].batch)
                         if save_results:
                             jaccard_list.extend(jaccard_coeff)
                             true_idx_list.extend(true_idx)
                             pred_idx_list.extend(pred_idx)
                             subgraph_y_list.extend(batch['uin'].y.detach().cpu().tolist())
                             subgraph_uin_list.extend(batch['uin'].nodeid2uin_map)
+                            root_id_list.extend(batch['uin'].root_id)
                     true_y = batch_y.detach().cpu()
                     prob_y = prob_y.detach().cpu()
                     pred_y = pred_y.detach().cpu()
                     true_y_list.append(true_y)
                     pred_y_list.append(pred_y)
                     prob_y_list.append(prob_y)
+            node_num_list = torch.concat(node_num_list, dim=0).detach().cpu().numpy()
             true_y_list = torch.concat(true_y_list, dim=0).numpy()
             prob_y_list = torch.concat(prob_y_list, dim=0).numpy()
             pred_y_list = torch.concat(pred_y_list, dim=0).numpy()
@@ -1024,7 +1353,7 @@ class UinGangsModelTuning:
                       f"ROC-AUC: {roc_auc: .4f}, "
                       f"Confusion Matrix: {cm.tolist()}, "
                       f"Evaluate Time: {eval_time: .4f} s")
-                if f1 > best_f1 and save_results:
+                if save_results and epoch % self.eval_dict['n_epochs'] == 0:
                     file_name = os.path.join(self.pred_save_path, self.pt_info, self.ft_info)
                     if not os.path.exists(file_name):
                         os.makedirs(file_name)
@@ -1036,10 +1365,17 @@ class UinGangsModelTuning:
                         else:
                             file_tag = "score_" if "score" in task else ""
                     info = self.info_type + "_" if self.info_type is not None else ""
-                    file_name = os.path.join(file_name, file_tag + f"{info}best_f1_sample_{flag}.csv")
+                    if self.k_shot != 0:
+                        file_name = os.path.join(file_name, file_tag + f"{info}sample_{flag}_{self.k_shot}_shot_epoch_{epoch}_"
+                                                                       f"ft_strategy_{self.eval_dict['ft_strategy']}_"
+                                                                       f"{self.eval_dict['downstream_loss']}_"
+                                                                       f"deg_weight_{self.eval_dict['degree_param']}.csv")
+                    else:
+                        file_name = os.path.join(file_name, file_tag + f"{info}_sample_{flag}_epoch_{epoch}.csv")
                     self.save_output_file(true_idx_list, pred_idx_list, subgraph_uin_list,
-                                          subgraph_y_list, jaccard_list, file_name)
-                return acc, pre, rec, f1, roc_auc, cm, eval_time
+                                          subgraph_y_list, jaccard_list, file_name, root_id_list, node_num_list)
+
+                return acc, pre, rec, f1, roc_auc, cm, eval_time, true_y_list, prob_y_list, node_id_list
             else:
                 pos_jaccard = np.array(jaccard_list)[true_y_list != 0].mean()
                 neg_jaccard = np.array(jaccard_list)[true_y_list == 0].mean()
@@ -1054,7 +1390,7 @@ class UinGangsModelTuning:
                       f"Neg Jaccard: {neg_jaccard: .4f}, "
                       f"Evaluate Time: {eval_time: .4f} s"
                       )
-                if f1 > best_f1 and save_results:
+                if f1 > best_f1:
                     file_name = os.path.join(self.pred_save_path, self.pt_info, self.ft_info)
                     if not os.path.exists(file_name):
                         os.makedirs(file_name)
@@ -1079,6 +1415,7 @@ class UinGangsModelTuning:
         pred_idx_list = []
         subgraph_y_list = []
         subgraph_uin_list = []
+        root_id_list = []
         true_y_list = []
         pred_y_list = []
         prob_y_list = []
@@ -1086,20 +1423,22 @@ class UinGangsModelTuning:
             for i, pos_batch in enumerate(self.eval_loader):
                 true_y = pos_batch['uin'].gang_mem.int()
                 pred_y = pos_batch['uin'].idx
+                prob_y = pred_y.to(torch.float32)
                 jaccard_coefficient, true_idx, pred_idx = self.jaccard_batch(true_y, pred_y,
                                                                              pos_batch['uin'].batch)
-                true_subgraph_y = pos_batch['uin'].gang_label.int()
-                prob_subgraph_y = torch.tensor(jaccard_coefficient)
-                pred_subgraph_y = torch.zeros(prob_subgraph_y.shape[0])
-                pred_subgraph_y[prob_subgraph_y >= self.eval_dict["subgraph_tp_threshold"]] = 1
-                true_y_list.append(true_subgraph_y)
-                pred_y_list.append(pred_subgraph_y)
-                prob_y_list.append(prob_subgraph_y)
+                # true_subgraph_y = pos_batch['uin'].gang_label.int()
+                # prob_subgraph_y = torch.tensor(jaccard_coefficient)
+                # pred_subgraph_y = torch.zeros(prob_subgraph_y.shape[0])
+                # pred_subgraph_y[prob_subgraph_y >= self.eval_dict["subgraph_tp_threshold"]] = 1
+                true_y_list.append(true_y)
+                pred_y_list.append(pred_y)
+                prob_y_list.append(prob_y)
                 jaccard_list.extend(jaccard_coefficient)
                 true_idx_list.extend(true_idx)
                 pred_idx_list.extend(pred_idx)
                 subgraph_y_list.extend(pos_batch['uin'].y.tolist())
                 subgraph_uin_list.extend(pos_batch['uin'].nodeid2uin_map)
+                root_id_list.extend(pos_batch['uin'].root_id)
             # compute metrics
             true_y_list = torch.concat(true_y_list, dim=0).numpy()
             prob_y_list = torch.concat(prob_y_list, dim=0).numpy()
@@ -1110,8 +1449,8 @@ class UinGangsModelTuning:
             rec = recall_score(true_y_list, pred_y_list)
             roc_auc = roc_auc_score(true_y_list, prob_y_list)
             cm = confusion_matrix(true_y_list, pred_y_list)
-            pos_jaccard = np.array(jaccard_list)[true_y_list != 0].mean()
-            neg_jaccard = np.array(jaccard_list)[true_y_list == 0].mean()
+            # pos_jaccard = np.array(jaccard_list)[true_y_list != 0].mean()
+            # neg_jaccard = np.array(jaccard_list)[true_y_list == 0].mean()
             run_time = time.time() - start_time
             print(f"Fraudar ACC: {acc: .4f}, "
                   f"Precision: {pre: .4f}, "
@@ -1119,18 +1458,84 @@ class UinGangsModelTuning:
                   f"F1: {f1: .4f}, "
                   f"ROC-AUC: {roc_auc: .4f}, "
                   f"Confusion Matrix: {cm.tolist()}, "
-                  f"Pos Jaccard Coefficient: {pos_jaccard: .4f}, "
-                  f"Neg Jaccard Coefficient: {neg_jaccard: .4f}, "
+                  # f"Pos Jaccard Coefficient: {pos_jaccard: .4f}, "
+                  # f"Neg Jaccard Coefficient: {neg_jaccard: .4f}, "
                   f"Time: {run_time: .4f} s"
                   )
         if save_results:
             # save inference results
-            save_path = os.path.join(self.pred_save_path, 'fraudar_full')
+            save_path = os.path.join(self.pred_save_path, 'fraudar')
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
-            file_name = os.path.join(save_path, f'fraudar_{flag}.csv')
+            file_name = os.path.join(save_path, f'fraudar_{self.eval_dict["k_shot"]}_shot_sample_{flag}.csv')
             self.save_output_file(true_idx_list, pred_idx_list, subgraph_uin_list,
-                                  subgraph_y_list, jaccard_list, file_name)
-            return acc, pre, rec, f1, roc_auc, cm, pos_jaccard, neg_jaccard, run_time
+                                  subgraph_y_list, jaccard_list, file_name, root_id_list)
+            return acc, pre, rec, f1, roc_auc, cm, 0, 0, run_time, true_y_list, pred_y_list
         else:
-            return acc, pre, rec, f1, roc_auc, cm, pos_jaccard, neg_jaccard, run_time
+            return acc, pre, rec, f1, roc_auc, cm, 0, 0, run_time, true_y_list, pred_y_list
+
+    def detect_subgraph_gang_members_by_score(self, flag, save_results=False):
+        start_time = time.time()
+        jaccard_list = []
+        true_idx_list = []
+        pred_idx_list = []
+        subgraph_y_list = []
+        subgraph_uin_list = []
+        root_id_list = []
+        true_y_list = []
+        pred_y_list = []
+        prob_y_list = []
+        node_id_list = []
+        with torch.no_grad():
+            for i, pos_batch in enumerate(self.eval_loader):
+                for item in pos_batch['uin'].nodeid2uin_map:
+                    node_id_list.extend(item)
+                true_y = pos_batch['uin'].gang_mem.int()
+                prob_y = pos_batch['uin'].score.squeeze()
+                pred_y = torch.zeros_like(prob_y).int()
+                pred_y[prob_y >= 0.5] = 1
+                jaccard_coefficient, true_idx, pred_idx = self.jaccard_batch(true_y, pred_y,
+                                                                             pos_batch['uin'].batch)
+                true_y_list.append(true_y)
+                pred_y_list.append(pred_y)
+                prob_y_list.append(prob_y)
+                jaccard_list.extend(jaccard_coefficient)
+                true_idx_list.extend(true_idx)
+                pred_idx_list.extend(pred_idx)
+                subgraph_y_list.extend(pos_batch['uin'].y.tolist())
+                subgraph_uin_list.extend(pos_batch['uin'].nodeid2uin_map)
+                root_id_list.extend(pos_batch['uin'].root_id)
+            # compute metrics
+            true_y_list = torch.concat(true_y_list, dim=0).numpy()
+            prob_y_list = torch.concat(prob_y_list, dim=0).numpy()
+            pred_y_list = torch.concat(pred_y_list, dim=0).numpy()
+            acc = accuracy_score(true_y_list, pred_y_list)
+            f1 = f1_score(true_y_list, pred_y_list)
+            pre = precision_score(true_y_list, pred_y_list)
+            rec = recall_score(true_y_list, pred_y_list)
+            roc_auc = roc_auc_score(true_y_list, prob_y_list)
+            cm = confusion_matrix(true_y_list, pred_y_list)
+            # pos_jaccard = np.array(jaccard_list)[true_y_list != 0].mean()
+            # neg_jaccard = np.array(jaccard_list)[true_y_list == 0].mean()
+            run_time = time.time() - start_time
+            print(f"Fraudar ACC: {acc: .4f}, "
+                  f"Precision: {pre: .4f}, "
+                  f"Recall: {rec: .4f}, "
+                  f"F1: {f1: .4f}, "
+                  f"ROC-AUC: {roc_auc: .4f}, "
+                  f"Confusion Matrix: {cm.tolist()}, "
+                  # f"Pos Jaccard Coefficient: {pos_jaccard: .4f}, "
+                  # f"Neg Jaccard Coefficient: {neg_jaccard: .4f}, "
+                  f"Time: {run_time: .4f} s"
+                  )
+        if save_results:
+            # save inference results
+            save_path = os.path.join(self.pred_save_path, 'score')
+            if not os.path.exists(save_path):
+                os.makedirs(save_path)
+            file_name = os.path.join(save_path, f'score_shot_sample_{flag}.csv')
+            self.save_output_file(true_idx_list, pred_idx_list, subgraph_uin_list,
+                                  subgraph_y_list, jaccard_list, file_name, root_id_list)
+            return acc, pre, rec, f1, roc_auc, cm, 0, 0, run_time
+        else:
+            return acc, pre, rec, f1, roc_auc, cm, 0, 0, run_time, true_y_list, prob_y_list, pred_y_list, node_id_list

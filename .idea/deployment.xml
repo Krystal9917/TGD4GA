@@ -1,7 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="On explicit save action" serverName="root@9.134.63.125:36000 password" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" autoUpload="On explicit save action" serverName="root@9.134.63.125:36000" remoteFilesAllowedToDisappearOnAutoupload="false">
     <serverData>
+      <paths name="JiujiuChen@10.120.17.87:22">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="JiujiuChen@10.120.17.87:22 multi">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="JiujiuChen@10.120.17.87:22 password">
         <serverdata>
           <mappings>
@@ -9,28 +23,14 @@
           </mappings>
         </serverdata>
       </paths>
-      <paths name="JiujiuChen@10.120.17.87:22 password (2)">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="root@9.134.63.125:36000 password">
+      <paths name="root@9.134.63.125:36000">
         <serverdata>
           <mappings>
             <mapping deploy="/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>
-      <paths name="root@9.134.63.125:36000 password (2)">
-        <serverdata>
-          <mappings>
-            <mapping deploy="/tmp/pycharm_project_612" local="$PROJECT_DIR$" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="root@9.134.63.125:36000 password (3)">
+      <paths name="root@9.134.63.125:36000 password">
         <serverdata>
           <mappings>
             <mapping deploy="/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model" local="$PROJECT_DIR$" />

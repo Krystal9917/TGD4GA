@@ -19,21 +19,28 @@ def read_file(lines):
             abnormal_count += 1
     print(f"White samples: {while_count}, Abnormal samples: {abnormal_count}")
 
-def split_data(time, in_dir, infile_name, out_dir, train_file_name, test_file_name):
-    random.seed(42)
+def split_data(time, in_dir, infile_name, out_dir, train_file_name, test_file_name, exclude=100, k_shot=None):
+
     with open(in_dir + infile_name, 'r') as f:
         lines = f.readlines()
-        random.shuffle(lines)
     total_lines = len(lines)
-    print(f"{time}-All: {total_lines}")
-    test_len = int(total_lines * 0.2)
-    test_lines = lines[(time - 1) * test_len: time * test_len]
-    if time == 1:
-        train_lines = lines[time * test_len:]
-    elif time == 5:
-        train_lines = lines[:(time - 1) * test_len]
+    if k_shot is not None:
+        random.seed(time)
+        random.shuffle(lines)
+        train_lines = lines[:exclude][:k_shot]
+        test_lines = lines[exclude:]
     else:
-        train_lines = lines[:(time - 1) * test_len] + lines[time * test_len:]
+        random.seed(42)
+        random.shuffle(lines)
+        print(f"{time}-All: {total_lines}")
+        test_len = int(total_lines * 0.2)
+        test_lines = lines[(time - 1) * test_len: time * test_len]
+        if time == 1:
+            train_lines = lines[time * test_len:]
+        elif time == 5:
+            train_lines = lines[:(time - 1) * test_len]
+        else:
+            train_lines = lines[:(time - 1) * test_len] + lines[time * test_len:]
 
     read_file(train_lines)
     print(f"{time}-Train: {len(train_lines)}")
@@ -175,18 +182,18 @@ def filter_yanghao_by_fraudar(in_dir, file_name, train_name, test_name):
 if __name__ == '__main__':
     parent_dir = '/chongqinggeminiceph1fs/geminicephfs/security-others-common/jiujiuchen/projects/mmgog_long_term_sequence_model/data/uin_gangs_full_graph_dataset/'
     in_dir = 'valid/raw/'
-    in_filename = 'uin_gangs_supervise_full_graph_dataset_eval_250324_202503241700_exclude_none_connect_gangs.txt'
+    in_filename = 'uin_gangs_supervise_full_graph_dataset_eval_250324_202503241700_599.txt'
 
     # with open(parent_dir + in_dir + in_filename, 'r') as f:
     #     lines = f.readlines()
     #     read_file(lines)
+    for shot_num in np.arange(10, 110, 10):
+        out_dir = f'valid/{shot_num}_shot_processed/'
+        out_train_name = 'uin_gangs_supervise_full_graph_dataset_train_202503241700.txt'
+        out_eval_name = 'uin_gangs_supervise_full_graph_dataset_eval_202503241700.txt'
 
-    out_dir = 'valid/positive_processed/'
-    out_train_name = 'uin_gangs_supervise_full_graph_dataset_train_202503241700.txt'
-    out_eval_name = 'uin_gangs_supervise_full_graph_dataset_eval_202503241700.txt'
-
-    for idx in range(1, 6):
-        out_path = parent_dir + out_dir + f'split_{idx}/'
-        if not os.path.exists(out_path):
-            os.makedirs(out_path)
-        split_data(idx, parent_dir + in_dir, in_filename, out_path, out_train_name, out_eval_name)
+        for idx in range(1, 6):
+            out_path = parent_dir + out_dir + f'split_{idx}/'
+            if not os.path.exists(out_path):
+                os.makedirs(out_path)
+            split_data(idx, parent_dir + in_dir, in_filename, out_path, out_train_name, out_eval_name, k_shot=shot_num)

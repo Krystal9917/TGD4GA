@@ -16,11 +16,7 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "uin_gangs_full_graph_dataset", "train", "raw",
                          # "uin_gangs_full_graph_dataset_train_241119_241121.txt")))
-                         "uin_gangs_full_graph_dataset_train_202503201445.txt")))
-        parser.add_argument('--test_data_path', type=str, default=os.path.abspath(
-            os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
-                         "uin_gangs_full_graph_dataset", "eval", "raw",
-                         "uin_gangs_full_graph_dataset_train_241119_1.txt")))
+                         "uin_gangs_full_graph_dataset_train_202503200423.txt")))
         parser.add_argument('--uin_gangs_enum_yaml_path', type=str, default=os.path.abspath(
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "data",
                          "config", "yml", "uin_gangs_enum.yaml")))
@@ -40,14 +36,14 @@ class ArgsUinGangs:
             os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, "minirbt-h256")))
         parser.add_argument('--best_loss', type=float, default=1e2)
         parser.add_argument('--negative_positive_ratio', type=float, default=10)
-        parser.add_argument('--batch_size', type=int, default=32)
-        parser.add_argument('--data_buffer_size', type=int, default=32)
+        parser.add_argument('--batch_size', type=int, default=40)
+        parser.add_argument('--data_buffer_size', type=int, default=40)
         parser.add_argument('--lr', type=float, default=0.001)
         parser.add_argument('--lr_scheduler', type=str, default='',
                             choices=['', '_stepLR', '_reduceLR', '_cosineLR'])
         parser.add_argument('--lr_adjust_step', type=int, default=2)
         parser.add_argument('--lr_gamma', type=float, default=0.5)
-        parser.add_argument('--n_epochs', type=int, default=100)
+        parser.add_argument('--n_epochs', type=int, default=50)
         parser.add_argument('--uin_acs_numberical_feat_dim', type=int, default=250)
         parser.add_argument('--uin_acs_text_feat_dim', type=int, default=256)
         parser.add_argument('--uin_acs_categorical_feat_hasher_dim', type=int, default=256)
@@ -57,31 +53,36 @@ class ArgsUinGangs:
         parser.add_argument('--num_workers', type=int, default=32)
         parser.add_argument('--temperature', type=int, default=1)
         parser.add_argument('--hidden_dim', type=int, default=1024)
-        parser.add_argument('--output_dim', type=int, default=762)
+        parser.add_argument('--output_dim', type=int, default=512)
         parser.add_argument('--filter_node_num', type=int, default=3)
         parser.add_argument('--sampling', type=str, default='fraudar')
         parser.add_argument('--drop_ratio', type=float, default=0.2)
-        parser.add_argument('--re_train', type=bool, default=True)
-        parser.add_argument('--is_debug', type=bool, default=True)
-        parser.add_argument('--start_epoch', type=int, default=99)
+        parser.add_argument('--re_train', type=bool, default=False)
+        parser.add_argument('--is_debug', type=bool, default=False)
+        parser.add_argument('--start_epoch', type=int, default=0)
         parser.add_argument('--conv_type', type=str, default='MaskRGCN',
                             choices=['RGCN', 'MaskRGCN', 'AttnRGCN'])
-        parser.add_argument('--task_type', type=str, default='fine_grained_cross_subgraph',
-                            choices=['subgraph', 'node_subgraph', 'context_cl', 'batch_subgraph', 'cross_subgraph',
-                                     'fine_grained_cross_subgraph', 'fine_grained_batch_subgraph'])
-        parser.add_argument('--load_text_feature', type=bool, default=True)
+        parser.add_argument('--task_type', type=str, default='new_context_cl',
+                            choices=['subgraph', 'node_subgraph', 'context_cl', 'new_context_cl'
+                                     'batch_subgraph', 'fine_grained_batch_subgraph',
+                                     'cross_subgraph', 'fine_grained_cross_subgraph'])
+        parser.add_argument('--load_text_feature', type=bool, default=False)
         # multi pre-training tasks weight
-        parser.add_argument('--W_subgraph', type=float, default=0.4)
-        parser.add_argument('--W_node', type=float, default=0.6)
+        parser.add_argument('--W_subgraph', type=float, default=0.2)
+        parser.add_argument('--W_node', type=float, default=0.8)
         # context cl
         parser.add_argument('--random_k_ratio', type=float, default=0.2)
         parser.add_argument('--neighbor_l_ratio', type=int, default=0.1)
+        # new context cl
+        parser.add_argument('--s_weight', type=float, default=0.8)
+        parser.add_argument('--d_weight', type=float, default=0.2)
         # cross/batch
-        parser.add_argument('--n_weight', type=float, default=0.3)
-        parser.add_argument('--c_weight', type=float, default=0.7)
+        parser.add_argument('--n_weight', type=float, default=0.4)
+        parser.add_argument('--c_weight', type=float, default=0.6)
         parser.add_argument('--similarity_diff', type=float, default=0.05)
-        parser.add_argument('--data_tag', type=str, default='2503_4_',
-                            choices=['', '1921_', '1930_', 'order_1930_', '2503_', '2503_4_'])
+        parser.add_argument('--data_tag', type=str, default='2504_',
+                            choices=['', '1921_', '1930_', 'order_1930_', '2503_',
+                                     '2503_4_', '2504_', '2504_1_'])
         parser.add_argument('--metric_learning', type=str, default='mlp',
                             choices=['similarity', 'mlp'])
         parser.add_argument('--is_single_edge', type=bool, default=False)
@@ -95,10 +96,6 @@ class ArgsUinGangs:
 def run_pretraining_graph(args):
     print(f"Training Parameters: {args.args_dict}")
     if args.args_dict["is_debug"]:
-        # args.args_dict["train_data_path"] = ("/chongqinggeminiceph1fs/geminicephfs/security-others-common/"
-        #                                      "jiujiuchen/projects/mmgog_long_term_sequence_model/data/"
-        #                                      "uin_gangs_full_graph_dataset/valid/processed/split_1/"
-        #                                      "uin_gangs_supervise_full_graph_dataset_eval_241204_20241204.txt")
         args.args_dict["train_data_path"] = ("/chongqinggeminiceph1fs/geminicephfs/security-others-common/"
                                              "jiujiuchen/projects/mmgog_long_term_sequence_model/data/"
                                              "uin_gangs_full_graph_dataset/train/raw/"
