@@ -14,7 +14,7 @@ sys.path.append(os.path.abspath(
 from codes.trainer.public_data_model_pretrain import PublicDataModelPreTrain
 
 
-class ArgsPublicDataGangs:
+class ArgsPublicDataGroups:
     def __init__(self):
         parser = argparse.ArgumentParser()
         # dataset
@@ -57,6 +57,6 @@ def run_pretraining_graph(args):
 
 
 if __name__ == '__main__':
-    args = ArgsPublicDataGangs()
+    args = ArgsPublicDataGroups()
     print(f"Current GPUs: {torch.cuda.device_count()}")
     run_pretraining_graph(args)

@@ -7,9 +7,11 @@ import numpy as np
 from torch_geometric.data import DataLoader
 from torch_geometric.utils import to_dense_adj
 from codes.models.gnn_models import GCN, GAT
+from codes.models.rgcn_model import AttnRGCN
+from codes.models.pca_alignment import PCARepresentationAlignment, apply_pca_alignment_to_batch
 from codes.dataprocess.public_data_utils import extract_subgraph_by_fraudar, split_data_save_index, batch_loss
 from codes.dataprocess.public_data_generate_pyg import WeiboDataset, FacebookDataset, AmazonDataset, TFinanceDataset
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
 
 
 class PublicDataModelTune:
@@ -78,8 +80,15 @@ class PublicDataModelTune:
         else:
             self.model = GAT(in_channel, hidden_channel, out_channel)
         self.model = self.model.to(self.device)
-        self.ano_estimate = torch.nn.Sequential(torch.nn.Linear(in_channel, 1), torch.nn.Sigmoid())
-        self.ano_estimate = self.ano_estimate.to(self.device)
+        # PCA-based anomaly score estimation (replaces original ano_estimate)
+        pca_components = args_dict.get("pca_components", min(in_channel // 2, 8))
+        pca_hidden_dim = args_dict.get("pca_hidden_dim", 64)
+        self.pca_alignment = PCARepresentationAlignment(
+            pca_components=pca_components,
+            hidden_dim=pca_hidden_dim,
+            dropout=0.2,
+        )
+        self.pca_alignment = self.pca_alignment.to(self.device)
         self.lr = args_dict["lr"]
         self.log_file_path = f"{self.dataset_name}_pretraining"
         self.save_model_path = os.path.join(self.train_dict["model_states_path"],
@@ -94,7 +103,13 @@ class PublicDataModelTune:
                                          f"{self.conv_type}_{self.task_type}_{self.lr}_epoch_{args_dict['evaluate_epoch']}.pth")
             model_weight = torch.load(file_name, map_location=self.device)
             self.model.load_state_dict(model_weight["gnn"])
-            self.ano_estimate.load_state_dict(model_weight["mlp"])
+            # Load pca_alignment weights (new format); fall back to old "mlp" key for backward compat
+            if "pca_alignment" in model_weight:
+                self.pca_alignment.load_state_dict(model_weight["pca_alignment"])
+            elif "mlp" in model_weight:
+                # Old checkpoint format: ano_estimate was stored as "mlp" — skip,
+                # pca_alignment will use random initialization
+                pass
         # classifier
         self.classifier = torch.nn.Sequential(torch.nn.Linear(out_channel * 2, hidden_channel),
                                                   torch.nn.ReLU(),
@@ -169,13 +184,16 @@ class PublicDataModelTune:
             st = time.time()
             self.model.train()
             self.classifier.train()
-            self.ano_estimate.eval()
+            self.pca_alignment.eval()
             epoch_loss = []
             for i, batch in enumerate(self.tune_dataloader):
                 self.optimizer.zero_grad()
                 batch = batch.to(self.device)
                 batch_x = torch.nn.functional.normalize(batch.x, p=2, dim=1)
-                batch_score = self.ano_estimate(batch_x).squeeze()
+                # PCA-based anomaly score estimation (replaces original ano_estimate)
+                batch_score = apply_pca_alignment_to_batch(
+                    batch_x, batch.edge_index, batch.ptr, self.pca_alignment
+                )
                 batch_h = self.model(batch_x, batch.edge_index)
                 batch_adj = to_dense_adj(batch.edge_index, max_num_nodes=batch.num_nodes).squeeze()
                 grh_h_cnt_list = []
@@ -213,7 +231,7 @@ class PublicDataModelTune:
 
     def evaluating(self):
         self.model.eval()
-        self.ano_estimate.eval()
+        self.pca_alignment.eval()
         self.classifier.eval()
         st = time.time()
         y_true = []
@@ -221,7 +239,10 @@ class PublicDataModelTune:
         for i, batch in enumerate(self.test_dataloader):
             batch = batch.to(self.device)
             batch_x = torch.nn.functional.normalize(batch.x, p=2, dim=1)
-            batch_score = self.ano_estimate(batch_x).squeeze()
+            # PCA-based anomaly score estimation (replaces original ano_estimate)
+            batch_score = apply_pca_alignment_to_batch(
+                batch_x, batch.edge_index, batch.ptr, self.pca_alignment
+            )
             batch_h = self.model(batch_x, batch.edge_index)
             batch_adj = to_dense_adj(batch.edge_index, max_num_nodes=batch.num_nodes).squeeze()
             grh_h_cnt_list = []

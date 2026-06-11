@@ -8,6 +8,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torch_geometric.utils import subgraph, to_dense_adj
 from torch_geometric.data import Data, DataLoader
 from codes.models.gnn_models import GCN, GAT
+from codes.models.rgcn_model import AttnRGCN
+from codes.models.pca_alignment import PCARepresentationAlignment, apply_pca_alignment_to_batch
 from codes.dataprocess.public_data_utils import extract_subgraph_by_fraudar
 from codes.dataprocess.public_data_generate_pyg import WeiboDataset, FacebookDataset, AmazonDataset, TFinanceDataset, TSocialDataset
 
@@ -83,6 +85,15 @@ class PublicDataModelPreTrain:
         else:
             self.model = GAT(in_channel, hidden_channel, out_channel)
         self.model = self.model.to(self.device)
+        # PCA-based anomaly score estimation (replaces original ano_estimate)
+        pca_components = args_dict.get("pca_components", min(in_channel // 2, 8))
+        pca_hidden_dim = args_dict.get("pca_hidden_dim", 64)
+        self.pca_alignment = PCARepresentationAlignment(
+            pca_components=pca_components,
+            hidden_dim=pca_hidden_dim,
+            dropout=0.2,
+        )
+        self.pca_alignment = self.pca_alignment.to(self.device)
         self.lr = args_dict["lr"]
         self.log_file_path = f"{self.dataset_name}_pretraining"
         loss_log_path = os.path.abspath(os.path.join(args_dict['log_dir'],
@@ -91,11 +102,9 @@ class PublicDataModelPreTrain:
         self.save_model_path = os.path.join(self.train_dict["model_states_path"],
                                             self.log_file_path)
 
-        self.ano_estimate = torch.nn.Sequential(torch.nn.Linear(in_channel, 1), torch.nn.Sigmoid())
-        self.ano_estimate = self.ano_estimate.to(self.device)
         self.best_loss = args_dict["best_loss"]
-        params = [{'params': self.ano_estimate.parameters(), 'lr': self.lr},
-                  {'params': self.model.parameters(), 'lr': self.lr}]
+        params = [{'params': self.model.parameters(), 'lr': self.lr},
+                  {'params': self.pca_alignment.parameters(), 'lr': self.lr}]
         self.optimizer = torch.optim.Adam(params, lr=self.lr)
         # loss save dir
         if not os.path.exists(loss_log_path):
@@ -214,7 +223,10 @@ class PublicDataModelPreTrain:
                 # raw subgraph
                 batch_h = self.model(batch_x, batch.edge_index)
                 batch_h_g = scatter_mean(batch_h, batch.batch, dim=0)
-                batch_ano_prob = self.ano_estimate(batch.x).squeeze()
+                # PCA-based anomaly score estimation (replaces original ano_estimate)
+                batch_ano_prob = apply_pca_alignment_to_batch(
+                    batch_x, batch.edge_index, batch.ptr, self.pca_alignment
+                )
                 ps_sub_idx = []
                 ng_sub_idx = []
                 ps_node_idx = []
@@ -277,7 +289,7 @@ class PublicDataModelPreTrain:
             if epoch_loss < self.best_loss:
                 self.best_loss = epoch_loss
                 model_dict = {"gnn": self.model.state_dict(),
-                              "mlp": self.ano_estimate.state_dict()}
+                              "pca_alignment": self.pca_alignment.state_dict()}
                 file_name = os.path.join(self.save_model_path, f"{save_prefix}_best_loss.pth")
                 torch.save(model_dict, file_name)
                 print(f"Now best loss: {self.best_loss:.4f}, save model to {file_name}")

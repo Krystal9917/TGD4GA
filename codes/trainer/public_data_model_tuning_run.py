@@ -16,7 +16,7 @@ sys.path.append(os.path.abspath(
 from codes.trainer.public_data_model_tuning import PublicDataModelTune
 
 
-class ArgsPublicDataGangs:
+class ArgsPublicDataGroups:
     def __init__(self):
         parser = argparse.ArgumentParser()
         # dataset
@@ -69,7 +69,7 @@ def compute_metrics_ave_std(acc_list, pre_list, rec_list, f1_list, roc_auc_list)
 
 
 if __name__ == '__main__':
-    args = ArgsPublicDataGangs()
+    args = ArgsPublicDataGroups()
     print(f"Current GPUs: {torch.cuda.device_count()}")
     dataset_name = args.args_dict["dataset_name"]
     if dataset_name == 'weibo':
